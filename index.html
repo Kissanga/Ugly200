@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#01696f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Ugly 200">
+  <title>Ugly 200 – Voice to Notion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet">
+  <style>
+    *, ::before, ::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+      --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+      --space-4: 1rem; --space-5: 1.25rem; --space-6: 1.5rem;
+      --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem; --space-16: 4rem;
+      --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
+      --radius-xl: 1rem; --radius-full: 9999px;
+      --font-body: 'Inter', system-ui, sans-serif;
+      --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    :root, [data-theme="light"] {
+      --bg: #f7f6f2; --surface: #f9f8f5; --surface-2: #fbfbf9;
+      --surface-offset: #f0eeea; --surface-dynamic: #e6e4df;
+      --border: oklch(0.28 0.01 80 / 0.12); --divider: #dcd9d5;
+      --text: #28251d; --text-muted: #7a7974; --text-faint: #bab9b4;
+      --text-inverse: #f9f8f4;
+      --primary: #01696f; --primary-hover: #0c4e54; --primary-active: #0f3638;
+      --primary-highlight: #cedcd8;
+      --success: #437a22; --success-bg: #d4dfcc;
+      --error: #a12c7b; --error-bg: #e0ced7;
+      --warning: #964219; --warning-bg: #ddcfc6;
+      --shadow-sm: 0 1px 2px oklch(0.2 0.01 80 / 0.06);
+      --shadow-md: 0 4px 12px oklch(0.2 0.01 80 / 0.1);
+      --shadow-lg: 0 12px 32px oklch(0.2 0.01 80 / 0.14);
+      --rec-pulse: rgba(1,105,111,0.25);
+    }
+
+    [data-theme="dark"] {
+      --bg: #171614; --surface: #1c1b19; --surface-2: #201f1d;
+      --surface-offset: #1d1c1a; --surface-dynamic: #2d2c2a;
+      --border: oklch(0.85 0.005 80 / 0.12); --divider: #262523;
+      --text: #cdccca; --text-muted: #797876; --text-faint: #5a5957;
+      --text-inverse: #2b2a28;
+      --primary: #4f98a3; --primary-hover: #227f8b; --primary-active: #1a626b;
+      --primary-highlight: #313b3b;
+      --success: #6daa45; --success-bg: #3a4435;
+      --error: #d163a7; --error-bg: #4c3d46;
+      --warning: #bb653b; --warning-bg: #564942;
+      --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
+      --shadow-md: 0 4px 12px oklch(0 0 0 / 0.35);
+      --shadow-lg: 0 12px 32px oklch(0 0 0 / 0.45);
+      --rec-pulse: rgba(79,152,163,0.25);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme]) {
+        --bg: #171614; --surface: #1c1b19; --surface-2: #201f1d;
+        --surface-offset: #1d1c1a; --surface-dynamic: #2d2c2a;
+        --border: oklch(0.85 0.005 80 / 0.12); --divider: #262523;
+        --text: #cdccca; --text-muted: #797876; --text-faint: #5a5957;
+        --text-inverse: #2b2a28;
+        --primary: #4f98a3; --primary-hover: #227f8b; --primary-active: #1a626b;
+        --primary-highlight: #313b3b;
+        --success: #6daa45; --success-bg: #3a4435;
+        --error: #d163a7; --error-bg: #4c3d46;
+        --warning: #bb653b; --warning-bg: #564942;
+        --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
+        --shadow-md: 0 4px 12px oklch(0 0 0 / 0.35);
+        --shadow-lg: 0 12px 32px oklch(0 0 0 / 0.45);
+        --rec-pulse: rgba(79,152,163,0.25);
+      }
+    }
+
+    html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; scroll-behavior: smooth; }
+    body { min-height: 100dvh; font-family: var(--font-body); font-size: var(--text-base); color: var(--text); background: var(--bg); line-height: 1.6; display: flex; flex-direction: column; }
+    img, svg { display: block; max-width: 100%; }
+    button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
+    input, textarea, select { font: inherit; color: inherit; }
+    a, button, input, textarea, select { transition: color var(--transition), background var(--transition), border-color var(--transition), box-shadow var(--transition), opacity var(--transition); }
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius-sm); }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+    /* HEADER */
+    header { position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--space-3) var(--space-4); display: flex; align-items: center; justify-content: space-between; box-shadow: var(--shadow-sm); }
+    .logo { display: flex; align-items: center; gap: var(--space-2); }
+    .logo-icon { color: var(--primary); flex-shrink: 0; }
+    .logo-text { font-size: var(--text-lg); font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+    .logo-text span { color: var(--primary); }
+    .header-actions { display: flex; align-items: center; gap: var(--space-2); }
+    .btn-icon { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--radius-md); color: var(--text-muted); background: transparent; }
+    .btn-icon:hover { background: var(--surface-dynamic); color: var(--text); }
+    .btn-icon:active { background: var(--surface-offset); }
+
+    /* MAIN */
+    main { flex: 1; max-width: 640px; width: 100%; margin-inline: auto; padding: var(--space-6) var(--space-4) calc(var(--space-16) + var(--space-8)); }
+    .section-label { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: var(--space-2); }
+
+    /* RECORDER */
+    .recorder-card { background: var(--surface); border-radius: var(--radius-xl); border: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: var(--space-6); margin-bottom: var(--space-4); display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
+    .recorder-btn-wrap { position: relative; }
+    .record-btn { width: 80px; height: 80px; border-radius: var(--radius-full); background: var(--primary); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); transition: transform var(--transition), background var(--transition), box-shadow var(--transition); }
+    .record-btn:hover { background: var(--primary-hover); transform: scale(1.05); box-shadow: var(--shadow-lg); }
+    .record-btn:active { transform: scale(0.97); background: var(--primary-active); }
+    .record-btn.recording { background: rgb(192,57,43); animation: pulse-ring 1.4s ease-out infinite; }
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 var(--rec-pulse), var(--shadow-md); }
+      70%  { box-shadow: 0 0 0 18px transparent, var(--shadow-md); }
+      100% { box-shadow: 0 0 0 0 transparent, var(--shadow-md); }
+    }
+    .recorder-timer { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); letter-spacing: -0.02em; display: none; }
+    .recorder-timer.visible { display: block; }
+    .recorder-status { font-size: var(--text-sm); color: var(--text-muted); text-align: center; min-height: 1.5em; }
+
+    /* EDITABLE BOX */
+    .editable-box-wrap { margin-bottom: var(--space-4); }
+    .editable-box-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+    .editable-box-actions { display: flex; gap: var(--space-2); align-items: center; }
+    .btn-copy { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); background: var(--surface-offset); border: 1px solid var(--border); font-size: var(--text-xs); color: var(--text-muted); font-weight: 500; }
+    .btn-copy:hover { background: var(--surface-dynamic); color: var(--text); }
+    .btn-generate { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); background: var(--primary-highlight); border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent); font-size: var(--text-xs); color: var(--primary); font-weight: 600; }
+    .btn-generate:hover { background: var(--primary); color: var(--text-inverse); }
+    .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; }
+    .editable-textarea { width: 100%; background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); padding: var(--space-3) var(--space-4); font-size: var(--text-sm); color: var(--text); resize: vertical; min-height: 80px; line-height: 1.65; font-family: var(--font-body); }
+    .editable-textarea:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent); }
+    .editable-textarea::placeholder { color: var(--text-faint); font-style: italic; }
+    .editable-textarea.transcript-ta { font-family: SFMono-Regular, Consolas, monospace; font-size: var(--text-xs); line-height: 1.7; background: var(--surface-offset); }
+    .editable-textarea.summary-ta { min-height: 100px; }
+    .transcribing-bar { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--primary); padding: var(--space-2) var(--space-4); background: var(--primary-highlight); border-radius: var(--radius-md); margin-bottom: var(--space-2); border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent); }
+    .groq-badge { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; font-style: italic; }
+    .summary-generating { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); padding: var(--space-2) 0; }
+    .dot-spin { width: 14px; height: 14px; border: 2px solid transparent; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* TEXTAREA */
+    .text-area-wrap { margin-bottom: var(--space-4); }
+    textarea { width: 100%; background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); padding: var(--space-3) var(--space-4); font-size: var(--text-base); color: var(--text); resize: vertical; min-height: 100px; line-height: 1.6; }
+    textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 20%, transparent); outline: none; }
+    textarea::placeholder { color: var(--text-faint); }
+
+    /* MEDIA */
+    .media-wrap { margin-bottom: var(--space-4); }
+    .media-actions { display: flex; gap: var(--space-2); margin-bottom: var(--space-3); flex-wrap: wrap; }
+    .btn-attach { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-radius: var(--radius-full); background: var(--surface); border: 1px solid var(--border); font-size: var(--text-sm); color: var(--text-muted); font-weight: 500; }
+    .btn-attach:hover { background: var(--surface-dynamic); color: var(--text); border-color: var(--primary); }
+    .btn-attach:active { background: var(--primary-highlight); }
+    .video-link-row { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+    .video-link-row input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); }
+    .video-link-row input:focus { border-color: var(--primary); outline: none; }
+    .media-previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: var(--space-2); }
+    .media-thumb { position: relative; aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-offset); border: 1px solid var(--border); }
+    .media-thumb img, .media-thumb video { width: 100%; height: 100%; object-fit: cover; }
+    .remove-media { position: absolute; top: var(--space-1); right: var(--space-1); width: 20px; height: 20px; border-radius: var(--radius-full); background: rgba(0,0,0,0.55); color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+    .video-thumb-inner { position: relative; width: 100%; height: 100%; background: #111; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; }
+    .video-play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.38); pointer-events: none; }
+    .video-duration { position: absolute; bottom: 3px; right: 5px; font-size: 9px; color: #fff; background: rgba(0,0,0,0.55); padding: 1px 4px; border-radius: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
+    .video-link-thumb { display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--text-faint); text-align: center; padding: 4px; word-break: break-all; height: 100%; background: var(--surface-offset); }
+    .compress-toggle { position: absolute; bottom: var(--space-1); left: var(--space-1); right: 22px; display: flex; border-radius: 3px; overflow: hidden; font-size: 8px; font-weight: 700; letter-spacing: 0.03em; line-height: 1; }
+    .compress-toggle button { flex: 1; padding: 3px 2px; border: none; cursor: pointer; transition: background 120ms, color 120ms; text-align: center; }
+    .ct-web { background: var(--primary); color: var(--text-inverse); }
+    .ct-web.inactive { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
+    .ct-orig { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
+    .ct-orig.active { background: var(--warning); color: #fff; }
+
+    /* TAGS */
+    .tags-wrap { margin-bottom: var(--space-4); }
+    .tags-preset { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
+    .tag-chip { padding: var(--space-1) var(--space-3); border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: 500; cursor: pointer; background: var(--surface-offset); color: var(--text-muted); border: 1px solid var(--border); user-select: none; }
+    .tag-chip:hover { background: var(--primary-highlight); border-color: var(--primary); color: var(--primary); }
+    .tag-chip.selected { background: var(--primary); color: var(--text-inverse); border-color: var(--primary); }
+    .tag-custom-row { display: flex; gap: var(--space-2); }
+    .tag-custom-row input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); }
+    .tag-custom-row input:focus { border-color: var(--primary); outline: none; }
+    .btn-sm { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--surface-dynamic); color: var(--text); font-size: var(--text-sm); font-weight: 500; border: 1px solid var(--border); }
+    .btn-sm:hover { background: var(--primary-highlight); color: var(--primary); border-color: var(--primary); }
+    .selected-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); min-height: 28px; }
+    .selected-tag { display: flex; align-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); border-radius: var(--radius-full); background: var(--primary-highlight); color: var(--primary); font-size: var(--text-xs); font-weight: 500; border: 1px solid color-mix(in oklch, var(--primary) 30%, transparent); }
+    .selected-tag button { display: flex; align-items: center; color: inherit; opacity: 0.7; }
+    .selected-tag button:hover { opacity: 1; }
+
+    /* CONFIG */
+    .config-toggle { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); font-size: var(--text-sm); font-weight: 500; color: var(--text-muted); margin-bottom: var(--space-2); cursor: pointer; width: 100%; }
+    .config-toggle:hover { background: var(--surface-dynamic); color: var(--text); }
+    .config-toggle svg { transition: transform var(--transition); }
+    .config-toggle.open svg { transform: rotate(180deg); }
+    .config-panel { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); padding: var(--space-4); margin-bottom: var(--space-4); display: none; }
+    .config-panel.open { display: block; }
+    .config-section-title { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-faint); margin-bottom: var(--space-3); margin-top: var(--space-1); }
+    .config-field { margin-bottom: var(--space-3); }
+    .config-field:last-child { margin-bottom: 0; }
+    .config-field label { display: block; font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: var(--space-1); }
+    .config-field input { width: 100%; background: var(--surface-offset); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); font-family: SFMono-Regular, Consolas, monospace; }
+    .config-field input:focus { border-color: var(--primary); outline: none; }
+    .config-field input::placeholder { color: var(--text-faint); font-style: italic; font-family: var(--font-body); }
+    .config-hint { font-size: var(--text-xs); color: var(--text-faint); margin-top: var(--space-1); }
+    .config-hint a { color: var(--primary); text-decoration: none; }
+    .config-hint a:hover { text-decoration: underline; }
+    .config-divider { height: 1px; background: var(--divider); margin: var(--space-4) 0; }
+    .config-saved-badge { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--success); font-weight: 500; opacity: 0; transition: opacity 0.4s; }
+    .config-saved-badge.show { opacity: 1; }
+    .config-clear-btn { font-size: var(--text-xs); color: var(--error); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0; }
+    .config-clear-btn:hover { opacity: 0.75; }
+    .test-ok { color: var(--success); }
+    .test-err { color: var(--error); }
+
+    /* ENTRIES */
+    .entries-section { margin-top: var(--space-8); }
+    .entries-list { display: flex; flex-direction: column; gap: var(--space-3); }
+    .entry-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); box-shadow: var(--shadow-sm); }
+    .entry-meta { font-size: var(--text-xs); color: var(--text-faint); margin-bottom: var(--space-2); }
+    .entry-text { font-size: var(--text-sm); color: var(--text); margin-bottom: var(--space-2); line-height: 1.55; }
+    .entry-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
+    .entry-tag { padding: 2px var(--space-2); border-radius: var(--radius-full); font-size: var(--text-xs); background: var(--primary-highlight); color: var(--primary); }
+    .entry-status { font-size: var(--text-xs); font-weight: 600; }
+    .entry-status.sent { color: var(--success); }
+    .entry-status.pending { color: var(--warning); }
+    .entry-status.failed { color: var(--error); }
+    .empty-log { text-align: center; padding: var(--space-10) var(--space-4); color: var(--text-faint); font-size: var(--text-sm); }
+
+    /* SUBMIT */
+    .submit-area { position: fixed; bottom: 0; left: 0; right: 0; z-index: 99; padding: var(--space-4); background: linear-gradient(to top, var(--bg) 70%, transparent); }
+    .submit-inner { max-width: 640px; margin-inline: auto; }
+    .btn-submit { width: 100%; padding: var(--space-4); border-radius: var(--radius-xl); background: var(--primary); color: var(--text-inverse); font-size: var(--text-base); font-weight: 600; letter-spacing: -0.01em; box-shadow: var(--shadow-md); display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+    .btn-submit:hover { background: var(--primary-hover); box-shadow: var(--shadow-lg); }
+    .btn-submit:active { background: var(--primary-active); transform: scale(0.99); }
+    .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    /* TOAST */
+    .toast { position: fixed; bottom: calc(var(--space-16) + var(--space-10)); left: 50%; transform: translateX(-50%) translateY(20px); max-width: 90vw; padding: var(--space-3) var(--space-5); border-radius: var(--radius-full); font-size: var(--text-sm); font-weight: 500; box-shadow: var(--shadow-lg); z-index: 200; opacity: 0; transition: opacity 0.3s, transform 0.3s; pointer-events: none; white-space: nowrap; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.success { background: var(--success-bg); color: var(--success); }
+    .toast.error { background: var(--error-bg); color: var(--error); }
+    .toast.info { background: var(--primary-highlight); color: var(--primary); }
+
+    @media (min-width: 600px) { .recorder-card { padding: var(--space-8); } }
+    @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  </style>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+</script>
+
+<a href="#main-content" class="sr-only">Skip to content</a>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <svg class="logo-icon" aria-label="Ugly 200 logo" width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <rect x="2" y="2" width="24" height="24" rx="7" fill="currentColor" opacity="0.12"/>
+      <rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="1.5"/>
+      <rect x="12" y="6" width="4" height="10" rx="2" fill="currentColor"/>
+      <path d="M8 13c0 3.314 2.686 6 6 6s6-2.686 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="14" y1="19" x2="14" y2="22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="11" y1="22" x2="17" y2="22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span class="logo-text">Ugly <span>200</span></span>
+  </div>
+  <div class="header-actions">
+    <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="5"/>
+        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main id="main-content">
+
+  <!-- VOICE RECORDER -->
+  <div class="recorder-card" role="region" aria-label="Voice recorder">
+    <div id="noteStamp" style="align-self:stretch;display:flex;align-items:center;justify-content:space-between;font-size:var(--text-xs);color:var(--text-faint);border-bottom:1px solid var(--border);padding-bottom:var(--space-3);margin-bottom:var(--space-1);letter-spacing:0.02em;">
+      <span id="noteDate"></span>
+      <span id="noteAuthorStamp"></span>
+    </div>
+    <div class="recorder-btn-wrap">
+      <button class="record-btn" id="recordBtn" aria-label="Start recording" aria-pressed="false">
+        <svg id="micIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="2" width="6" height="12" rx="3"/>
+          <path d="M5 10c0 3.866 3.134 7 7 7s7-3.134 7-7"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+          <line x1="9" y1="21" x2="15" y2="21"/>
+        </svg>
+        <svg id="stopIcon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+      </button>
+    </div>
+    <div class="recorder-timer" id="recTimer">0:00</div>
+    <div class="recorder-status" id="recStatus">Tap to record voice note</div>
+  </div>
+
+  <!-- VOICE TRANSCRIPTION BOX -->
+  <div class="editable-box-wrap" id="transcriptWrap">
+    <div class="editable-box-header">
+      <div class="section-label" style="margin-bottom:0">Voice Transcription</div>
+      <div class="editable-box-actions">
+        <button class="btn-copy" id="copyTranscriptBtn" aria-label="Copy transcript">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+        <button class="btn-copy" id="clearTranscriptBtn" aria-label="Clear transcript" style="color:var(--error)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Clear
+        </button>
+      </div>
+    </div>
+    <div id="transcribingBar" class="transcribing-bar" style="display:none">
+      <div class="dot-spin"></div>
+      <span>Transcribing audio with Groq Whisper…</span>
+      <span class="groq-badge">🆓 free</span>
+    </div>
+    <textarea class="editable-textarea transcript-ta" id="transcriptText" placeholder="Transcript will appear here after recording… You can also type or paste text manually." rows="4"></textarea>
+  </div>
+
+  <!-- AI SUMMARY BOX -->
+  <div class="editable-box-wrap">
+    <div class="editable-box-header">
+      <div class="section-label" style="margin-bottom:0">AI Summary</div>
+      <div class="editable-box-actions">
+        <button class="btn-generate" id="generateSummaryBtn" aria-label="Generate AI summary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          Generate
+        </button>
+        <button class="btn-copy" id="copySummaryBtn" aria-label="Copy summary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+      </div>
+    </div>
+    <div id="summaryGenerating" class="summary-generating" style="display:none">
+      <div class="dot-spin"></div>
+      <span>Generating summary with AI…</span>
+    </div>
+    <textarea class="editable-textarea summary-ta" id="summaryText" placeholder="AI-generated summary will appear here… or type your own summary manually." rows="4"></textarea>
+  </div>
+
+  <!-- TEXT NOTE -->
+  <div class="text-area-wrap">
+    <div class="section-label">Note</div>
+    <textarea id="noteText" placeholder="Type or paste additional text here…" rows="4"></textarea>
+  </div>
+
+  <!-- MEDIA ATTACHMENTS -->
+  <div class="media-wrap">
+    <div class="section-label">Media</div>
+    <div class="media-actions">
+      <button class="btn-attach" id="photosBtn" aria-label="Attach photos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        Photo
+      </button>
+      <button class="btn-attach" id="videoGalleryBtn" aria-label="Attach video from gallery">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.888L15 14"/><rect x="1" y="6" width="14" height="12" rx="2"/>
+        </svg>
+        Video
+      </button>
+      <button class="btn-attach" id="videoBtn" aria-label="Add video link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+        </svg>
+        Video URL
+      </button>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
+    <input type="file" id="videoInput" accept="video/*" multiple style="display:none">
+    <div class="video-link-row" id="videoLinkRow" style="display:none">
+      <input type="url" id="videoLinkInput" placeholder="https://youtube.com/…" aria-label="Video URL">
+      <button class="btn-sm" id="addVideoLink">Add</button>
+    </div>
+    <div class="media-previews" id="mediaPreviews"></div>
+  </div>
+
+  <!-- TAGS -->
+  <div class="tags-wrap">
+    <div class="section-label">Tags</div>
+    <div class="tags-preset" id="tagsPreset" role="group" aria-label="Preset tags">
+      <button class="tag-chip" aria-pressed="false">FarmBox</button>
+      <button class="tag-chip" aria-pressed="false">Field Visit</button>
+      <button class="tag-chip" aria-pressed="false">Urgent</button>
+      <button class="tag-chip" aria-pressed="false">South Africa</button>
+      <button class="tag-chip" aria-pressed="false">Italy</button>
+      <button class="tag-chip" aria-pressed="false">France</button>
+      <button class="tag-chip" aria-pressed="false">Idea</button>
+      <button class="tag-chip" aria-pressed="false">Meeting</button>
+      <button class="tag-chip" aria-pressed="false">Follow-up</button>
+      <button class="tag-chip" aria-pressed="false">Greenhouse</button>
+      <button class="tag-chip" aria-pressed="false">Energy</button>
+      <button class="tag-chip" aria-pressed="false">Robotics</button>
+    </div>
+    <div class="tag-custom-row">
+      <input type="text" id="tagInput" placeholder="Add custom tag…" aria-label="Custom tag input" maxlength="30">
+      <button class="btn-sm" id="addTagBtn">Add</button>
+    </div>
+    <div class="selected-tags" id="selectedTags" aria-label="Selected tags" role="list"></div>
+  </div>
+
+  <!-- CONFIGURATION (was "Notion Configuration") -->
+  <div style="margin-bottom: var(--space-4);">
+    <button class="config-toggle" id="configToggle" aria-expanded="false" aria-controls="configPanel">
+      <span>⚙️ Configuration</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </button>
+    <div class="config-panel" id="configPanel" role="region" aria-label="Configuration settings">
+
+      <!-- GROQ KEY — now inside config, permanently saved -->
+      <div class="config-section-title">AI (Groq)</div>
+      <div class="config-field">
+        <label for="groqKey">Groq API Key</label>
+        <input type="password" id="groqKey" placeholder="gsk_…" autocomplete="off" spellcheck="false" aria-label="Groq API key">
+        <div class="config-hint">🆓 Free — get your key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com</a>. Powers transcription (Whisper) and summary (Llama 3).</div>
+      </div>
+
+      <div class="config-divider"></div>
+      <div class="config-section-title">Notion</div>
+
+      <div class="config-field">
+        <label for="authorName">Author Name</label>
+        <input type="text" id="authorName" placeholder="e.g. Marie" autocomplete="off" spellcheck="false">
+        <div class="config-hint">Permanently saved — sent to every entry automatically.</div>
+      </div>
+
+      <div class="config-field">
+        <label for="notionToken">Integration Token</label>
+        <input type="password" id="notionToken" placeholder="secret_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+        <div class="config-hint">Get yours at <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer">notion.so/my-integrations</a></div>
+      </div>
+      <div class="config-field">
+        <label for="notionDbId">Database ID</label>
+        <input type="text" id="notionDbId" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+        <div class="config-hint">From the database URL: notion.so/&lt;workspace&gt;/<strong>DATABASE_ID</strong>?v=…</div>
+      </div>
+
+      <!-- CREATE DATABASE HELPER -->
+      <div id="createDbWrap" style="margin-bottom:var(--space-3);padding:var(--space-3);background:var(--surface-offset);border:1px solid var(--border);border-radius:var(--radius-lg);">
+        <div style="font-size:var(--text-xs);font-weight:600;color:var(--text-muted);margin-bottom:var(--space-2);">🚀 No database yet? Create one automatically</div>
+        <div class="config-field" style="margin-bottom:var(--space-2);">
+          <label for="notionParentId" style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-muted);display:block;margin-bottom:var(--space-1);">Parent Page ID</label>
+          <input type="text" id="notionParentId" placeholder="Page ID from URL — notion.so/workspace/PAGE_ID" autocomplete="off" spellcheck="false">
+          <div class="config-hint">Open any Notion page → copy the 32-char ID from its URL. The integration must be connected to that page first.</div>
+        </div>
+        <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
+          <button class="btn-generate" id="createDbBtn" style="padding:var(--space-2) var(--space-4);font-size:var(--text-sm);">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Create Database
+          </button>
+          <div id="createDbResult" style="font-size:var(--text-xs);font-weight:600;display:none;align-items:center;gap:var(--space-1);"></div>
+        </div>
+      </div>
+      <div class="config-field">
+        <label for="notionTitleProp">Title Property Name</label>
+        <input type="text" id="notionTitleProp" placeholder="Name" value="Name">
+      </div>
+      <div class="config-field">
+        <label for="notionTagsProp">Tags Property Name</label>
+        <input type="text" id="notionTagsProp" placeholder="Tags" value="Tags">
+      </div>
+      <div class="config-field">
+        <label for="notionNoteProp">Note Property Name (optional)</label>
+        <input type="text" id="notionNoteProp" placeholder="Note" value="Note">
+      </div>
+      <div class="config-field">
+        <label for="notionAuthorProp">Author Property Name</label>
+        <input type="text" id="notionAuthorProp" placeholder="Author" value="Author">
+      </div>
+
+      <!-- TEST BUTTONS -->
+      <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3);align-items:center;flex-wrap:wrap;">
+        <button class="btn-generate" id="testNotionBtn" style="padding:var(--space-2) var(--space-4);font-size:var(--text-sm);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Test Notion
+        </button>
+        <div id="notionTestResult" style="font-size:var(--text-xs);font-weight:600;display:none;align-items:center;gap:var(--space-1);"></div>
+      </div>
+
+      <!-- SAVE/CLEAR -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-4);padding-top:var(--space-3);border-top:1px solid var(--divider);">
+        <button class="btn-sm" id="saveConfigBtn" style="background:var(--primary);color:var(--text-inverse);border-color:var(--primary);font-weight:600;">
+          💾 Save Config on This Device
+        </button>
+        <div style="display:flex;align-items:center;gap:var(--space-3);">
+          <span class="config-saved-badge" id="configSavedBadge">✓ Saved</span>
+          <button class="config-clear-btn" id="clearConfigBtn">Clear saved</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOCAL ENTRIES LOG -->
+  <div class="entries-section">
+    <div class="section-label">Recent Entries</div>
+    <div class="entries-list" id="entriesList">
+      <div class="empty-log" id="emptyLog">No entries yet. Record your first voice note.</div>
+    </div>
+  </div>
+</main>
+
+<!-- FIXED SUBMIT BAR -->
+<div class="submit-area">
+  <div class="submit-inner">
+    <button class="btn-submit" id="submitBtn" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+      Send to Notion
+    </button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+// ─── CONFIG KEYS ─────────────────────────────────────────────
+const LS_KEY = 'ugly200_config';
+
+const CONFIG_FIELDS = [
+  'groqKey',
+  'authorName',
+  'notionToken',
+  'notionDbId',
+  'notionTitleProp',
+  'notionTagsProp',
+  'notionNoteProp',
+  'notionAuthorProp',
+];
+
+// ─── LOAD SAVED CONFIG ────────────────────────────────────────
+function loadConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    CONFIG_FIELDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && saved[id] !== undefined) el.value = saved[id];
+    });
+  } catch(e) {}
+}
+
+function saveConfig() {
+  const data = {};
+  CONFIG_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) data[id] = el.value;
+  });
+  localStorage.setItem(LS_KEY, JSON.stringify(data));
+  const badge = document.getElementById('configSavedBadge');
+  badge.classList.add('show');
+  setTimeout(() => badge.classList.remove('show'), 2500);
+}
+
+function clearConfig() {
+  localStorage.removeItem(LS_KEY);
+  CONFIG_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !['notionTitleProp','notionTagsProp','notionNoteProp'].includes(id)) {
+      el.value = '';
+    }
+  });
+  showToast('Config cleared from this device', 'info');
+}
+
+// Auto-save groqKey and authorName whenever they change
+document.getElementById('groqKey').addEventListener('change', saveConfig);
+document.getElementById('authorName').addEventListener('change', saveConfig);
+
+document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
+document.getElementById('clearConfigBtn').addEventListener('click', clearConfig);
+
+// ─── NOTE START TIME ─────────────────────────────────────────
+// Captured when the page loads (or after each submission reset).
+// This is the date sent to Notion — reflects when the note started.
+let noteStartTime = new Date();
+
+function renderNoteStamp() {
+  const d = noteStartTime;
+  const dateStr = d.toLocaleDateString(undefined, { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+  const timeStr = d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+  document.getElementById('noteDate').textContent = `${dateStr} · ${timeStr}`;
+  const author = document.getElementById('authorName')?.value.trim();
+  document.getElementById('noteAuthorStamp').textContent = author || '';
+}
+
+// Re-render stamp if author name changes live
+document.getElementById('authorName').addEventListener('input', renderNoteStamp);
+const html = document.documentElement;
+const themeToggle = document.getElementById('themeToggle');
+let theme = localStorage.getItem('ugly200_theme') ||
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+html.setAttribute('data-theme', theme);
+
+themeToggle.addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', theme);
+  localStorage.setItem('ugly200_theme', theme);
+});
+
+// ─── CONFIG PANEL TOGGLE ─────────────────────────────────────
+const configToggle = document.getElementById('configToggle');
+const configPanel  = document.getElementById('configPanel');
+configToggle.addEventListener('click', () => {
+  const open = configPanel.classList.toggle('open');
+  configToggle.classList.toggle('open', open);
+  configToggle.setAttribute('aria-expanded', open);
+});
+
+// ─── TOAST ───────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ─── RECORDING ───────────────────────────────────────────────
+let mediaRecorder = null;
+let audioChunks = [];
+let timerInterval = null;
+let recordingSeconds = 0;
+let recordedBlob = null;
+
+const recordBtn  = document.getElementById('recordBtn');
+const micIcon    = document.getElementById('micIcon');
+const stopIcon   = document.getElementById('stopIcon');
+const recTimer   = document.getElementById('recTimer');
+const recStatus  = document.getElementById('recStatus');
+
+function formatTime(s) {
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+recordBtn.addEventListener('click', async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+});
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = handleRecordingStop;
+    mediaRecorder.start();
+
+    recordBtn.classList.add('recording');
+    micIcon.style.display = 'none';
+    stopIcon.style.display = '';
+    recordBtn.setAttribute('aria-pressed', 'true');
+    recStatus.textContent = 'Recording… tap to stop';
+    recTimer.classList.add('visible');
+    recordingSeconds = 0;
+    recTimer.textContent = formatTime(0);
+    timerInterval = setInterval(() => {
+      recordingSeconds++;
+      recTimer.textContent = formatTime(recordingSeconds);
+    }, 1000);
+  } catch(e) {
+    showToast('Microphone access denied', 'error');
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder) {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  clearInterval(timerInterval);
+  recordBtn.classList.remove('recording');
+  micIcon.style.display = '';
+  stopIcon.style.display = 'none';
+  recordBtn.setAttribute('aria-pressed', 'false');
+  recTimer.classList.remove('visible');
+  recStatus.textContent = 'Transcribing…';
+}
+
+async function handleRecordingStop() {
+  recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+  recStatus.textContent = 'Tap to record voice note';
+  updateSubmitBtn();
+
+  const groqKey = document.getElementById('groqKey').value.trim();
+  if (!groqKey) {
+    showToast('Add Groq API key in Configuration to auto-transcribe', 'info');
+    return;
+  }
+  await transcribeAudio(recordedBlob, groqKey);
+}
+
+// ─── TRANSCRIPTION (GROQ WHISPER) ────────────────────────────
+async function transcribeAudio(blob, apiKey) {
+  const bar = document.getElementById('transcribingBar');
+  bar.style.display = 'flex';
+  try {
+    const fd = new FormData();
+    fd.append('file', blob, 'audio.webm');
+    fd.append('model', 'whisper-large-v3');
+
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: fd
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    document.getElementById('transcriptText').value = data.text || '';
+    updateSubmitBtn();
+    showToast('Transcription complete ✓', 'success');
+  } catch(e) {
+    showToast('Transcription failed — check Groq key', 'error');
+  } finally {
+    bar.style.display = 'none';
+  }
+}
+
+// ─── AI SUMMARY (GROQ LLAMA) ─────────────────────────────────
+document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
+  const transcript = document.getElementById('transcriptText').value.trim();
+  const note       = document.getElementById('noteText').value.trim();
+  const text       = [transcript, note].filter(Boolean).join('\n\n');
+  if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
+
+  const groqKey = document.getElementById('groqKey').value.trim();
+  if (!groqKey) { showToast('Add Groq API key in Configuration', 'error'); return; }
+
+  const gen = document.getElementById('summaryGenerating');
+  const btn = document.getElementById('generateSummaryBtn');
+  gen.style.display = 'flex';
+  btn.disabled = true;
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192',
+        messages: [
+          { role: 'system', content: 'You are a concise note summariser. Respond with a short, clear summary (2–5 sentences) of the user\'s note. No preamble.' },
+          { role: 'user', content: text }
+        ],
+        max_tokens: 300
+      })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    document.getElementById('summaryText').value = data.choices?.[0]?.message?.content?.trim() || '';
+    updateSubmitBtn();
+    showToast('Summary generated ✓', 'success');
+  } catch(e) {
+    showToast('Summary failed — check Groq key', 'error');
+  } finally {
+    gen.style.display = 'none';
+    btn.disabled = false;
+  }
+});
+
+// ─── COPY BUTTONS ────────────────────────────────────────────
+document.getElementById('copyTranscriptBtn').addEventListener('click', () => {
+  const v = document.getElementById('transcriptText').value;
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => showToast('Transcript copied', 'success'));
+});
+document.getElementById('copySummaryBtn').addEventListener('click', () => {
+  const v = document.getElementById('summaryText').value;
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => showToast('Summary copied', 'success'));
+});
+document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
+  document.getElementById('transcriptText').value = '';
+  updateSubmitBtn();
+});
+
+// ─── MEDIA ───────────────────────────────────────────────────
+let mediaFiles = []; // {type:'image'|'video'|'link', file?, url?, name?}
+
+document.getElementById('photosBtn').addEventListener('click', () => document.getElementById('photoInput').click());
+document.getElementById('videoGalleryBtn').addEventListener('click', () => document.getElementById('videoInput').click());
+document.getElementById('videoBtn').addEventListener('click', () => {
+  const row = document.getElementById('videoLinkRow');
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+});
+document.getElementById('addVideoLink').addEventListener('click', () => {
+  const url = document.getElementById('videoLinkInput').value.trim();
+  if (!url) return;
+  mediaFiles.push({ type: 'link', url });
+  document.getElementById('videoLinkInput').value = '';
+  document.getElementById('videoLinkRow').style.display = 'none';
+  renderMediaPreviews();
+  updateSubmitBtn();
+});
+
+document.getElementById('photoInput').addEventListener('change', e => {
+  [...e.target.files].forEach(f => mediaFiles.push({ type: 'image', file: f }));
+  e.target.value = '';
+  renderMediaPreviews();
+  updateSubmitBtn();
+});
+document.getElementById('videoInput').addEventListener('change', e => {
+  [...e.target.files].forEach(f => mediaFiles.push({ type: 'video', file: f, compress: true }));
+  e.target.value = '';
+  renderMediaPreviews();
+  updateSubmitBtn();
+});
+
+function renderMediaPreviews() {
+  const container = document.getElementById('mediaPreviews');
+  container.innerHTML = '';
+  mediaFiles.forEach((m, i) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'media-thumb';
+    if (m.type === 'image') {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(m.file);
+      img.alt = m.file.name;
+      thumb.appendChild(img);
+    } else if (m.type === 'video') {
+      const inner = document.createElement('div');
+      inner.className = 'video-thumb-inner';
+      const vid = document.createElement('video');
+      vid.src = URL.createObjectURL(m.file);
+      vid.muted = true;
+      inner.appendChild(vid);
+      const overlay = document.createElement('div');
+      overlay.className = 'video-play-overlay';
+      overlay.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      inner.appendChild(overlay);
+      thumb.appendChild(inner);
+      // Compress toggle pill
+      const tog = document.createElement('div');
+      tog.className = 'compress-toggle';
+      tog.innerHTML = `
+        <button class="ct-web${m.compress ? '' : ' inactive'}" title="Compress to 480p web quality">Web</button>
+        <button class="ct-orig${m.compress ? '' : ' active'}" title="Upload original file">Orig</button>
+      `;
+      tog.querySelector('.ct-web').addEventListener('click', e => { e.stopPropagation(); mediaFiles[i].compress = true; renderMediaPreviews(); });
+      tog.querySelector('.ct-orig').addEventListener('click', e => { e.stopPropagation(); mediaFiles[i].compress = false; renderMediaPreviews(); });
+      thumb.appendChild(tog);
+    } else {
+      const linkDiv = document.createElement('div');
+      linkDiv.className = 'video-link-thumb';
+      linkDiv.textContent = m.url;
+      thumb.appendChild(linkDiv);
+    }
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-media';
+    removeBtn.innerHTML = '✕';
+    removeBtn.setAttribute('aria-label', 'Remove media');
+    removeBtn.addEventListener('click', () => { mediaFiles.splice(i, 1); renderMediaPreviews(); updateSubmitBtn(); });
+    thumb.appendChild(removeBtn);
+    container.appendChild(thumb);
+  });
+}
+
+// ─── TAGS ────────────────────────────────────────────────────
+let selectedTags = new Set();
+
+document.getElementById('tagsPreset').addEventListener('click', e => {
+  const chip = e.target.closest('.tag-chip');
+  if (!chip) return;
+  const tag = chip.textContent.trim();
+  if (selectedTags.has(tag)) {
+    selectedTags.delete(tag);
+    chip.classList.remove('selected');
+    chip.setAttribute('aria-pressed', 'false');
+  } else {
+    selectedTags.add(tag);
+    chip.classList.add('selected');
+    chip.setAttribute('aria-pressed', 'true');
+  }
+  renderSelectedTags();
+  updateSubmitBtn();
+});
+
+document.getElementById('addTagBtn').addEventListener('click', addCustomTag);
+document.getElementById('tagInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag(); } });
+
+function addCustomTag() {
+  const input = document.getElementById('tagInput');
+  const tag = input.value.trim();
+  if (!tag || selectedTags.has(tag)) { input.value = ''; return; }
+  selectedTags.add(tag);
+  input.value = '';
+  renderSelectedTags();
+  updateSubmitBtn();
+}
+
+function renderSelectedTags() {
+  const container = document.getElementById('selectedTags');
+  container.innerHTML = '';
+  selectedTags.forEach(tag => {
+    const el = document.createElement('span');
+    el.className = 'selected-tag';
+    el.setAttribute('role', 'listitem');
+    el.innerHTML = `${tag}<button aria-label="Remove tag ${tag}">✕</button>`;
+    el.querySelector('button').addEventListener('click', () => {
+      selectedTags.delete(tag);
+      // uncheck preset chip if present
+      document.querySelectorAll('#tagsPreset .tag-chip').forEach(c => {
+        if (c.textContent.trim() === tag) { c.classList.remove('selected'); c.setAttribute('aria-pressed','false'); }
+      });
+      renderSelectedTags();
+      updateSubmitBtn();
+    });
+    container.appendChild(el);
+  });
+}
+
+// ─── SUBMIT BUTTON STATE ─────────────────────────────────────
+function updateSubmitBtn() {
+  const hasContent = document.getElementById('transcriptText').value.trim() ||
+                     document.getElementById('summaryText').value.trim() ||
+                     document.getElementById('noteText').value.trim() ||
+                     mediaFiles.length > 0 ||
+                     selectedTags.size > 0;
+  document.getElementById('submitBtn').disabled = !hasContent;
+}
+
+['transcriptText','summaryText','noteText'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updateSubmitBtn)
+);
+
+// ─── NOTION SUBMIT ───────────────────────────────────────────
+document.getElementById('submitBtn').addEventListener('click', submitToNotion);
+
+// ─── VIDEO COMPRESSION — FIXED BITRATE ───────────────────────
+// Videos are ALWAYS compressed before upload.
+// Target: 600 kbps video, max 480p — good enough for web viewing,
+// small enough for Notion free (5 MB) on clips up to ~1 min.
+// Speed: real-time (1 min video ≈ 1 min to process).
+
+const VIDEO_BITRATE = 600_000;  // 600 kbps — tweak here if needed
+const MAX_HEIGHT    = 480;      // cap at 480p
+const FPS           = 24;
+
+async function compressVideo(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(file);
+    video.muted = true;
+    video.playsInline = true;
+
+    video.onloadedmetadata = () => {
+      const dur = video.duration;
+      if (!dur || !isFinite(dur)) { reject(new Error('Cannot read video duration')); return; }
+
+      // Scale down to max 480p, keep aspect ratio
+      const scale = Math.min(1, MAX_HEIGHT / video.videoHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(video.videoWidth  * scale / 2) * 2;
+      canvas.height = Math.round(video.videoHeight * scale / 2) * 2;
+      const ctx = canvas.getContext('2d');
+
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9' : 'video/webm';
+      const stream   = canvas.captureStream(FPS);
+      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: VIDEO_BITRATE });
+
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        URL.revokeObjectURL(video.src);
+        resolve(new Blob(chunks, { type: 'video/webm' }));
+      };
+
+      recorder.start(200);
+      video.currentTime = 0;
+      video.play().catch(reject);
+
+      let raf;
+      const draw = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        onProgress?.(video.currentTime / dur);
+        raf = requestAnimationFrame(draw);
+      };
+      video.onplay  = () => { cancelAnimationFrame(raf); draw(); };
+      video.onended = () => { cancelAnimationFrame(raf); recorder.stop(); };
+      video.onerror = reject;
+    };
+    video.onerror = reject;
+  });
+}
+
+// ─── NOTION FILE UPLOAD ───────────────────────────────────────
+// Videos → always compress first, then single-part upload.
+// Images / other files → upload as-is.
+async function uploadFileToNotion(file, token, onStatus, compress = true) {
+  let uploadFile = file;
+  let uploadName = file.name;
+
+  if (file.type.startsWith('video/') && compress) {
+    onStatus?.(`Compressing… 0%`, 0);
+    const compressed = await compressVideo(file,
+      p => onStatus?.(`Compressing… ${Math.round(p * 100)}%`, p)
+    );
+    const compMB = (compressed.size / 1024 / 1024).toFixed(1);
+    uploadFile = compressed;
+    uploadName = file.name.replace(/\.[^.]+$/, '') + '_web.webm';
+    onStatus?.(`Uploading ${compMB} MB…`, 0.95);
+  } else {
+    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+    onStatus?.(`Uploading ${file.name} (${sizeMB} MB)…`, 0);
+  }
+
+  // Create upload slot
+  const cr = await fetch('https://api.notion.com/v1/file_uploads', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: uploadName, content_type: uploadFile.type }),
+  });
+  if (!cr.ok) { const e = await cr.json().catch(()=>{}); throw new Error(e?.message || `Create failed (${cr.status})`); }
+  const { id } = await cr.json();
+
+  // Send file
+  const fd = new FormData();
+  fd.append('file', uploadFile, uploadName);
+  const sr = await fetch(`https://api.notion.com/v1/file_uploads/${id}/send`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28' },
+    body: fd,
+  });
+  if (!sr.ok) { const e = await sr.json().catch(()=>{}); throw new Error(e?.message || `Upload failed (${sr.status})`); }
+  return id;
+}
+
+async function submitToNotion() {
+  const token      = document.getElementById('notionToken').value.trim();
+  const dbId       = document.getElementById('notionDbId').value.trim();
+  const titleProp  = document.getElementById('notionTitleProp').value.trim() || 'Name';
+  const tagsProp   = document.getElementById('notionTagsProp').value.trim() || 'Tags';
+  const noteProp   = document.getElementById('notionNoteProp').value.trim() || 'Note';
+  const authorProp = document.getElementById('notionAuthorProp').value.trim() || 'Author';
+  const authorName = document.getElementById('authorName').value.trim();
+
+  if (!token || !dbId) {
+    showToast('Add Notion token & database ID in Configuration', 'error');
+    document.getElementById('configPanel').classList.add('open');
+    document.getElementById('configToggle').classList.add('open');
+    return;
+  }
+
+  const transcript = document.getElementById('transcriptText').value.trim();
+  const summary    = document.getElementById('summaryText').value.trim();
+  const note       = document.getElementById('noteText').value.trim();
+  const title      = summary || transcript.slice(0, 80) || note.slice(0, 80) || 'Voice Note';
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Sending…`;
+
+  // Upload files directly to Notion
+  const children = [];
+
+  if (transcript) {
+    children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Transcript' } }] } });
+    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:transcript } }] } });
+  }
+  if (note) {
+    children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Note' } }] } });
+    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:note } }] } });
+  }
+
+  // Upload media files directly to Notion, then build blocks
+  if (mediaFiles.length) {
+    children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Media' } }] } });
+    for (const m of mediaFiles) {
+      if (m.type === 'link') {
+        // External video URL → embed block
+        children.push({ object:'block', type:'embed', embed:{ url: m.url } });
+      } else {
+        // Real file → smart upload (compress or multipart as needed)
+        try {
+          const uploadId = await uploadFileToNotion(m.file, token,
+            (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
+            m.compress
+          );
+          const isImage = m.file.type.startsWith('image/');
+          const isVideo = m.file.type.startsWith('video/');
+          if (isImage) {
+            children.push({ object:'block', type:'image', image:{ type:'file_upload', file_upload:{ id: uploadId } } });
+          } else if (isVideo) {
+            children.push({ object:'block', type:'video', video:{ type:'file_upload', file_upload:{ id: uploadId } } });
+          } else {
+            children.push({ object:'block', type:'file', file:{ type:'file_upload', file_upload:{ id: uploadId }, caption:[{ type:'text', text:{ content: m.file.name } }] } });
+          }
+        } catch(e) {
+          showToast(`Upload failed for ${m.file.name}: ${e.message}`, 'error');
+          // Fall back to a text note so the entry isn't lost
+          children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[Upload failed: ${m.file.name}]` } }] } });
+        }
+      }
+    }
+  }
+
+  const properties = {
+    [titleProp]: { title: [{ text: { content: title } }] },
+    'Date':      { date: { start: noteStartTime.toISOString() } },
+  };
+  if (authorName) {
+    properties[authorProp] = { rich_text: [{ text: { content: authorName } }] };
+  }
+  if (selectedTags.size) {
+    properties[tagsProp] = { multi_select: [...selectedTags].map(name => ({ name })) };
+  }
+  if (note && noteProp) {
+    properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
+  }
+
+  btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
+
+  try {
+    const res = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parent: { database_id: dbId }, properties, children }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Notion error');
+    }
+    showToast('Sent to Notion ✓', 'success');
+    saveEntry({ title, transcript, note, tags: [...selectedTags], status: 'sent' });
+    resetForm();
+  } catch(e) {
+    showToast(`Failed: ${e.message}`, 'error');
+    saveEntry({ title, transcript, note, tags: [...selectedTags], status: 'failed' });
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to Notion`;
+    updateSubmitBtn();
+  }
+}
+
+function resetForm() {
+  document.getElementById('transcriptText').value = '';
+  document.getElementById('summaryText').value = '';
+  document.getElementById('noteText').value = '';
+  mediaFiles = [];
+  renderMediaPreviews();
+  selectedTags.clear();
+  document.querySelectorAll('.tag-chip.selected').forEach(c => {
+    c.classList.remove('selected'); c.setAttribute('aria-pressed','false');
+  });
+  renderSelectedTags();
+  recordedBlob = null;
+  noteStartTime = new Date(); // fresh timestamp for the next note
+  renderNoteStamp();
+  updateSubmitBtn();
+}
+
+// ─── ENTRIES LOG ─────────────────────────────────────────────
+const ENTRIES_KEY = 'ugly200_entries';
+
+function saveEntry(entry) {
+  const entries = getEntries();
+  entries.unshift({ ...entry, date: new Date().toISOString(), id: Date.now() });
+  localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries.slice(0, 50)));
+  renderEntries();
+}
+
+function getEntries() {
+  try { return JSON.parse(localStorage.getItem(ENTRIES_KEY) || '[]'); } catch { return []; }
+}
+
+function renderEntries() {
+  const list    = document.getElementById('entriesList');
+  const empty   = document.getElementById('emptyLog');
+  const entries = getEntries();
+  // Remove old cards
+  list.querySelectorAll('.entry-card').forEach(el => el.remove());
+
+  if (!entries.length) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  entries.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'entry-card';
+    const date = new Date(entry.date).toLocaleString();
+    const tagsHtml = (entry.tags||[]).map(t => `<span class="entry-tag">${t}</span>`).join('');
+    card.innerHTML = `
+      <div class="entry-meta">${date}</div>
+      <div class="entry-text">${(entry.transcript || entry.note || '').slice(0, 200) || '(no text)'}</div>
+      ${tagsHtml ? `<div class="entry-tags">${tagsHtml}</div>` : ''}
+      <div class="entry-status ${entry.status}">${entry.status === 'sent' ? '✓ Sent to Notion' : entry.status === 'failed' ? '✗ Failed' : '⏳ Pending'}</div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+// ─── CREATE DATABASE ──────────────────────────────────────────
+const PRESET_TAGS = [
+  'FarmBox','Field Visit','Urgent','South Africa','Italy','France',
+  'Idea','Meeting','Follow-up','Greenhouse','Energy','Robotics'
+];
+const NOTION_COLORS = ['blue','brown','default','gray','green','orange','pink','purple','red','yellow'];
+function tagColor(name) {
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return NOTION_COLORS[Math.abs(h) % NOTION_COLORS.length];
+}
+
+document.getElementById('createDbBtn').addEventListener('click', async () => {
+  const token    = document.getElementById('notionToken').value.trim();
+  const parentId = document.getElementById('notionParentId').value.trim().replace(/-/g, '');
+  const btn      = document.getElementById('createDbBtn');
+  const result   = document.getElementById('createDbResult');
+
+  if (!token)    { showToast('Enter your Notion token first', 'error'); return; }
+  if (!parentId) { showToast('Enter a Parent Page ID', 'error'); return; }
+  if (parentId.length !== 32) { showToast(`Page ID should be 32 chars — got ${parentId.length}`, 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = `<div class="dot-spin"></div> Creating…`;
+  result.style.display = 'none';
+
+  try {
+    const res = await fetch('https://api.notion.com/v1/databases', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        parent: { type: 'page_id', page_id: parentId },
+        icon: { type: 'emoji', emoji: '🎙️' },
+        title: [{ type: 'text', text: { content: 'Voice Notes — Ugly 200' } }],
+        properties: {
+          'Name':   { title: {} },
+          'Date':   { date: {} },
+          'Author': { rich_text: {} },
+          'Tags':   { multi_select: { options: PRESET_TAGS.map(n => ({ name: n, color: tagColor(n) })) } },
+          'Note':   { rich_text: {} },
+        }
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || `Error ${res.status}`);
+
+    // Auto-fill the Database ID field and save
+    const dbId = data.id.replace(/-/g, '');
+    document.getElementById('notionDbId').value = dbId;
+    saveConfig();
+
+    result.style.display = 'flex';
+    result.className = 'test-ok';
+    result.textContent = '✓ Database created — ID saved!';
+    showToast('Database created ✓ — ID filled automatically', 'success');
+    document.getElementById('notionParentId').value = '';
+
+  } catch(e) {
+    result.style.display = 'flex';
+    result.className = 'test-err';
+    result.textContent = `✗ ${e.message}`;
+    showToast(`Failed: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Create Database`;
+  }
+});
+
+// ─── TEST CONNECTION ──────────────────────────────────────────
+document.getElementById('testNotionBtn').addEventListener('click', async () => {
+  const token  = document.getElementById('notionToken').value.trim();
+  const dbId   = document.getElementById('notionDbId').value.trim();
+  const result = document.getElementById('notionTestResult');
+  result.style.display = 'flex';
+  result.textContent = '…';
+  try {
+    const res = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28' }
+    });
+    if (res.ok) { result.textContent = '✓ Connected'; result.className = 'test-ok'; }
+    else { result.textContent = `✗ ${res.status}`; result.className = 'test-err'; }
+  } catch(e) { result.textContent = '✗ Network error'; result.className = 'test-err'; }
+});
+
+// ─── INIT ─────────────────────────────────────────────────────
+loadConfig();
+renderNoteStamp();
+renderEntries();
+updateSubmitBtn();
+</script>
+</body>
+</html>
