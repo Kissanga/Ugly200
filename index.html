@@ -1027,7 +1027,7 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
   }
 
   // Create upload slot
-  const cr = await fetch('https://api.notion.com/v1/file_uploads', {
+  const cr = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/file_uploads', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: uploadName, content_type: uploadFile.type }),
@@ -1038,7 +1038,7 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
   // Send file
   const fd = new FormData();
   fd.append('file', uploadFile, uploadName);
-  const sr = await fetch(`https://api.notion.com/v1/file_uploads/${id}/send`, {
+  const sr = await fetch(`https://notion-proxy.francesco-955.workers.dev/v1/file_uploads/${id}/send`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28' },
     body: fd,
@@ -1133,7 +1133,7 @@ async function submitToNotion() {
   btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
 
   try {
-    const res = await fetch('https://api.notion.com/v1/pages', {
+    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/pages', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -1241,7 +1241,7 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
   result.style.display = 'none';
 
   try {
-    const res = await fetch('https://api.notion.com/v1/databases', {
+    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/databases', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -1295,7 +1295,7 @@ document.getElementById('testNotionBtn').addEventListener('click', async () => {
   result.style.display = 'flex';
   result.textContent = '…';
   try {
-    const res = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
+    const res = await fetch(`https://notion-proxy.francesco-955.workers.dev/v1/databases/${dbId}`, {
       headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28' }
     });
     if (res.ok) { result.textContent = '✓ Connected'; result.className = 'test-ok'; }
