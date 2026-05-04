@@ -757,7 +757,7 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
       method: 'POST',
       headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama3-8b-8192',
+        model: 'llama-3.1-8b-instant',
         messages: [
           { role: 'system', content: 'You are a concise note summariser. Respond with a short, clear summary (2–5 sentences) of the user\'s note. No preamble.' },
           { role: 'user', content: text }
