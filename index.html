@@ -366,6 +366,10 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           Generate
         </button>
+        <button class="btn-copy" id="summaryModeBtn" aria-label="Toggle summary mode" title="Switch between paragraph and bullet points" style="opacity:0.7">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+          Bullets
+        </button>
         <button class="btn-copy" id="copySummaryBtn" aria-label="Copy summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
@@ -812,6 +816,17 @@ async function transcribeAudio(blob, apiKey) {
 }
 
 // ─── AI SUMMARY (GROQ LLAMA) ─────────────────────────────────
+let summaryMode = 'paragraph'; // 'paragraph' | 'bullets'
+
+const summaryModeBtn = document.getElementById('summaryModeBtn');
+summaryModeBtn.addEventListener('click', () => {
+  summaryMode = summaryMode === 'paragraph' ? 'bullets' : 'paragraph';
+  const isBullets = summaryMode === 'bullets';
+  summaryModeBtn.style.opacity = isBullets ? '1' : '0.7';
+  summaryModeBtn.style.color = isBullets ? 'var(--primary)' : '';
+  summaryModeBtn.title = isBullets ? 'Switch to paragraph mode' : 'Switch to bullet points';
+});
+
 document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
   const transcript = document.getElementById('transcriptText').value.trim();
   const note       = document.getElementById('noteText').value.trim();
@@ -820,6 +835,10 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
 
   const groqKey = document.getElementById('groqKey').value.trim();
   if (!groqKey) { showToast('Add Groq API key in Configuration', 'error'); return; }
+
+  const systemPrompt = summaryMode === 'bullets'
+    ? 'You are a concise note summariser. Respond with 3–6 short bullet points (use • as the bullet character) capturing the key points of the user\'s note. No preamble, no extra text.'
+    : 'You are a concise note summariser. Respond with a short, clear summary (2–5 sentences) of the user\'s note. No preamble.';
 
   const gen = document.getElementById('summaryGenerating');
   const btn = document.getElementById('generateSummaryBtn');
@@ -832,7 +851,7 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         messages: [
-          { role: 'system', content: 'You are a concise note summariser. Respond with a short, clear summary (2–5 sentences) of the user\'s note. No preamble.' },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: text }
         ],
         max_tokens: 300
