@@ -431,7 +431,7 @@
 
   <!-- CONFIGURATION (was "Notion Configuration") -->
   <div style="margin-bottom: var(--space-4);">
-    <button class="config-toggle" id="configToggle" aria-expanded="false" aria-controls="configPanel">
+    <button class="config-toggle" id="configToggle" aria-expanded="false" aria-controls="configPanel" onclick="var p=document.getElementById('configPanel'),o=p.classList.toggle('open');this.classList.toggle('open',o);this.setAttribute('aria-expanded',o)">
       <span>⚙️ Configuration</span>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
@@ -666,14 +666,6 @@ document.querySelectorAll('.tab-btn').forEach(btn =>
   btn.addEventListener('click', () => setActiveTab(btn.dataset.tab))
 );
 
-// ─── CONFIG PANEL TOGGLE ─────────────────────────────────────
-const configToggle = document.getElementById('configToggle');
-const configPanel  = document.getElementById('configPanel');
-configToggle.addEventListener('click', () => {
-  const open = configPanel.classList.toggle('open');
-  configToggle.classList.toggle('open', open);
-  configToggle.setAttribute('aria-expanded', open);
-});
 
 // ─── TOAST ───────────────────────────────────────────────────
 let toastTimer;
