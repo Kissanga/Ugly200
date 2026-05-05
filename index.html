@@ -383,6 +383,36 @@
     <textarea class="editable-textarea summary-ta" id="summaryText" placeholder="AI-generated summary will appear here… or type your own summary manually." rows="4"></textarea>
   </div>
 
+  <!-- VIDEO AI SUMMARY BOX -->
+  <div class="editable-box-wrap">
+    <div class="editable-box-header">
+      <div class="section-label" style="margin-bottom:0">Video AI Summary</div>
+      <div class="editable-box-actions">
+        <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate video AI summary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          Generate
+        </button>
+        <button class="btn-copy" id="videoSummaryModeBtn" aria-label="Toggle video summary mode" title="Switch between paragraph and bullet points" style="opacity:0.7">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+          Bullets
+        </button>
+        <button class="btn-copy" id="copyVideoSummaryBtn" aria-label="Copy video summary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </button>
+      </div>
+    </div>
+    <input type="url" id="videoSummaryUrl" placeholder="Video URL (YouTube, Vimeo…)" autocomplete="off"
+      style="width:100%;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);font-size:var(--text-sm);color:var(--text-primary);outline:none;transition:border-color var(--transition);margin-bottom:var(--space-2)"
+      onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+    <textarea class="editable-textarea" id="videoTranscriptText" placeholder="Paste the video transcript or notes here, then hit Generate…" rows="3" style="margin-bottom:var(--space-2)"></textarea>
+    <div id="videoSummaryGenerating" class="summary-generating" style="display:none">
+      <div class="dot-spin"></div>
+      <span>Generating video summary with AI…</span>
+    </div>
+    <textarea class="editable-textarea summary-ta" id="videoSummaryText" placeholder="AI-generated video summary will appear here…" rows="3"></textarea>
+  </div>
+
   <!-- TEXT NOTE -->
   <div class="text-area-wrap">
     <div class="section-label">Note</div>
@@ -881,6 +911,71 @@ document.getElementById('copySummaryBtn').addEventListener('click', () => {
   if (!v) return;
   navigator.clipboard.writeText(v).then(() => showToast('Summary copied', 'success'));
 });
+
+// ─── VIDEO AI SUMMARY ─────────────────────────────────────────
+let videoSummaryMode = 'bullets'; // default to bullets for video
+
+const videoSummaryModeBtn = document.getElementById('videoSummaryModeBtn');
+// Start active (bullets on by default)
+videoSummaryModeBtn.style.opacity = '1';
+videoSummaryModeBtn.style.color = 'var(--primary)';
+videoSummaryModeBtn.addEventListener('click', () => {
+  videoSummaryMode = videoSummaryMode === 'bullets' ? 'paragraph' : 'bullets';
+  const isBullets = videoSummaryMode === 'bullets';
+  videoSummaryModeBtn.style.opacity = isBullets ? '1' : '0.7';
+  videoSummaryModeBtn.style.color = isBullets ? 'var(--primary)' : '';
+  videoSummaryModeBtn.title = isBullets ? 'Switch to paragraph mode' : 'Switch to bullet points';
+});
+
+document.getElementById('generateVideoSummaryBtn').addEventListener('click', async () => {
+  const transcript = document.getElementById('videoTranscriptText').value.trim();
+  const url        = document.getElementById('videoSummaryUrl').value.trim();
+  const text       = [url ? `Video: ${url}` : '', transcript].filter(Boolean).join('\n\n');
+  if (!transcript) { showToast('Paste the video transcript or notes first', 'error'); return; }
+
+  const groqKey = document.getElementById('groqKey').value.trim();
+  if (!groqKey) { showToast('Add Groq API key in Configuration', 'error'); return; }
+
+  const systemPrompt = videoSummaryMode === 'bullets'
+    ? 'You are a concise video content summariser. Respond with 3–7 short bullet points (use • as the bullet character) capturing the key insights and takeaways from the video content provided. No preamble, no extra text.'
+    : 'You are a concise video content summariser. Respond with a short, clear summary (2–5 sentences) of the video content provided. No preamble.';
+
+  const gen = document.getElementById('videoSummaryGenerating');
+  const btn = document.getElementById('generateVideoSummaryBtn');
+  gen.style.display = 'flex';
+  btn.disabled = true;
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: transcript }
+        ],
+        max_tokens: 400
+      })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    document.getElementById('videoSummaryText').value = data.choices?.[0]?.message?.content?.trim() || '';
+    updateSubmitBtn();
+    showToast('Video summary generated ✓', 'success');
+  } catch(e) {
+    showToast('Video summary failed — check Groq key', 'error');
+  } finally {
+    gen.style.display = 'none';
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('copyVideoSummaryBtn').addEventListener('click', () => {
+  const v = document.getElementById('videoSummaryText').value;
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => showToast('Video summary copied', 'success'));
+});
+
 document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
   document.getElementById('transcriptText').value = '';
   updateSubmitBtn();
@@ -1195,6 +1290,13 @@ async function submitToNotion() {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Note' } }] } });
     children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:note } }] } });
   }
+  const videoUrl     = document.getElementById('videoSummaryUrl').value.trim();
+  const videoSummary = document.getElementById('videoSummaryText').value.trim();
+  if (videoUrl || videoSummary) {
+    children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Video Summary' } }] } });
+    if (videoUrl) children.push({ object:'block', type:'bookmark', bookmark:{ url: videoUrl } });
+    if (videoSummary) children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:videoSummary } }] } });
+  }
 
   // Upload media files directly to Notion, then build blocks
   if (mediaFiles.length) {
@@ -1286,6 +1388,9 @@ function resetForm() {
   document.getElementById('transcriptText').value = '';
   document.getElementById('summaryText').value = '';
   document.getElementById('noteText').value = '';
+  document.getElementById('videoSummaryUrl').value = '';
+  document.getElementById('videoTranscriptText').value = '';
+  document.getElementById('videoSummaryText').value = '';
   mediaFiles = [];
   renderMediaPreviews();
   // Clear active tab's field values
