@@ -665,7 +665,6 @@ function setActiveTab(tab) {
 document.querySelectorAll('.tab-btn').forEach(btn =>
   btn.addEventListener('click', () => setActiveTab(btn.dataset.tab))
 );
-setActiveTab(activeTab);
 
 // ─── CONFIG PANEL TOGGLE ─────────────────────────────────────
 const configToggle = document.getElementById('configToggle');
@@ -1360,6 +1359,7 @@ loadConfig();
 renderNoteStamp();
 renderEntries();
 updateSubmitBtn();
+setActiveTab(activeTab);
 </script>
 </body>
 </html>
