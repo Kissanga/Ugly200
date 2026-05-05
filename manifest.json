@@ -1,13 +1,18 @@
 {
+  "id": "/",
   "name": "Ugly 200 – Voice to Notion",
   "short_name": "Ugly 200",
   "description": "Record voice notes and send them directly to Notion",
-  "start_url": ".",
-  "scope": ".",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait",
   "theme_color": "#01696f",
   "background_color": "#171614",
+  "categories": ["productivity", "utilities"],
   "icons": [
     {
       "src": "icon-192.png",
@@ -33,5 +38,15 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "New Voice Note",
+      "short_name": "Record",
+      "description": "Start recording a new voice note",
+      "url": "./?action=record",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
 }
