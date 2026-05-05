@@ -385,6 +385,9 @@
     <textarea id="noteText" placeholder="Type or paste additional text here…" rows="4"></textarea>
   </div>
 
+  <!-- PRE-MEDIA TAB FIELDS (e.g. Location for Ugly200) -->
+  <div id="tabFieldsPre" class="tab-fields-wrap"></div>
+
   <!-- MEDIA ATTACHMENTS -->
   <div class="media-wrap">
     <div class="section-label">Media</div>
@@ -576,7 +579,7 @@ const TAB_SCHEMAS = {
   ugly200: [
     { key: 'Tags',     type: 'multi_select', options: ['FarmBox','Field Visit','Urgent','South Africa','Italy','France','Greenhouse','Energy','Robotics','Follow-up'] },
     { key: 'Status',   type: 'select',       options: ['Open','In Progress','Done'] },
-    { key: 'Location', type: 'text' },
+    { key: 'Location', type: 'text', beforeMedia: true },
   ],
   sop: [
     { key: 'Category', type: 'select', options: ['Hardware','Software','Field Ops','Safety'] },
@@ -947,9 +950,11 @@ function renderMediaPreviews() {
 
 // ─── TAB-SPECIFIC FIELDS RENDERER ────────────────────────────
 function renderTabFields(tab) {
-  const container = document.getElementById('tabFields');
-  if (!container) return;
-  container.innerHTML = '';
+  const pre  = document.getElementById('tabFieldsPre');
+  const post = document.getElementById('tabFields');
+  if (!post) return;
+  if (pre) pre.innerHTML = '';
+  post.innerHTML = '';
   const schema = TAB_SCHEMAS[tab] || [];
 
   schema.forEach(field => {
@@ -1007,7 +1012,9 @@ function renderTabFields(tab) {
       });
       wrap.appendChild(input);
     }
-    container.appendChild(wrap);
+
+    const target = (field.beforeMedia && pre) ? pre : post;
+    target.appendChild(wrap);
   });
 }
 
