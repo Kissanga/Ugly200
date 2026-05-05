@@ -303,6 +303,14 @@
 <!-- MAIN -->
 <main id="main-content">
 
+  <!-- TITLE FIELD -->
+  <div class="editable-box-wrap" style="margin-bottom:var(--space-3)">
+    <div class="section-label" style="margin-bottom:var(--space-2)">Title</div>
+    <input type="text" id="noteTitle" placeholder="Give this note a title…" autocomplete="off"
+      style="width:100%;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);font-size:var(--text-sm);color:var(--text-primary);outline:none;transition:border-color var(--transition)"
+      onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+  </div>
+
   <!-- VOICE RECORDER -->
   <div class="recorder-card" role="region" aria-label="Voice recorder">
     <div id="noteStamp" style="align-self:stretch;display:flex;align-items:center;justify-content:space-between;font-size:var(--text-xs);color:var(--text-faint);border-bottom:1px solid var(--border);padding-bottom:var(--space-3);margin-bottom:var(--space-1);letter-spacing:0.02em;">
@@ -1140,10 +1148,11 @@ async function submitToNotion() {
     return;
   }
 
-  const transcript = document.getElementById('transcriptText').value.trim();
-  const summary    = document.getElementById('summaryText').value.trim();
-  const note       = document.getElementById('noteText').value.trim();
-  const title      = summary || transcript.slice(0, 80) || note.slice(0, 80) || 'Voice Note';
+  const transcript  = document.getElementById('transcriptText').value.trim();
+  const summary     = document.getElementById('summaryText').value.trim();
+  const note        = document.getElementById('noteText').value.trim();
+  const titleInput  = document.getElementById('noteTitle').value.trim();
+  const title       = titleInput || summary || transcript.slice(0, 80) || note.slice(0, 80) || 'Voice Note';
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -1247,6 +1256,7 @@ async function submitToNotion() {
 }
 
 function resetForm() {
+  document.getElementById('noteTitle').value = '';
   document.getElementById('transcriptText').value = '';
   document.getElementById('summaryText').value = '';
   document.getElementById('noteText').value = '';
