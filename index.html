@@ -195,6 +195,11 @@
     .selected-tag button { display: flex; align-items: center; color: inherit; opacity: 0.7; }
     .selected-tag button:hover { opacity: 1; }
 
+    /* TAB FIELDS */
+    .tab-fields-wrap { margin-bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+    .tab-field-text { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--text); font-family: var(--font-body); resize: vertical; }
+    .tab-field-text:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent); }
+
     /* CONFIG */
     .config-toggle { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); font-size: var(--text-sm); font-weight: 500; color: var(--text-muted); margin-bottom: var(--space-2); cursor: pointer; width: 100%; }
     .config-toggle:hover { background: var(--surface-dynamic); color: var(--text); }
@@ -405,29 +410,8 @@
     <div class="media-previews" id="mediaPreviews"></div>
   </div>
 
-  <!-- TAGS -->
-  <div class="tags-wrap">
-    <div class="section-label">Tags</div>
-    <div class="tags-preset" id="tagsPreset" role="group" aria-label="Preset tags">
-      <button class="tag-chip" aria-pressed="false">FarmBox</button>
-      <button class="tag-chip" aria-pressed="false">Field Visit</button>
-      <button class="tag-chip" aria-pressed="false">Urgent</button>
-      <button class="tag-chip" aria-pressed="false">South Africa</button>
-      <button class="tag-chip" aria-pressed="false">Italy</button>
-      <button class="tag-chip" aria-pressed="false">France</button>
-      <button class="tag-chip" aria-pressed="false">Idea</button>
-      <button class="tag-chip" aria-pressed="false">Meeting</button>
-      <button class="tag-chip" aria-pressed="false">Follow-up</button>
-      <button class="tag-chip" aria-pressed="false">Greenhouse</button>
-      <button class="tag-chip" aria-pressed="false">Energy</button>
-      <button class="tag-chip" aria-pressed="false">Robotics</button>
-    </div>
-    <div class="tag-custom-row">
-      <input type="text" id="tagInput" placeholder="Add custom tag…" aria-label="Custom tag input" maxlength="30">
-      <button class="btn-sm" id="addTagBtn">Add</button>
-    </div>
-    <div class="selected-tags" id="selectedTags" aria-label="Selected tags" role="list"></div>
-  </div>
+  <!-- TAB-SPECIFIC FIELDS (per database schema) -->
+  <div id="tabFields" class="tab-fields-wrap"></div>
 
   <!-- CONFIGURATION (was "Notion Configuration") -->
   <div style="margin-bottom: var(--space-4);">
@@ -580,6 +564,40 @@ const TAB_LABELS = { ugly200: 'Ugly200', sop: 'SoP', ideas: 'Ideas', daily: 'Dai
 const TAB_DB     = { ugly200: 'notionDbId_ugly200', sop: 'notionDbId_sop', ideas: 'notionDbId_ideas', daily: 'notionDbId_daily' };
 let activeTab = localStorage.getItem('brain_activeTab') || 'ugly200';
 
+const TAB_SCHEMAS = {
+  ugly200: [
+    { key: 'Tags',     type: 'multi_select', options: ['FarmBox','Field Visit','Urgent','South Africa','Italy','France','Greenhouse','Energy','Robotics','Follow-up'] },
+    { key: 'Status',   type: 'select',       options: ['Open','In Progress','Done'] },
+    { key: 'Location', type: 'text' },
+  ],
+  sop: [
+    { key: 'Category', type: 'select', options: ['Hardware','Software','Field Ops','Safety'] },
+    { key: 'Status',   type: 'select', options: ['Draft','In Review','Approved','Archived'] },
+  ],
+  ideas: [
+    { key: 'Category', type: 'multi_select', options: ['Product','Business','Technical','Marketing','Research'] },
+    { key: 'Status',   type: 'select',       options: ['Captured','Exploring','Validated','Building','Shipped','Parked'] },
+    { key: 'Priority', type: 'select',       options: ['High','Medium','Low'] },
+    { key: 'Effort',   type: 'select',       options: ['XS','S','M','L','XL'] },
+  ],
+  daily: [
+    { key: 'Yesterday (Planned)',   type: 'text', multiline: true },
+    { key: 'Today (Done)',          type: 'text', multiline: true },
+    { key: 'Tomorrow (To be done)', type: 'text', multiline: true },
+    { key: 'Mood',                  type: 'select', options: ['😄 Great','🙂 Good','😐 Neutral','😕 Off','😔 Low'] },
+  ],
+};
+
+let tabValues = {};
+try { tabValues = JSON.parse(localStorage.getItem('brain_tabValues') || '{}'); } catch(e) { tabValues = {}; }
+function getTabValue(tab, key) { return tabValues[tab]?.[key]; }
+function setTabValue(tab, key, value) {
+  if (!tabValues[tab]) tabValues[tab] = {};
+  if (value === null || value === undefined || (Array.isArray(value) && !value.length) || value === '') delete tabValues[tab][key];
+  else tabValues[tab][key] = value;
+  localStorage.setItem('brain_tabValues', JSON.stringify(tabValues));
+}
+
 // ─── LOAD SAVED CONFIG ────────────────────────────────────────
 function loadConfig() {
   try {
@@ -660,6 +678,7 @@ function setActiveTab(tab) {
   });
   const label = document.getElementById('submitTabLabel');
   if (label) label.textContent = TAB_LABELS[tab] || 'Notion';
+  renderTabFields(tab);
   updateSubmitBtn();
 }
 document.querySelectorAll('.tab-btn').forEach(btn =>
@@ -918,67 +937,82 @@ function renderMediaPreviews() {
   });
 }
 
-// ─── TAGS ────────────────────────────────────────────────────
-let selectedTags = new Set();
-
-document.getElementById('tagsPreset').addEventListener('click', e => {
-  const chip = e.target.closest('.tag-chip');
-  if (!chip) return;
-  const tag = chip.textContent.trim();
-  if (selectedTags.has(tag)) {
-    selectedTags.delete(tag);
-    chip.classList.remove('selected');
-    chip.setAttribute('aria-pressed', 'false');
-  } else {
-    selectedTags.add(tag);
-    chip.classList.add('selected');
-    chip.setAttribute('aria-pressed', 'true');
-  }
-  renderSelectedTags();
-  updateSubmitBtn();
-});
-
-document.getElementById('addTagBtn').addEventListener('click', addCustomTag);
-document.getElementById('tagInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag(); } });
-
-function addCustomTag() {
-  const input = document.getElementById('tagInput');
-  const tag = input.value.trim();
-  if (!tag || selectedTags.has(tag)) { input.value = ''; return; }
-  selectedTags.add(tag);
-  input.value = '';
-  renderSelectedTags();
-  updateSubmitBtn();
-}
-
-function renderSelectedTags() {
-  const container = document.getElementById('selectedTags');
+// ─── TAB-SPECIFIC FIELDS RENDERER ────────────────────────────
+function renderTabFields(tab) {
+  const container = document.getElementById('tabFields');
+  if (!container) return;
   container.innerHTML = '';
-  selectedTags.forEach(tag => {
-    const el = document.createElement('span');
-    el.className = 'selected-tag';
-    el.setAttribute('role', 'listitem');
-    el.innerHTML = `${tag}<button aria-label="Remove tag ${tag}">✕</button>`;
-    el.querySelector('button').addEventListener('click', () => {
-      selectedTags.delete(tag);
-      // uncheck preset chip if present
-      document.querySelectorAll('#tagsPreset .tag-chip').forEach(c => {
-        if (c.textContent.trim() === tag) { c.classList.remove('selected'); c.setAttribute('aria-pressed','false'); }
+  const schema = TAB_SCHEMAS[tab] || [];
+
+  schema.forEach(field => {
+    const wrap = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'section-label';
+    label.textContent = field.key;
+    wrap.appendChild(label);
+
+    if (field.type === 'multi_select') {
+      const chips = document.createElement('div');
+      chips.className = 'tags-preset';
+      const current = new Set(getTabValue(tab, field.key) || []);
+      field.options.forEach(opt => {
+        const chip = document.createElement('button');
+        chip.className = 'tag-chip' + (current.has(opt) ? ' selected' : '');
+        chip.textContent = opt;
+        chip.setAttribute('aria-pressed', current.has(opt));
+        chip.addEventListener('click', () => {
+          if (current.has(opt)) current.delete(opt); else current.add(opt);
+          setTabValue(tab, field.key, [...current]);
+          renderTabFields(tab);
+          updateSubmitBtn();
+        });
+        chips.appendChild(chip);
       });
-      renderSelectedTags();
-      updateSubmitBtn();
-    });
-    container.appendChild(el);
+      wrap.appendChild(chips);
+    } else if (field.type === 'select') {
+      const chips = document.createElement('div');
+      chips.className = 'tags-preset';
+      const current = getTabValue(tab, field.key);
+      field.options.forEach(opt => {
+        const chip = document.createElement('button');
+        chip.className = 'tag-chip' + (current === opt ? ' selected' : '');
+        chip.textContent = opt;
+        chip.setAttribute('aria-pressed', current === opt);
+        chip.addEventListener('click', () => {
+          setTabValue(tab, field.key, current === opt ? null : opt);
+          renderTabFields(tab);
+          updateSubmitBtn();
+        });
+        chips.appendChild(chip);
+      });
+      wrap.appendChild(chips);
+    } else if (field.type === 'text') {
+      const input = document.createElement(field.multiline ? 'textarea' : 'input');
+      if (!field.multiline) input.type = 'text';
+      input.className = 'tab-field-text';
+      input.value = getTabValue(tab, field.key) || '';
+      input.placeholder = `${field.key}…`;
+      if (field.multiline) input.rows = 3;
+      input.addEventListener('input', () => {
+        setTabValue(tab, field.key, input.value);
+        updateSubmitBtn();
+      });
+      wrap.appendChild(input);
+    }
+    container.appendChild(wrap);
   });
 }
 
 // ─── SUBMIT BUTTON STATE ─────────────────────────────────────
 function updateSubmitBtn() {
+  const tabHasValues = Object.values(tabValues[activeTab] || {}).some(v =>
+    Array.isArray(v) ? v.length > 0 : !!v
+  );
   const hasContent = document.getElementById('transcriptText').value.trim() ||
                      document.getElementById('summaryText').value.trim() ||
                      document.getElementById('noteText').value.trim() ||
                      mediaFiles.length > 0 ||
-                     selectedTags.size > 0;
+                     tabHasValues;
   document.getElementById('submitBtn').disabled = !hasContent;
 }
 
@@ -1166,12 +1200,22 @@ async function submitToNotion() {
   if (authorName) {
     properties[authorProp] = { rich_text: [{ text: { content: authorName } }] };
   }
-  if (selectedTags.size) {
-    properties[tagsProp] = { multi_select: [...selectedTags].map(name => ({ name })) };
-  }
   if (note && noteProp) {
     properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
   }
+  // Add schema-based fields for the active tab
+  const schema = TAB_SCHEMAS[activeTab] || [];
+  schema.forEach(field => {
+    const val = getTabValue(activeTab, field.key);
+    if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
+    if (field.type === 'multi_select') {
+      properties[field.key] = { multi_select: val.map(name => ({ name })) };
+    } else if (field.type === 'select') {
+      properties[field.key] = { select: { name: val } };
+    } else if (field.type === 'text') {
+      properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
+    }
+  });
 
   btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
 
@@ -1189,12 +1233,12 @@ async function submitToNotion() {
       const err = await res.json();
       throw new Error(err.message || 'Notion error');
     }
-    showToast('Sent to Notion ✓', 'success');
-    saveEntry({ title, transcript, note, tags: [...selectedTags], status: 'sent' });
+    showToast(`Sent to ${TAB_LABELS[activeTab]} ✓`, 'success');
+    saveEntry({ title, transcript, note, tab: activeTab, fields: { ...(tabValues[activeTab] || {}) }, status: 'sent' });
     resetForm();
   } catch(e) {
     showToast(`Failed: ${e.message}`, 'error');
-    saveEntry({ title, transcript, note, tags: [...selectedTags], status: 'failed' });
+    saveEntry({ title, transcript, note, tab: activeTab, fields: { ...(tabValues[activeTab] || {}) }, status: 'failed' });
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to <span id="submitTabLabel">${TAB_LABELS[activeTab]}</span>`;
@@ -1208,11 +1252,10 @@ function resetForm() {
   document.getElementById('noteText').value = '';
   mediaFiles = [];
   renderMediaPreviews();
-  selectedTags.clear();
-  document.querySelectorAll('.tag-chip.selected').forEach(c => {
-    c.classList.remove('selected'); c.setAttribute('aria-pressed','false');
-  });
-  renderSelectedTags();
+  // Clear active tab's field values
+  delete tabValues[activeTab];
+  localStorage.setItem('brain_tabValues', JSON.stringify(tabValues));
+  renderTabFields(activeTab);
   recordedBlob = null;
   noteStartTime = new Date(); // fresh timestamp for the next note
   renderNoteStamp();
@@ -1247,11 +1290,19 @@ function renderEntries() {
     const card = document.createElement('div');
     card.className = 'entry-card';
     const date = new Date(entry.date).toLocaleString();
-    const tagsHtml = (entry.tags||[]).map(t => `<span class="entry-tag">${t}</span>`).join('');
+    const tabLabel = entry.tab ? (TAB_LABELS[entry.tab] || entry.tab) : '';
+    const fieldChips = [];
+    Object.entries(entry.fields || {}).forEach(([k, v]) => {
+      if (Array.isArray(v)) v.forEach(x => fieldChips.push(`${k}: ${x}`));
+      else if (v) fieldChips.push(`${k}: ${v}`);
+    });
+    // Backward compat for old entries with `tags`
+    if (entry.tags) entry.tags.forEach(t => fieldChips.push(t));
+    const chipsHtml = fieldChips.map(t => `<span class="entry-tag">${t}</span>`).join('');
     card.innerHTML = `
-      <div class="entry-meta">${date}</div>
+      <div class="entry-meta">${date}${tabLabel ? ` · ${tabLabel}` : ''}</div>
       <div class="entry-text">${(entry.transcript || entry.note || '').slice(0, 200) || '(no text)'}</div>
-      ${tagsHtml ? `<div class="entry-tags">${tagsHtml}</div>` : ''}
+      ${chipsHtml ? `<div class="entry-tags">${chipsHtml}</div>` : ''}
       <div class="entry-status ${entry.status}">${entry.status === 'sent' ? '✓ Sent to Notion' : entry.status === 'failed' ? '✗ Failed' : '⏳ Pending'}</div>
     `;
     list.appendChild(card);
@@ -1284,6 +1335,23 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
   result.style.display = 'none';
 
   try {
+    // Build schema-based properties for the active tab
+    const dbProps = {
+      'Name':   { title: {} },
+      'Date':   { date: {} },
+      'Author': { rich_text: {} },
+      'Note':   { rich_text: {} },
+    };
+    (TAB_SCHEMAS[activeTab] || []).forEach(field => {
+      if (field.type === 'multi_select') {
+        dbProps[field.key] = { multi_select: { options: field.options.map(n => ({ name: n, color: tagColor(n) })) } };
+      } else if (field.type === 'select') {
+        dbProps[field.key] = { select: { options: field.options.map(n => ({ name: n, color: tagColor(n) })) } };
+      } else if (field.type === 'text') {
+        dbProps[field.key] = { rich_text: {} };
+      }
+    });
+
     const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/databases', {
       method: 'POST',
       headers: {
@@ -1293,15 +1361,9 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
       },
       body: JSON.stringify({
         parent: { type: 'page_id', page_id: parentId },
-        icon: { type: 'emoji', emoji: '🎙️' },
-        title: [{ type: 'text', text: { content: 'Voice Notes — Brain+' } }],
-        properties: {
-          'Name':   { title: {} },
-          'Date':   { date: {} },
-          'Author': { rich_text: {} },
-          'Tags':   { multi_select: { options: PRESET_TAGS.map(n => ({ name: n, color: tagColor(n) })) } },
-          'Note':   { rich_text: {} },
-        }
+        icon: { type: 'emoji', emoji: '🧠' },
+        title: [{ type: 'text', text: { content: `Brain+ — ${TAB_LABELS[activeTab]}` } }],
+        properties: dbProps,
       }),
     });
 
