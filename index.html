@@ -524,7 +524,7 @@
       </div>
       <div class="config-field">
         <label for="notionTitleProp">Title Property Name</label>
-        <input type="text" id="notionTitleProp" placeholder="Name" value="Name">
+        <input type="text" id="notionTitleProp" placeholder="Title" value="Title">
       </div>
       <div class="config-field">
         <label for="notionTagsProp">Tags Property Name</label>
@@ -1291,7 +1291,7 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
 async function submitToNotion() {
   const token      = document.getElementById('notionToken').value.trim();
   const dbId       = document.getElementById(TAB_DB[activeTab]).value.trim();
-  const titleProp  = document.getElementById('notionTitleProp').value.trim() || 'Name';
+  const titleProp  = document.getElementById('notionTitleProp').value.trim() || 'Title';
   const tagsProp   = document.getElementById('notionTagsProp').value.trim() || 'Tags';
   const noteProp   = document.getElementById('notionNoteProp').value.trim() || 'Note';
   const authorProp = document.getElementById('notionAuthorProp').value.trim() || 'Author';
@@ -1514,7 +1514,7 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
     btn.innerHTML = `<div class="dot-spin"></div> Creating ${TAB_LABELS[tab]}…`;
     try {
       const dbProps = {
-        'Name':   { title: {} },
+        'Title':  { title: {} },
         'Date':   { date: {} },
         'Author': { rich_text: {} },
         'Note':   { rich_text: {} },
