@@ -1094,6 +1094,53 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
 });
 
 // ─── TRANSCRIBE LOCAL VIDEO FILE ─────────────────────────────
+
+// Extracts audio-only from a video file using MediaRecorder (audio/webm;opus).
+// Result is typically 50–200x smaller than the original video.
+async function extractAudioFromVideo(file, onStatus) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(file);
+    video.muted = false;
+    video.playsInline = true;
+
+    video.onloadedmetadata = () => {
+      const dur = video.duration;
+      if (!dur || !isFinite(dur)) { reject(new Error('Cannot read video duration')); return; }
+
+      // Capture only the audio stream
+      const stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks.length) { reject(new Error('No audio track found in video')); return; }
+
+      const audioStream = new MediaStream(audioTracks);
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus' : 'audio/webm';
+      const recorder = new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 64000 });
+      const chunks = [];
+
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        URL.revokeObjectURL(video.src);
+        resolve(new Blob(chunks, { type: mime }));
+      };
+
+      recorder.start(200);
+      video.currentTime = 0;
+      video.play().catch(reject);
+
+      video.ontimeupdate = () => {
+        const pct = Math.round((video.currentTime / dur) * 100);
+        onStatus?.(`Extracting audio… ${pct}%`);
+      };
+      video.onended = () => recorder.stop();
+      video.onerror = reject;
+    };
+    video.onerror = reject;
+  });
+}
+
 document.getElementById('transcribeVideoFileBtn').addEventListener('click', () => {
   document.getElementById('transcribeVideoFileInput').click();
 });
@@ -1102,23 +1149,34 @@ document.getElementById('transcribeVideoFileInput').addEventListener('change', a
   const file = e.target.files[0];
   if (!file) return;
 
-  const MAX_MB = 25;
-  if (file.size > MAX_MB * 1024 * 1024) {
-    showToast(`File too large — max ${MAX_MB}MB for transcription`, 'error');
-    e.target.value = '';
-    return;
-  }
-
   const bar    = document.getElementById('videoTranscribingBar');
   const status = document.getElementById('videoTranscribingStatus');
   const btn    = document.getElementById('transcribeVideoFileBtn');
   bar.style.display = 'flex';
   btn.disabled = true;
-  status.textContent = `Transcribing "${file.name}"…`;
 
   try {
+    let uploadFile = file;
+
+    // If it's a video file, extract audio first
+    if (file.type.startsWith('video/')) {
+      status.textContent = `Extracting audio from "${file.name}"…`;
+      uploadFile = await extractAudioFromVideo(file, msg => { status.textContent = msg; });
+      const mb = (uploadFile.size / 1024 / 1024).toFixed(1);
+      status.textContent = `Transcribing audio (${mb} MB)…`;
+    } else {
+      status.textContent = `Transcribing "${file.name}"…`;
+    }
+
+    // Check size after extraction
+    const MAX_MB = 25;
+    if (uploadFile.size > MAX_MB * 1024 * 1024) {
+      showToast(`Audio too large after extraction (${(uploadFile.size/1024/1024).toFixed(1)} MB > ${MAX_MB} MB)`, 'error');
+      return;
+    }
+
     const fd = new FormData();
-    fd.append('file', file, file.name);
+    fd.append('file', uploadFile, 'audio.webm');
     fd.append('model', 'whisper-large-v3');
 
     const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
@@ -1130,8 +1188,8 @@ document.getElementById('transcribeVideoFileInput').addEventListener('change', a
     document.getElementById('videoTranscriptText').value = data.text || '';
     updateSubmitBtn();
     showToast('Video transcription complete ✓', 'success');
-  } catch(e) {
-    showToast('Transcription failed — file may be too large or unsupported', 'error');
+  } catch(err) {
+    showToast('Transcription failed — ' + (err.message || 'unknown error'), 'error');
   } finally {
     bar.style.display = 'none';
     btn.disabled = false;
