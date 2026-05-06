@@ -437,9 +437,6 @@
         </button>
       </div>
     </div>
-    <input type="url" id="videoSummaryUrl" placeholder="Video URL (YouTube, Vimeo…)" autocomplete="off"
-      style="width:100%;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);font-size:var(--text-sm);color:var(--text-primary);outline:none;transition:border-color var(--transition);margin-bottom:var(--space-2)"
-      onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
     <textarea class="editable-textarea" id="videoTranscriptText" placeholder="Paste the video transcript or notes here, then hit Generate…" rows="3" style="margin-bottom:var(--space-2)"></textarea>
     <div id="videoSummaryGenerating" class="summary-generating" style="display:none">
       <div class="dot-spin"></div>
@@ -932,8 +929,7 @@ videoSummaryModeBtn.addEventListener('click', () => {
 
 document.getElementById('generateVideoSummaryBtn').addEventListener('click', async () => {
   const transcript = document.getElementById('videoTranscriptText').value.trim();
-  const url        = document.getElementById('videoSummaryUrl').value.trim();
-  const text       = [url ? `Video: ${url}` : '', transcript].filter(Boolean).join('\n\n');
+  const text       = transcript;
   if (!transcript) { showToast('Paste the video transcript or notes first', 'error'); return; }
 
   const groqKey = document.getElementById('groqKey').value.trim();
@@ -1295,12 +1291,10 @@ async function submitToNotion() {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Note' } }] } });
     children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:note } }] } });
   }
-  const videoUrl     = document.getElementById('videoSummaryUrl').value.trim();
   const videoSummary = document.getElementById('videoSummaryText').value.trim();
-  if (videoUrl || videoSummary) {
+  if (videoSummary) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Video Summary' } }] } });
-    if (videoUrl) children.push({ object:'block', type:'bookmark', bookmark:{ url: videoUrl } });
-    if (videoSummary) children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:videoSummary } }] } });
+    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:videoSummary } }] } });
   }
 
   // Upload media files directly to Notion, then build blocks
@@ -1393,7 +1387,6 @@ function resetForm() {
   document.getElementById('transcriptText').value = '';
   document.getElementById('summaryText').value = '';
   document.getElementById('noteText').value = '';
-  document.getElementById('videoSummaryUrl').value = '';
   document.getElementById('videoTranscriptText').value = '';
   document.getElementById('videoSummaryText').value = '';
   mediaFiles = [];
