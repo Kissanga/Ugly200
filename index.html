@@ -17,7 +17,7 @@
     :root {
       --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
       --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
-      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-base: clamp(1rem, 0.96rem + 0.25vw, 1.125rem);
       --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
       --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
       --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
@@ -268,7 +268,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.95';
+  const CURRENT_VERSION = '0.96';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -391,7 +391,7 @@
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 0.95</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 0.96</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1479,7 +1479,7 @@ async function uploadFileToNotion(file, onStatus, compress = true) {
     const compMB = (compressed.size / 1024 / 1024).toFixed(1);
     uploadFile = compressed;
     uploadName = file.name.replace(/\.[^.]+$/, '') + '_web.webm';
-    onStatus?.(`Uploading ${compMB} MB…`, 0.95);
+    onStatus?.(`Uploading ${compMB} MB…`, 0.96);
   } else {
     const sizeMB = (file.size / 1024 / 1024).toFixed(1);
     onStatus?.(`Uploading ${file.name} (${sizeMB} MB)…`, 0);
