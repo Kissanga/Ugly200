@@ -536,22 +536,6 @@
           <div id="createDbResult" style="font-size:var(--text-xs);font-weight:600;display:none;align-items:center;gap:var(--space-1);"></div>
         </div>
       </div>
-      <div class="config-field">
-        <label for="notionTitleProp">Title Property Name</label>
-        <input type="text" id="notionTitleProp" placeholder="Title" value="Title">
-      </div>
-      <div class="config-field">
-        <label for="notionTagsProp">Tags Property Name</label>
-        <input type="text" id="notionTagsProp" placeholder="Tags" value="Tags">
-      </div>
-      <div class="config-field">
-        <label for="notionNoteProp">Note Property Name (optional)</label>
-        <input type="text" id="notionNoteProp" placeholder="Note" value="Note">
-      </div>
-      <div class="config-field">
-        <label for="notionAuthorProp">Author Property Name</label>
-        <input type="text" id="notionAuthorProp" placeholder="Author" value="Author">
-      </div>
 
       <!-- TEST BUTTONS -->
       <div style="display:flex;gap:var(--space-2);margin-top:var(--space-3);align-items:center;flex-wrap:wrap;">
@@ -612,10 +596,6 @@ const CONFIG_FIELDS = [
   'notionDbId_ideas',
   'notionDbId_daily',
   'notionDbId_fb1log',
-  'notionTitleProp',
-  'notionTagsProp',
-  'notionNoteProp',
-  'notionAuthorProp',
 ];
 
 const TAB_LABELS = { ugly200: 'Ugly200', sop: 'SoP', ideas: 'Ideas', daily: 'Daily', fb1log: 'FB1Log' };
@@ -701,7 +681,7 @@ function clearConfig() {
   localStorage.removeItem(LS_KEY);
   CONFIG_FIELDS.forEach(id => {
     const el = document.getElementById(id);
-    if (el && !['notionTitleProp','notionTagsProp','notionNoteProp'].includes(id)) {
+    if (el) {
       el.value = '';
     }
   });
@@ -1368,10 +1348,10 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
 async function submitToNotion() {
   const token      = document.getElementById('notionToken').value.trim();
   const dbId       = document.getElementById(TAB_DB[activeTab]).value.trim();
-  const titleProp  = document.getElementById('notionTitleProp').value.trim() || 'Title';
-  const tagsProp   = document.getElementById('notionTagsProp').value.trim() || 'Tags';
-  const noteProp   = document.getElementById('notionNoteProp').value.trim() || 'Note';
-  const authorProp = document.getElementById('notionAuthorProp').value.trim() || 'Author';
+  const titleProp  = 'Title';
+  const tagsProp   = 'Tags';
+  const noteProp   = 'Note';
+  const authorProp = 'Author';
   const authorName = document.getElementById('authorName').value.trim();
 
   if (!token || !dbId) {
