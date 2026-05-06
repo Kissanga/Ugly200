@@ -1011,7 +1011,7 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
   const text       = [transcript, note].filter(Boolean).join('\n\n');
   if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
 
-  const systemPrompt = 'You are a concise note summariser. Respond with 3–6 short bullet points (use • as the bullet character) capturing the key points of the user\'s note. No preamble, no extra text.';
+  const systemPrompt = 'Summarise the following note as short bullet points (use • as the bullet character). Use as few bullets as the content requires. No preamble, no extra text.';
 
   const gen = document.getElementById('summaryGenerating');
   const btn = document.getElementById('generateSummaryBtn');
@@ -1062,7 +1062,7 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   const transcript = videoTranscript || voiceTranscript;
   if (!transcript) { showToast('Add a video transcript or record a voice note first', 'error'); return; }
 
-  const systemPrompt = 'You are a concise video content summariser. Respond with 3–7 short bullet points (use • as the bullet character) capturing the key insights and takeaways from the video content provided. No preamble, no extra text.';
+  const systemPrompt = 'Summarise the following content as short bullet points (use • as the bullet character). Use as few bullets as the content requires. No preamble, no extra text.';
 
   const gen = document.getElementById('videoSummaryGenerating');
   const btn = document.getElementById('generateVideoSummaryBtn');
