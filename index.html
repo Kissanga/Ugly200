@@ -1562,8 +1562,8 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
   result.style.display = 'flex';
   if (failed.length === 0) {
     result.className = 'test-ok';
-    result.textContent = `✓ All 4 databases created — IDs saved!`;
-    showToast('All 4 databases created ✓', 'success');
+    result.textContent = `✓ All 5 databases created — IDs saved!`;
+    showToast('All 5 databases created ✓', 'success');
   } else {
     result.className = 'test-err';
     result.textContent = `✗ ${failed.join(' | ')}`;
