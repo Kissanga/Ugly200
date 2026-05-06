@@ -482,6 +482,10 @@
     <div class="editable-box-header">
       <div class="section-label" style="margin-bottom:0">Video AI Summary</div>
       <div class="editable-box-actions">
+        <button class="btn-generate" id="transcribeVideoFileBtn" aria-label="Transcribe local video file" title="Pick a local video file and transcribe it">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.888L15 14"/><rect x="1" y="6" width="14" height="12" rx="2"/></svg>
+          Transcribe
+        </button>
         <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate video AI summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           Generate
@@ -496,7 +500,12 @@
         </button>
       </div>
     </div>
-    <textarea class="editable-textarea" id="videoTranscriptText" placeholder="Transcript will appear here after recording… You can also type or paste text manually." rows="3" style="margin-bottom:var(--space-2)"></textarea>
+    <input type="file" id="transcribeVideoFileInput" accept="video/*,audio/*" style="display:none">
+    <div id="videoTranscribingBar" class="transcribing-bar" style="display:none">
+      <div class="dot-spin"></div>
+      <span id="videoTranscribingStatus">Transcribing video with Groq Whisper…</span>
+    </div>
+    <textarea class="editable-textarea" id="videoTranscriptText" placeholder="Paste a YouTube/video transcript here… or click Transcribe to pick a local video file." rows="3" style="margin-bottom:var(--space-2)"></textarea>
     <div id="videoSummaryGenerating" class="summary-generating" style="display:none">
       <div class="dot-spin"></div>
       <span>Generating video summary with AI…</span>
@@ -1081,6 +1090,52 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   } finally {
     gen.style.display = 'none';
     btn.disabled = false;
+  }
+});
+
+// ─── TRANSCRIBE LOCAL VIDEO FILE ─────────────────────────────
+document.getElementById('transcribeVideoFileBtn').addEventListener('click', () => {
+  document.getElementById('transcribeVideoFileInput').click();
+});
+
+document.getElementById('transcribeVideoFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const MAX_MB = 25;
+  if (file.size > MAX_MB * 1024 * 1024) {
+    showToast(`File too large — max ${MAX_MB}MB for transcription`, 'error');
+    e.target.value = '';
+    return;
+  }
+
+  const bar    = document.getElementById('videoTranscribingBar');
+  const status = document.getElementById('videoTranscribingStatus');
+  const btn    = document.getElementById('transcribeVideoFileBtn');
+  bar.style.display = 'flex';
+  btn.disabled = true;
+  status.textContent = `Transcribing "${file.name}"…`;
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('model', 'whisper-large-v3');
+
+    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      body: fd
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    document.getElementById('videoTranscriptText').value = data.text || '';
+    updateSubmitBtn();
+    showToast('Video transcription complete ✓', 'success');
+  } catch(e) {
+    showToast('Transcription failed — file may be too large or unsupported', 'error');
+  } finally {
+    bar.style.display = 'none';
+    btn.disabled = false;
+    e.target.value = '';
   }
 });
 
