@@ -540,15 +540,6 @@
 
     <div class="config-panel" id="configPanel" role="region" aria-label="Configuration settings">
 
-      <!-- GROQ KEY — now inside config, permanently saved -->
-      <div class="config-section-title">AI (Groq)</div>
-      <div class="config-field">
-        <label for="groqKey">Groq API Key</label>
-        <input type="password" id="groqKey" placeholder="gsk_…" autocomplete="off" spellcheck="false" aria-label="Groq API key">
-        <div class="config-hint">🆓 Free — get your key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com</a>. Powers transcription (Whisper) and summary (Llama 3).</div>
-      </div>
-
-      <div class="config-divider"></div>
       <div class="config-section-title">Notion</div>
 
       <div class="config-field">
@@ -557,11 +548,6 @@
         <div class="config-hint">Permanently saved — sent to every entry automatically.</div>
       </div>
 
-      <div class="config-field">
-        <label for="notionToken">Integration Token</label>
-        <input type="password" id="notionToken" placeholder="secret_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
-        <div class="config-hint">Get yours at <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener noreferrer">notion.so/my-integrations</a></div>
-      </div>
       <div class="config-field">
         <label for="notionDbId_ugly200">Ugly200 — Database ID</label>
         <input type="text" id="notionDbId_ugly200" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
@@ -653,9 +639,7 @@
 const LS_KEY = 'ugly200_config';
 
 const CONFIG_FIELDS = [
-  'groqKey',
   'authorName',
-  'notionToken',
   'notionDbId_ugly200',
   'notionDbId_sop',
   'notionDbId_ideas',
@@ -707,8 +691,6 @@ function setTabValue(tab, key, value) {
 // ─── LOAD SAVED CONFIG ────────────────────────────────────────
 // ─── HARDCODED DEFAULTS ───────────────────────────────────────
 const APP_DEFAULTS = {
-  groqKey:            ['gsk_ybABMJkw28','GKzR3m9i6eWGdy','b3FYjQdx42pDJr','0Qv3iUq2GuEkAF'].join(''),
-  notionToken:        ['ntn_O510219333','67SCXUE1tr0OZb','CDkTB58i2Cpbct','bBTbZ716'].join(''),
   notionDbId_ugly200: '3581301d4ab88196a51ed98b3ad9b219',
   notionDbId_sop:     '3581301d4ab8819693a1e1d1f958e6d6',
   notionDbId_ideas:   '3581301d4ab881f8b21fe7a32e6d9876',
@@ -753,7 +735,6 @@ function clearConfig() {
   showToast('Config cleared from this device', 'info');
 }
 
-// Auto-save groqKey and authorName whenever they change
 // ─── CONFIG PIN LOCK ─────────────────────────────────────────
 const CONFIG_PIN = '1234';
 let configUnlocked = false;
@@ -802,7 +783,6 @@ function tryUnlockConfig() {
 document.getElementById('pinSubmit').addEventListener('click', tryUnlockConfig);
 document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlockConfig(); });
 
-document.getElementById('groqKey').addEventListener('change', saveConfig);
 document.getElementById('authorName').addEventListener('change', saveConfig);
 
 document.getElementById('saveConfigBtn').addEventListener('click', saveConfig);
@@ -974,9 +954,8 @@ async function transcribeAudio(blob, apiKey) {
     fd.append('file', blob, 'audio.webm');
     fd.append('model', 'whisper-large-v3');
 
-    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
       body: fd
     });
     if (!res.ok) throw new Error(await res.text());
@@ -1009,9 +988,6 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
   const text       = [transcript, note].filter(Boolean).join('\n\n');
   if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
 
-  const groqKey = document.getElementById('groqKey').value.trim();
-  if (!groqKey) { showToast('Add Groq API key in Configuration', 'error'); return; }
-
   const systemPrompt = summaryMode === 'bullets'
     ? 'You are a concise note summariser. Respond with 3–6 short bullet points (use • as the bullet character) capturing the key points of the user\'s note. No preamble, no extra text.'
     : 'You are a concise note summariser. Respond with a short, clear summary (2–5 sentences) of the user\'s note. No preamble.';
@@ -1021,9 +997,9 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
   gen.style.display = 'flex';
   btn.disabled = true;
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         messages: [
@@ -1078,9 +1054,6 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   const text       = transcript;
   if (!transcript) { showToast('Add a video transcript or notes first', 'error'); return; }
 
-  const groqKey = document.getElementById('groqKey').value.trim();
-  if (!groqKey) { showToast('Add Groq API key in Configuration', 'error'); return; }
-
   const systemPrompt = videoSummaryMode === 'bullets'
     ? 'You are a concise video content summariser. Respond with 3–7 short bullet points (use • as the bullet character) capturing the key insights and takeaways from the video content provided. No preamble, no extra text.'
     : 'You are a concise video content summariser. Respond with a short, clear summary (2–5 sentences) of the video content provided. No preamble.';
@@ -1090,9 +1063,9 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   gen.style.display = 'flex';
   btn.disabled = true;
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         messages: [
@@ -1391,7 +1364,7 @@ async function compressVideo(file, onProgress) {
 // ─── NOTION FILE UPLOAD ───────────────────────────────────────
 // Videos → always compress first, then single-part upload.
 // Images / other files → upload as-is.
-async function uploadFileToNotion(file, token, onStatus, compress = true) {
+async function uploadFileToNotion(file, onStatus, compress = true) {
   let uploadFile = file;
   let uploadName = file.name;
 
@@ -1412,7 +1385,7 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
   // Create upload slot
   const cr = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/file_uploads', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: uploadName, content_type: uploadFile.type }),
   });
   if (!cr.ok) { const e = await cr.json().catch(()=>{}); throw new Error(e?.message || `Create failed (${cr.status})`); }
@@ -1423,7 +1396,7 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
   fd.append('file', uploadFile, uploadName);
   const sr = await fetch(`https://notion-proxy.francesco-955.workers.dev/v1/file_uploads/${id}/send`, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28' },
+    headers: { 'Notion-Version': '2022-06-28' },
     body: fd,
   });
   if (!sr.ok) { const e = await sr.json().catch(()=>{}); throw new Error(e?.message || `Upload failed (${sr.status})`); }
@@ -1431,7 +1404,6 @@ async function uploadFileToNotion(file, token, onStatus, compress = true) {
 }
 
 async function submitToNotion() {
-  const token      = document.getElementById('notionToken').value.trim();
   const dbId       = document.getElementById(TAB_DB[activeTab]).value.trim();
   const titleProp  = 'Title';
   const tagsProp   = 'Tags';
@@ -1439,7 +1411,7 @@ async function submitToNotion() {
   const authorProp = 'Author';
   const authorName = document.getElementById('authorName').value.trim();
 
-  if (!token || !dbId) {
+  if (!dbId) {
     showToast(`Configuration needed — use PIN 1234 to access ⚙️`, 'error');
     return;
   }
@@ -1481,7 +1453,7 @@ async function submitToNotion() {
       } else {
         // Real file → smart upload (compress or multipart as needed)
         try {
-          const uploadId = await uploadFileToNotion(m.file, token,
+          const uploadId = await uploadFileToNotion(m.file,
             (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
             m.compress
           );
@@ -1533,7 +1505,6 @@ async function submitToNotion() {
     const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/pages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json',
       },
@@ -1672,7 +1643,6 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
       const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/databases', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Notion-Version': '2022-06-28',
           'Content-Type': 'application/json',
         },
@@ -1723,7 +1693,7 @@ document.getElementById('testNotionBtn').addEventListener('click', async () => {
   result.textContent = '…';
   try {
     const res = await fetch(`https://notion-proxy.francesco-955.workers.dev/v1/databases/${dbId}`, {
-      headers: { 'Authorization': `Bearer ${token}`, 'Notion-Version': '2022-06-28' }
+      headers: { 'Notion-Version': '2022-06-28' }
     });
     if (res.ok) { result.textContent = '✓ Connected'; result.className = 'test-ok'; }
     else { result.textContent = `✗ ${res.status}`; result.className = 'test-err'; }
