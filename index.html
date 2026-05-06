@@ -1055,6 +1055,47 @@ function renderMediaPreviews() {
 }
 
 // ─── TAB-SPECIFIC FIELDS RENDERER ────────────────────────────
+function makeAddTagBtn(field, tab, onAdded) {
+  const wrapper = document.createElement('span');
+  wrapper.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
+
+  const btn = document.createElement('button');
+  btn.className = 'tag-chip';
+  btn.style.cssText = 'border-style:dashed;color:var(--primary);border-color:var(--primary)';
+  btn.textContent = '+ Add';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'New tag…';
+  input.style.cssText = 'display:none;width:90px;font-size:var(--text-xs);padding:2px 6px;border-radius:var(--radius-full);border:1px solid var(--primary);background:var(--surface-2);color:var(--text-primary);outline:none';
+
+  const confirm = () => {
+    const val = input.value.trim();
+    if (val && !field.options.includes(val)) {
+      field.options.push(val);
+      onAdded();
+    } else {
+      input.style.display = 'none';
+      btn.style.display = 'inline-flex';
+    }
+  };
+
+  btn.addEventListener('click', () => {
+    btn.style.display = 'none';
+    input.style.display = 'inline-block';
+    input.focus();
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirm();
+    if (e.key === 'Escape') { input.style.display = 'none'; btn.style.display = 'inline-flex'; }
+  });
+  input.addEventListener('blur', () => setTimeout(confirm, 150));
+
+  wrapper.appendChild(btn);
+  wrapper.appendChild(input);
+  return wrapper;
+}
+
 function renderTabFields(tab) {
   const pre  = document.getElementById('tabFieldsPre');
   const post = document.getElementById('tabFields');
@@ -1087,6 +1128,7 @@ function renderTabFields(tab) {
         });
         chips.appendChild(chip);
       });
+      chips.appendChild(makeAddTagBtn(field, tab, () => { current.add(field.options[field.options.length-1]); setTabValue(tab, field.key, [...current]); renderTabFields(tab); updateSubmitBtn(); }));
       wrap.appendChild(chips);
     } else if (field.type === 'select') {
       const chips = document.createElement('div');
@@ -1104,6 +1146,7 @@ function renderTabFields(tab) {
         });
         chips.appendChild(chip);
       });
+      chips.appendChild(makeAddTagBtn(field, tab, () => { setTabValue(tab, field.key, field.options[field.options.length-1]); renderTabFields(tab); updateSubmitBtn(); }));
       wrap.appendChild(chips);
     } else if (field.type === 'text') {
       const input = document.createElement(field.multiline ? 'textarea' : 'input');
