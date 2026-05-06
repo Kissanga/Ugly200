@@ -525,10 +525,6 @@
     <div class="editable-box-header">
       <div class="section-label" style="margin-bottom:0">Video AI Summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="transcribeVideoFileBtn" aria-label="Transcribe local video file" title="Pick a local video file and transcribe it">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.888L15 14"/><rect x="1" y="6" width="14" height="12" rx="2"/></svg>
-          Transcribe
-        </button>
         <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate video AI summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           Generate
@@ -543,7 +539,6 @@
         </button>
       </div>
     </div>
-    <input type="file" id="transcribeVideoFileInput" accept="video/*,audio/*" style="display:none">
     <div id="videoTranscribingBar" class="transcribing-bar" style="display:none">
       <div class="dot-spin"></div>
       <span id="videoTranscribingStatus">Transcribing video with Groq Whisper…</span>
@@ -1136,8 +1131,7 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   }
 });
 
-// ─── TRANSCRIBE LOCAL VIDEO FILE ─────────────────────────────
-
+// ─── AUDIO EXTRACTION FROM VIDEO ─────────────────────────────
 // Extracts audio-only from a video file using MediaRecorder (audio/webm;opus).
 // Result is typically 50–200x smaller than the original video.
 async function extractAudioFromVideo(file, onStatus) {
@@ -1184,61 +1178,6 @@ async function extractAudioFromVideo(file, onStatus) {
   });
 }
 
-document.getElementById('transcribeVideoFileBtn').addEventListener('click', () => {
-  document.getElementById('transcribeVideoFileInput').click();
-});
-
-document.getElementById('transcribeVideoFileInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const bar    = document.getElementById('videoTranscribingBar');
-  const status = document.getElementById('videoTranscribingStatus');
-  const btn    = document.getElementById('transcribeVideoFileBtn');
-  bar.style.display = 'flex';
-  btn.disabled = true;
-
-  try {
-    let uploadFile = file;
-
-    // If it's a video file, extract audio first
-    if (file.type.startsWith('video/')) {
-      status.textContent = `Extracting audio from "${file.name}"…`;
-      uploadFile = await extractAudioFromVideo(file, msg => { status.textContent = msg; });
-      const mb = (uploadFile.size / 1024 / 1024).toFixed(1);
-      status.textContent = `Transcribing audio (${mb} MB)…`;
-    } else {
-      status.textContent = `Transcribing "${file.name}"…`;
-    }
-
-    // Check size after extraction
-    const MAX_MB = 25;
-    if (uploadFile.size > MAX_MB * 1024 * 1024) {
-      showToast(`Audio too large after extraction (${(uploadFile.size/1024/1024).toFixed(1)} MB > ${MAX_MB} MB)`, 'error');
-      return;
-    }
-
-    const fd = new FormData();
-    fd.append('file', uploadFile, 'audio.webm');
-    fd.append('model', 'whisper-large-v3');
-
-    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      body: fd
-    });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    document.getElementById('videoTranscriptText').value = data.text || '';
-    updateSubmitBtn();
-    showToast('Video transcription complete ✓', 'success');
-  } catch(err) {
-    showToast('Transcription failed — ' + (err.message || 'unknown error'), 'error');
-  } finally {
-    bar.style.display = 'none';
-    btn.disabled = false;
-    e.target.value = '';
-  }
-});
 
 document.getElementById('copyVideoSummaryBtn').addEventListener('click', () => {
   const v = document.getElementById('videoSummaryText').value;
@@ -1265,11 +1204,42 @@ document.getElementById('videoSummaryPhotoInput').addEventListener('change', e =
   renderMediaPreviews();
   updateSubmitBtn();
 });
-document.getElementById('videoSummaryVideoInput').addEventListener('change', e => {
-  [...e.target.files].forEach(f => mediaFiles.push({ type: 'video', file: f, compress: true }));
+document.getElementById('videoSummaryVideoInput').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  files.forEach(f => mediaFiles.push({ type: 'video', file: f, compress: true }));
   e.target.value = '';
   renderMediaPreviews();
   updateSubmitBtn();
+
+  // Auto-transcribe the first video file
+  if (files.length > 0) {
+    const file = files[0];
+    const bar    = document.getElementById('videoTranscribingBar');
+    const status = document.getElementById('videoTranscribingStatus');
+    bar.style.display = 'flex';
+    try {
+      status.textContent = `Extracting audio from "${file.name}"…`;
+      const audio = await extractAudioFromVideo(file, msg => { status.textContent = msg; });
+      const mb = (audio.size / 1024 / 1024).toFixed(1);
+      status.textContent = `Transcribing audio (${mb} MB)…`;
+
+      const fd = new FormData();
+      fd.append('file', audio, 'audio.webm');
+      fd.append('model', 'whisper-large-v3');
+      const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
+        method: 'POST', body: fd
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      document.getElementById('videoTranscriptText').value = data.text || '';
+      updateSubmitBtn();
+      showToast('Video transcribed ✓', 'success');
+    } catch(err) {
+      showToast('Auto-transcription failed — ' + (err.message || 'unknown error'), 'error');
+    } finally {
+      bar.style.display = 'none';
+    }
+  }
 });
 
 function renderMediaPreviews() {
