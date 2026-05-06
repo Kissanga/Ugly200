@@ -454,12 +454,25 @@
 
   <!-- CONFIGURATION (was "Notion Configuration") -->
   <div style="margin-bottom: var(--space-4);">
-    <button class="config-toggle" id="configToggle" aria-expanded="false" aria-controls="configPanel" onclick="var p=document.getElementById('configPanel'),o=p.classList.toggle('open');this.classList.toggle('open',o);this.setAttribute('aria-expanded',o)">
+    <button class="config-toggle" id="configToggle" aria-expanded="false" aria-controls="configPanel">
       <span>⚙️ Configuration</span>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     </button>
+
+    <!-- PIN OVERLAY -->
+    <div id="pinOverlay" style="display:none;flex-direction:column;align-items:center;gap:var(--space-3);padding:var(--space-5);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);margin-top:var(--space-2)">
+      <div style="font-size:var(--text-sm);font-weight:600;color:var(--text-muted)">🔒 Enter PIN to access Configuration</div>
+      <div style="display:flex;gap:var(--space-2)">
+        <input type="password" id="pinInput" maxlength="4" inputmode="numeric" placeholder="••••"
+          style="width:80px;text-align:center;font-size:var(--text-lg);letter-spacing:0.3em;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);color:var(--text-primary);outline:none"
+          onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+        <button class="btn-generate" id="pinSubmit" style="padding:var(--space-2) var(--space-4)">Unlock</button>
+      </div>
+      <div id="pinError" style="font-size:var(--text-xs);color:var(--error);display:none">Wrong PIN — try again</div>
+    </div>
+
     <div class="config-panel" id="configPanel" role="region" aria-label="Configuration settings">
 
       <!-- GROQ KEY — now inside config, permanently saved -->
@@ -681,6 +694,54 @@ function clearConfig() {
 }
 
 // Auto-save groqKey and authorName whenever they change
+// ─── CONFIG PIN LOCK ─────────────────────────────────────────
+const CONFIG_PIN = '1234';
+let configUnlocked = false;
+
+document.getElementById('configToggle').addEventListener('click', () => {
+  const panel   = document.getElementById('configPanel');
+  const overlay = document.getElementById('pinOverlay');
+  const toggle  = document.getElementById('configToggle');
+
+  if (configUnlocked) {
+    // Already unlocked — just toggle open/close
+    const o = panel.classList.toggle('open');
+    toggle.classList.toggle('open', o);
+    toggle.setAttribute('aria-expanded', o);
+    if (!o) overlay.style.display = 'none';
+  } else {
+    // Show PIN overlay, hide panel
+    const isOverlayVisible = overlay.style.display === 'flex';
+    overlay.style.display = isOverlayVisible ? 'none' : 'flex';
+    if (!isOverlayVisible) {
+      document.getElementById('pinInput').value = '';
+      document.getElementById('pinError').style.display = 'none';
+      setTimeout(() => document.getElementById('pinInput').focus(), 50);
+    }
+  }
+});
+
+function tryUnlockConfig() {
+  const pin     = document.getElementById('pinInput').value;
+  const overlay = document.getElementById('pinOverlay');
+  const panel   = document.getElementById('configPanel');
+  const toggle  = document.getElementById('configToggle');
+  if (pin === CONFIG_PIN) {
+    configUnlocked = true;
+    overlay.style.display = 'none';
+    panel.classList.add('open');
+    toggle.classList.add('open');
+    toggle.setAttribute('aria-expanded', true);
+  } else {
+    document.getElementById('pinError').style.display = 'block';
+    document.getElementById('pinInput').value = '';
+    document.getElementById('pinInput').focus();
+  }
+}
+
+document.getElementById('pinSubmit').addEventListener('click', tryUnlockConfig);
+document.getElementById('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlockConfig(); });
+
 document.getElementById('groqKey').addEventListener('change', saveConfig);
 document.getElementById('authorName').addEventListener('change', saveConfig);
 
@@ -1299,9 +1360,7 @@ async function submitToNotion() {
   const authorName = document.getElementById('authorName').value.trim();
 
   if (!token || !dbId) {
-    showToast(`Add Notion token & ${TAB_LABELS[activeTab]} DB ID in Configuration`, 'error');
-    document.getElementById('configPanel').classList.add('open');
-    document.getElementById('configToggle').classList.add('open');
+    showToast(`Configuration needed — use PIN 1234 to access ⚙️`, 'error');
     return;
   }
 
