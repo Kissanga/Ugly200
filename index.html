@@ -1004,14 +1004,24 @@ async function transcribeAudio(blob) {
   }
 }
 
+// ─── AI SUMMARY HELPERS ───────────────────────────────────────
+function bulletPrompt(text) {
+  const words = text.trim().split(/\s+/).length;
+  const max = words < 15 ? 1 : words < 40 ? 2 : words < 80 ? 3 : words < 150 ? 4 : 5;
+  return `You are a precise summariser. Respond with bullet points using • as the bullet character.
+STRICT RULES:
+- Maximum ${max} bullet point${max === 1 ? '' : 's'} — do NOT exceed this limit
+- Use fewer if the content is simple or repetitive
+- Each bullet must be a single short sentence capturing one distinct fact
+- No preamble, no commentary, no extra text — bullets only`;
+}
+
 // ─── AI SUMMARY (GROQ LLAMA) ─────────────────────────────────
 document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
   const transcript = document.getElementById('transcriptText').value.trim();
   const note       = document.getElementById('noteText').value.trim();
   const text       = [transcript, note].filter(Boolean).join('\n\n');
   if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
-
-  const systemPrompt = 'Extract the minimum number of bullet points (use • as the bullet character) needed to fully understand the main information in the transcription. Scale from 1 bullet for a very short or simple note up to as many as the complexity and length require. Each bullet must be essential — no padding, no preamble, no extra text.';
 
   const gen = document.getElementById('summaryGenerating');
   const btn = document.getElementById('generateSummaryBtn');
@@ -1023,8 +1033,9 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
+        temperature: 0,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: bulletPrompt(text) },
           { role: 'user', content: text }
         ],
         max_tokens: 300
@@ -1062,8 +1073,6 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   const transcript = videoTranscript || voiceTranscript;
   if (!transcript) { showToast('Add a video transcript or record a voice note first', 'error'); return; }
 
-  const systemPrompt = 'Extract the minimum number of bullet points (use • as the bullet character) needed to fully understand the main information in the transcription. Scale from 1 bullet for a very short or simple note up to as many as the complexity and length require. Each bullet must be essential — no padding, no preamble, no extra text.';
-
   const gen = document.getElementById('videoSummaryGenerating');
   const btn = document.getElementById('generateVideoSummaryBtn');
   gen.style.display = 'flex';
@@ -1074,8 +1083,9 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
+        temperature: 0,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: bulletPrompt(transcript) },
           { role: 'user', content: transcript }
         ],
         max_tokens: 400
