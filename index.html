@@ -1425,15 +1425,23 @@ async function compressVideo(file, onProgress) {
       canvas.height = Math.round(video.videoHeight * scale / 2) * 2;
       const ctx = canvas.getContext('2d');
 
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9' : 'video/webm';
-      const stream   = canvas.captureStream(FPS);
-      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: VIDEO_BITRATE });
+      // Capture video frames from canvas + audio track from original video
+      const videoStream = canvas.captureStream(FPS);
+      const srcStream   = video.captureStream ? video.captureStream() : video.mozCaptureStream?.();
+      const audioTracks = srcStream ? srcStream.getAudioTracks() : [];
+      audioTracks.forEach(t => videoStream.addTrack(t));
+
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9' : 'video/webm';
+
+      const recorder = new MediaRecorder(videoStream, { mimeType: mime, videoBitsPerSecond: VIDEO_BITRATE });
 
       const chunks = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
+        videoStream.getTracks().forEach(t => t.stop());
         URL.revokeObjectURL(video.src);
         resolve(new Blob(chunks, { type: 'video/webm' }));
       };
