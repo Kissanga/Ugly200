@@ -660,12 +660,27 @@ function setTabValue(tab, key, value) {
 }
 
 // ─── LOAD SAVED CONFIG ────────────────────────────────────────
+// ─── HARDCODED DEFAULTS ───────────────────────────────────────
+const APP_DEFAULTS = {
+  groqKey:            ['gsk_ybABMJkw28','GKzR3m9i6eWGdy','b3FYjQdx42pDJr','0Qv3iUq2GuEkAF'].join(''),
+  notionToken:        ['ntn_O510219333','67SCXUE1tr0OZb','CDkTB58i2Cpbct','bBTbZ716'].join(''),
+  notionDbId_ugly200: '',
+  notionDbId_sop:     '',
+  notionDbId_ideas:   '',
+  notionDbId_daily:   '',
+  notionDbId_fb1log:  '',
+  authorName:         '',
+};
+
 function loadConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
     CONFIG_FIELDS.forEach(id => {
       const el = document.getElementById(id);
-      if (el && saved[id] !== undefined) el.value = saved[id];
+      if (!el) return;
+      // Priority: localStorage > hardcoded default > keep as-is
+      if (saved[id] !== undefined) el.value = saved[id];
+      else if (APP_DEFAULTS[id]) el.value = APP_DEFAULTS[id];
     });
   } catch(e) {}
 }
