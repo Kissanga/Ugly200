@@ -1538,7 +1538,7 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
         },
         body: JSON.stringify({
           parent: { type: 'page_id', page_id: parentId },
-          icon: { type: 'emoji', emoji: { ugly200: '💩', sop: '📋', ideas: '💡', daily: '📅', fb1log: '🌱' }[tab] || '🧠' },
+          icon: { type: 'emoji', emoji: { ugly200: '💩', sop: '📋', ideas: '💡', daily: '📅', fb1log: '🏗️' }[tab] || '🧠' },
           title: [{ type: 'text', text: { content: TAB_LABELS[tab] } }],
           properties: dbProps,
         }),
