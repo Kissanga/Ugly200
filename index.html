@@ -298,6 +298,7 @@
   <button class="tab-btn" data-tab="sop" role="tab" aria-selected="false">SoP</button>
   <button class="tab-btn" data-tab="ideas" role="tab" aria-selected="false">Ideas</button>
   <button class="tab-btn" data-tab="daily" role="tab" aria-selected="false">Daily</button>
+  <button class="tab-btn" data-tab="fb1log" role="tab" aria-selected="false">FB1Log</button>
 </nav>
 
 <!-- MAIN -->
@@ -499,6 +500,11 @@
         <input type="text" id="notionDbId_daily" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
         <div class="config-hint">From the database URL: notion.so/&lt;workspace&gt;/<strong>DATABASE_ID</strong>?v=…</div>
       </div>
+      <div class="config-field">
+        <label for="notionDbId_fb1log">FB1Log — Database ID</label>
+        <input type="text" id="notionDbId_fb1log" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+        <div class="config-hint">From the database URL: notion.so/&lt;workspace&gt;/<strong>DATABASE_ID</strong>?v=…</div>
+      </div>
 
       <!-- CREATE DATABASE HELPER -->
       <div id="createDbWrap" style="margin-bottom:var(--space-3);padding:var(--space-3);background:var(--surface-offset);border:1px solid var(--border);border-radius:var(--radius-lg);">
@@ -591,14 +597,15 @@ const CONFIG_FIELDS = [
   'notionDbId_sop',
   'notionDbId_ideas',
   'notionDbId_daily',
+  'notionDbId_fb1log',
   'notionTitleProp',
   'notionTagsProp',
   'notionNoteProp',
   'notionAuthorProp',
 ];
 
-const TAB_LABELS = { ugly200: 'Ugly200', sop: 'SoP', ideas: 'Ideas', daily: 'Daily' };
-const TAB_DB     = { ugly200: 'notionDbId_ugly200', sop: 'notionDbId_sop', ideas: 'notionDbId_ideas', daily: 'notionDbId_daily' };
+const TAB_LABELS = { ugly200: 'Ugly200', sop: 'SoP', ideas: 'Ideas', daily: 'Daily', fb1log: 'FB1Log' };
+const TAB_DB     = { ugly200: 'notionDbId_ugly200', sop: 'notionDbId_sop', ideas: 'notionDbId_ideas', daily: 'notionDbId_daily', fb1log: 'notionDbId_fb1log' };
 let activeTab = localStorage.getItem('brain_activeTab') || 'ugly200';
 
 const TAB_SCHEMAS = {
@@ -622,6 +629,10 @@ const TAB_SCHEMAS = {
     { key: 'Tomorrow (To be done)', type: 'text', multiline: true },
     { key: 'Note',                  type: 'text', multiline: true },
     { key: 'Mood',                  type: 'select', options: ['😄 Great','🙂 Good','😐 Neutral','😕 Off','😔 Low'] },
+  ],
+  fb1log: [
+    { key: 'Category', type: 'select', options: ['Hardware','Software','Field Ops','Safety'] },
+    { key: 'Status',   type: 'select', options: ['Draft','In Review','Approved','Archived'] },
   ],
 };
 
@@ -1485,7 +1496,7 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
         },
         body: JSON.stringify({
           parent: { type: 'page_id', page_id: parentId },
-          icon: { type: 'emoji', emoji: { ugly200: '💩', sop: '📋', ideas: '💡', daily: '📅' }[tab] || '🧠' },
+          icon: { type: 'emoji', emoji: { ugly200: '💩', sop: '📋', ideas: '💡', daily: '📅', fb1log: '🌱' }[tab] || '🧠' },
           title: [{ type: 'text', text: { content: TAB_LABELS[tab] } }],
           properties: dbProps,
         }),
