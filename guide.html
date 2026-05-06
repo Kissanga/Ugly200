@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FarmBox Brain+ — User Guide</title>
+<style>
+  :root {
+    --primary: #01696f;
+    --primary-light: #e0f4f4;
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --code: #f3f4f6;
+    --accent: #01696f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+  /* HERO */
+  .hero { background: linear-gradient(135deg, #013d40 0%, #01696f 60%, #01929a 100%); color: #fff; padding: 56px 24px 48px; text-align: center; }
+  .hero-logo { width: 64px; height: 64px; background: rgba(255,255,255,0.15); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+  .hero h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 8px; }
+  .hero h1 span { color: #7fe8ec; }
+  .hero p { font-size: 1.05rem; opacity: 0.85; max-width: 520px; margin: 0 auto 24px; }
+  .hero-badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 99px; padding: 4px 14px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; }
+
+  /* LAYOUT */
+  .page { max-width: 860px; margin: 0 auto; padding: 0 20px 60px; }
+
+  /* SECTION */
+  .section { margin-top: 48px; }
+  .section-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--primary); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* CARDS */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .card-row { grid-template-columns: 1fr; } }
+
+  /* STEP */
+  .step { display: flex; gap: 16px; align-items: flex-start; }
+  .step-num { min-width: 32px; height: 32px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700; flex-shrink: 0; }
+  .step-body h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
+  .step-body p { font-size: 0.88rem; color: var(--muted); }
+  .steps { display: flex; flex-direction: column; gap: 20px; }
+
+  /* FEATURE GRID */
+  .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .feature { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .feature-icon { font-size: 1.8rem; margin-bottom: 10px; }
+  .feature h3 { font-size: 0.88rem; font-weight: 700; margin-bottom: 4px; }
+  .feature p { font-size: 0.8rem; color: var(--muted); }
+
+  /* TAB PILLS */
+  .tab-pills { display: flex; flex-wrap: wrap; gap: 10px; }
+  .tab-pill { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; }
+  .tab-pill-icon { font-size: 1.3rem; }
+  .tab-pill-body { }
+  .tab-pill-name { font-size: 0.88rem; font-weight: 700; }
+  .tab-pill-desc { font-size: 0.75rem; color: var(--muted); }
+
+  /* SCREENSHOT */
+  .screenshot-wrap { background: #111; border-radius: 20px; padding: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); margin: 24px 0; overflow: hidden; }
+  .screenshot-wrap img { width: 100%; border-radius: 12px; display: block; }
+  .screenshot-caption { text-align: center; font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+
+  /* MOCK UI */
+  .mock { background: #171614; border-radius: 16px; padding: 20px; color: #fff; font-family: inherit; }
+  .mock-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .mock-logo { width: 36px; height: 36px; background: var(--primary); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+  .mock-title { font-weight: 800; font-size: 1rem; }
+  .mock-title span { color: #7fe8ec; }
+  .mock-tabs { display: flex; gap: 4px; border-bottom: 1px solid #333; margin-bottom: 16px; }
+  .mock-tab { padding: 6px 12px; font-size: 0.75rem; color: #888; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .mock-tab.active { color: #7fe8ec; border-bottom-color: #7fe8ec; font-weight: 600; }
+  .mock-field { margin-bottom: 12px; }
+  .mock-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 6px; }
+  .mock-input { background: #252220; border: 1px solid #333; border-radius: 8px; padding: 8px 12px; font-size: 0.82rem; color: #aaa; font-style: italic; }
+  .mock-btn-wrap { display: flex; justify-content: center; margin: 16px 0 8px; }
+  .mock-mic { width: 64px; height: 64px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
+  .mock-status { text-align: center; font-size: 0.78rem; color: #888; margin-top: 8px; }
+  .mock-send { background: var(--primary); border-radius: 10px; padding: 12px; text-align: center; font-size: 0.85rem; font-weight: 600; margin-top: 12px; }
+  .mock-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .mock-chip { background: #252220; border: 1px solid #333; border-radius: 99px; padding: 3px 10px; font-size: 0.72rem; color: #aaa; }
+  .mock-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+  /* PIN */
+  .pin-box { background: #1e1c1a; border: 1px solid #333; border-radius: 12px; padding: 16px; text-align: center; }
+  .pin-box p { font-size: 0.78rem; color: #888; margin-bottom: 10px; }
+  .pin-input { display: inline-flex; gap: 8px; }
+  .pin-dot { width: 12px; height: 12px; background: var(--primary); border-radius: 50%; }
+
+  /* TIP */
+  .tip { background: var(--primary-light); border-left: 3px solid var(--primary); border-radius: 0 8px 8px 0; padding: 12px 16px; font-size: 0.84rem; color: #014d52; margin-top: 12px; }
+  .tip strong { font-weight: 700; }
+
+  /* INSTALL */
+  .install-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 500px) { .install-steps { grid-template-columns: 1fr; } }
+  .install-step { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .install-step .os { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--primary); margin-bottom: 6px; }
+  .install-step p { font-size: 0.82rem; color: var(--muted); }
+
+  /* FOOTER */
+  footer { text-align: center; padding: 32px 20px; font-size: 0.78rem; color: var(--muted); border-top: 1px solid var(--border); margin-top: 48px; }
+  footer strong { color: var(--primary); }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-logo">
+    <svg width="36" height="36" viewBox="0 0 28 28" fill="none">
+      <rect x="10" y="4" width="8" height="14" rx="4" fill="white"/>
+      <path d="M6 13c0 4.418 3.582 8 8 8s8-3.582 8-8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      <line x1="14" y1="21" x2="14" y2="25" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      <line x1="10" y1="25" x2="18" y2="25" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <h1>FarmBox Brain<span>+</span></h1>
+  <p>Voice-to-Notion field notes for the FarmBox team. Record, transcribe, summarise and send to Notion in seconds.</p>
+  <div class="hero-badges">
+    <span class="badge">v 0.90</span>
+    <span class="badge">PWA — works offline</span>
+    <span class="badge">5 Notion databases</span>
+    <span class="badge">AI powered</span>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- WHAT IS IT -->
+  <div class="section">
+    <div class="section-title">What is FarmBox Brain+</div>
+    <div class="card">
+      <p style="font-size:0.92rem;color:var(--muted);margin-bottom:16px">
+        FarmBox Brain+ is a Progressive Web App (PWA) that lets any team member record a voice note in the field, auto-transcribe it with AI, generate a summary, attach photos or videos, and send everything directly to the right Notion database — no typing required.
+      </p>
+      <div class="features">
+        <div class="feature"><div class="feature-icon">🎙️</div><h3>Voice Recording</h3><p>One tap to record. Auto-transcribed via Groq Whisper.</p></div>
+        <div class="feature"><div class="feature-icon">🤖</div><h3>AI Summary</h3><p>Groq LLaMA generates bullet points or paragraph summaries.</p></div>
+        <div class="feature"><div class="feature-icon">📸</div><h3>Photo & Video</h3><p>Attach field photos and videos directly to the Notion page.</p></div>
+        <div class="feature"><div class="feature-icon">🎬</div><h3>Video Summary</h3><p>Paste a video transcript and get an AI summary instantly.</p></div>
+        <div class="feature"><div class="feature-icon">📲</div><h3>Works Offline</h3><p>Installs on your phone. Works without internet (submit when back online).</p></div>
+        <div class="feature"><div class="feature-icon">🔒</div><h3>PIN Protected</h3><p>Configuration locked with PIN 1234. Data pre-configured.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INSTALL -->
+  <div class="section">
+    <div class="section-title">Installation — Add to Home Screen</div>
+    <div class="card">
+      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Open <strong style="color:var(--primary)">https://kissanga.github.io/Ugly200/</strong> in your browser and install it as an app:</p>
+      <div class="install-steps">
+        <div class="install-step">
+          <div class="os">📱 iPhone / iPad (Safari)</div>
+          <p>Tap the <strong>Share</strong> button (box with arrow) → <strong>Add to Home Screen</strong> → <strong>Add</strong></p>
+        </div>
+        <div class="install-step">
+          <div class="os">🤖 Android (Chrome)</div>
+          <p>Tap the <strong>⋮ menu</strong> → <strong>Add to Home Screen</strong> → <strong>Install</strong></p>
+        </div>
+        <div class="install-step">
+          <div class="os">💻 Desktop (Chrome / Edge)</div>
+          <p>Click the <strong>install icon</strong> (⊕) in the address bar → <strong>Install</strong></p>
+        </div>
+        <div class="install-step">
+          <div class="os">✅ Already configured</div>
+          <p>No setup needed — Notion databases, API keys and tokens are pre-loaded.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTERFACE -->
+  <div class="section">
+    <div class="section-title">App Interface</div>
+
+    <div class="card-row">
+      <div class="card">
+        <div class="mock">
+          <div class="mock-header">
+            <div class="mock-logo">🎙️</div>
+            <div>
+              <div class="mock-title">FarmBox Brain<span>+</span></div>
+            </div>
+            <div style="margin-left:auto;background:#01696f;border-radius:99px;padding:4px 10px;font-size:0.7rem;font-weight:700">Enter Author</div>
+          </div>
+          <div class="mock-tabs">
+            <div class="mock-tab active">Ugly200</div>
+            <div class="mock-tab">SoP</div>
+            <div class="mock-tab">Ideas</div>
+            <div class="mock-tab">Daily</div>
+            <div class="mock-tab">FB1Log</div>
+          </div>
+          <div class="mock-field">
+            <div class="mock-label">Title</div>
+            <div class="mock-input">Give this note a title…</div>
+          </div>
+          <div class="mock-btn-wrap"><div class="mock-mic">🎙️</div></div>
+          <div class="mock-status">Tap to record voice note</div>
+        </div>
+        <p class="screenshot-caption" style="margin-top:12px">Header with Author button, 5 tabs, Title field and mic button</p>
+      </div>
+
+      <div class="card">
+        <div class="mock">
+          <div class="mock-field">
+            <div class="mock-label">AI Summary</div>
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+              <div style="background:#01696f;border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600">Generate</div>
+              <div style="background:#252220;border:1px solid #333;border-radius:6px;padding:4px 10px;font-size:0.72rem;color:#aaa">Bullets</div>
+              <div style="background:#252220;border:1px solid #333;border-radius:6px;padding:4px 10px;font-size:0.72rem;color:#aaa">Copy</div>
+            </div>
+            <div class="mock-input">AI-generated summary will appear here…</div>
+          </div>
+          <div class="mock-field" style="margin-top:14px">
+            <div class="mock-label">Tags</div>
+            <div class="mock-chips">
+              <div class="mock-chip on">FarmBox</div>
+              <div class="mock-chip on">Urgent</div>
+              <div class="mock-chip">Greenhouse</div>
+              <div class="mock-chip">Energy</div>
+              <div class="mock-chip" style="border-style:dashed;color:#01696f;border-color:#01696f">+ Add</div>
+            </div>
+          </div>
+          <div class="mock-send">✈ Send to Ugly200</div>
+        </div>
+        <p class="screenshot-caption" style="margin-top:12px">AI Summary with Generate/Bullets, tag chips with + Add, Send button</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW TO USE -->
+  <div class="section">
+    <div class="section-title">How to Use — Step by Step</div>
+    <div class="card">
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3>Select your tab</h3>
+            <p>Tap the right database tab at the top: <strong>Ugly200</strong> (general notes), <strong>SoP</strong> (procedures), <strong>Ideas</strong>, <strong>Daily</strong> (standup), or <strong>FB1Log</strong> (greenhouse build log).</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>Set your author name (first time only)</h3>
+            <p>Tap the teal <strong>Enter Author</strong> button in the header → type your name → tap OK. It's saved permanently until you change it.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3>Give your note a title (optional)</h3>
+            <p>Type a short title in the <strong>Title</strong> field. If left empty, the AI summary or transcript will be used as the title automatically.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h3>Record your voice note</h3>
+            <p>Tap the big teal <strong>microphone button</strong> to start recording. Tap again to stop. The audio is automatically transcribed using Groq Whisper AI — you'll see the text appear in the <strong>Voice Transcription</strong> box.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <h3>Generate an AI summary (optional)</h3>
+            <p>In the <strong>AI Summary</strong> section, tap <strong>Generate</strong>. Toggle <strong>Bullets</strong> on for bullet points. The summary also becomes the page title if you left the Title field empty.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">6</div>
+          <div class="step-body">
+            <h3>Attach media (optional)</h3>
+            <p>Use the <strong>Photo</strong> or <strong>Video</strong> round buttons in the Media card to attach field photos or videos. They upload directly to the Notion page.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">7</div>
+          <div class="step-body">
+            <h3>Fill in tab-specific fields</h3>
+            <p>Each tab has its own fields — select tags, status, phase etc. Tap <strong>+ Add</strong> to create a new custom tag on the fly.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">8</div>
+          <div class="step-body">
+            <h3>Send to Notion</h3>
+            <p>Tap the big <strong>Send to [Tab]</strong> button. A new page is created in the corresponding Notion database with all your content, media, tags and metadata.</p>
+          </div>
+        </div>
+      </div>
+      <div class="tip"><strong>💡 Tip:</strong> You can also type or paste text manually in any box — you don't have to record audio. All fields are fully editable before sending.</div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="section">
+    <div class="section-title">The 5 Notion Databases</div>
+    <div class="card">
+      <div class="tab-pills">
+        <div class="tab-pill">
+          <div class="tab-pill-icon">💩</div>
+          <div class="tab-pill-body">
+            <div class="tab-pill-name">Ugly200</div>
+            <div class="tab-pill-desc">General field notes — Tags, Status, Location</div>
+          </div>
+        </div>
+        <div class="tab-pill">
+          <div class="tab-pill-icon">📋</div>
+          <div class="tab-pill-body">
+            <div class="tab-pill-name">SoP</div>
+            <div class="tab-pill-desc">Standard Operating Procedures — Category, Status</div>
+          </div>
+        </div>
+        <div class="tab-pill">
+          <div class="tab-pill-icon">💡</div>
+          <div class="tab-pill-body">
+            <div class="tab-pill-name">Ideas</div>
+            <div class="tab-pill-desc">Ideas — Category, Status, Priority, Effort</div>
+          </div>
+        </div>
+        <div class="tab-pill">
+          <div class="tab-pill-icon">📅</div>
+          <div class="tab-pill-body">
+            <div class="tab-pill-name">Daily</div>
+            <div class="tab-pill-desc">Daily standup — Today, Tomorrow, Note, Mood</div>
+          </div>
+        </div>
+        <div class="tab-pill">
+          <div class="tab-pill-icon">🏗️</div>
+          <div class="tab-pill-body">
+            <div class="tab-pill-name">FB1Log</div>
+            <div class="tab-pill-desc">Greenhouse build log — Phase selector</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIDEO SUMMARY -->
+  <div class="section">
+    <div class="section-title">Video AI Summary</div>
+    <div class="card">
+      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Use this section to summarise any video content (YouTube, recordings, meetings):</p>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body"><h3>Attach photo or video</h3><p>Use the <strong>Photo</strong> / <strong>Video</strong> round buttons in the Media card above the Video AI Summary section.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body"><h3>Paste the transcript</h3><p>Copy the transcript from YouTube (<em>… → Show transcript</em>) or any other source and paste it into the transcript box.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body"><h3>Generate summary</h3><p>Tap <strong>Generate</strong> — AI returns bullet points by default. Toggle <strong>Bullets</strong> off for a paragraph. The summary is included in the Notion page when you send.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIG -->
+  <div class="section">
+    <div class="section-title">Configuration (Admin only)</div>
+    <div class="card">
+      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Tap <strong>⚙️ Configuration</strong> at the bottom of the page. A PIN is required:</p>
+      <div class="pin-box">
+        <p>🔒 Enter PIN to access Configuration</p>
+        <div class="pin-input">
+          <div class="pin-dot"></div>
+          <div class="pin-dot"></div>
+          <div class="pin-dot"></div>
+          <div class="pin-dot"></div>
+        </div>
+        <p style="margin-top:10px;font-size:0.75rem;color:#01696f;font-weight:700">PIN: 1 2 3 4</p>
+      </div>
+      <div class="tip" style="margin-top:16px"><strong>⚠️ Note:</strong> The app comes pre-configured with all Notion database IDs, the Groq API key and Notion token. Regular users do not need to access the configuration.</div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <strong>FarmBox Brain+</strong> · v 0.90 · Built for the FarmBox team<br>
+  <span style="margin-top:4px;display:block">🔗 <a href="https://kissanga.github.io/Ugly200/" style="color:var(--primary)">kissanga.github.io/Ugly200</a></span>
+</footer>
+
+</body>
+</html>
