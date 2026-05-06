@@ -937,16 +937,11 @@ async function handleRecordingStop() {
   recStatus.textContent = 'Tap to record voice note';
   updateSubmitBtn();
 
-  const groqKey = document.getElementById('groqKey').value.trim();
-  if (!groqKey) {
-    showToast('Add Groq API key in Configuration to auto-transcribe', 'info');
-    return;
-  }
-  await transcribeAudio(recordedBlob, groqKey);
+  await transcribeAudio(recordedBlob);
 }
 
 // ─── TRANSCRIPTION (GROQ WHISPER) ────────────────────────────
-async function transcribeAudio(blob, apiKey) {
+async function transcribeAudio(blob) {
   const bar = document.getElementById('transcribingBar');
   bar.style.display = 'flex';
   try {
