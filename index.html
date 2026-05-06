@@ -268,7 +268,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.93';
+  const CURRENT_VERSION = '0.94';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -391,7 +391,7 @@
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 0.93</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 0.94</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -476,10 +476,6 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           Generate
         </button>
-        <button class="btn-copy" id="summaryModeBtn" aria-label="Toggle summary mode" title="Switch between paragraph and bullet points" style="opacity:0.7">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
-          Bullets
-        </button>
         <button class="btn-copy" id="copySummaryBtn" aria-label="Copy summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
@@ -528,10 +524,6 @@
         <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate video AI summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           Generate
-        </button>
-        <button class="btn-copy" id="videoSummaryModeBtn" aria-label="Toggle video summary mode" title="Switch between paragraph and bullet points" style="opacity:0.7">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
-          Bullets
         </button>
         <button class="btn-copy" id="copyVideoSummaryBtn" aria-label="Copy video summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -1013,26 +1005,13 @@ async function transcribeAudio(blob) {
 }
 
 // ─── AI SUMMARY (GROQ LLAMA) ─────────────────────────────────
-let summaryMode = 'paragraph'; // 'paragraph' | 'bullets'
-
-const summaryModeBtn = document.getElementById('summaryModeBtn');
-summaryModeBtn.addEventListener('click', () => {
-  summaryMode = summaryMode === 'paragraph' ? 'bullets' : 'paragraph';
-  const isBullets = summaryMode === 'bullets';
-  summaryModeBtn.style.opacity = isBullets ? '1' : '0.7';
-  summaryModeBtn.style.color = isBullets ? 'var(--primary)' : '';
-  summaryModeBtn.title = isBullets ? 'Switch to paragraph mode' : 'Switch to bullet points';
-});
-
 document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
   const transcript = document.getElementById('transcriptText').value.trim();
   const note       = document.getElementById('noteText').value.trim();
   const text       = [transcript, note].filter(Boolean).join('\n\n');
   if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
 
-  const systemPrompt = summaryMode === 'bullets'
-    ? 'You are a concise note summariser. Respond with 3–6 short bullet points (use • as the bullet character) capturing the key points of the user\'s note. No preamble, no extra text.'
-    : 'You are a concise note summariser. Respond with a short, clear summary (2–5 sentences) of the user\'s note. No preamble.';
+  const systemPrompt = 'You are a concise note summariser. Respond with 3–6 short bullet points (use • as the bullet character) capturing the key points of the user\'s note. No preamble, no extra text.';
 
   const gen = document.getElementById('summaryGenerating');
   const btn = document.getElementById('generateSummaryBtn');
@@ -1077,29 +1056,13 @@ document.getElementById('copySummaryBtn').addEventListener('click', () => {
 });
 
 // ─── VIDEO AI SUMMARY ─────────────────────────────────────────
-let videoSummaryMode = 'bullets'; // default to bullets for video
-
-const videoSummaryModeBtn = document.getElementById('videoSummaryModeBtn');
-// Start active (bullets on by default)
-videoSummaryModeBtn.style.opacity = '1';
-videoSummaryModeBtn.style.color = 'var(--primary)';
-videoSummaryModeBtn.addEventListener('click', () => {
-  videoSummaryMode = videoSummaryMode === 'bullets' ? 'paragraph' : 'bullets';
-  const isBullets = videoSummaryMode === 'bullets';
-  videoSummaryModeBtn.style.opacity = isBullets ? '1' : '0.7';
-  videoSummaryModeBtn.style.color = isBullets ? 'var(--primary)' : '';
-  videoSummaryModeBtn.title = isBullets ? 'Switch to paragraph mode' : 'Switch to bullet points';
-});
-
 document.getElementById('generateVideoSummaryBtn').addEventListener('click', async () => {
   const videoTranscript = document.getElementById('videoTranscriptText').value.trim();
   const voiceTranscript = document.getElementById('transcriptText').value.trim();
   const transcript = videoTranscript || voiceTranscript;
   if (!transcript) { showToast('Add a video transcript or record a voice note first', 'error'); return; }
 
-  const systemPrompt = videoSummaryMode === 'bullets'
-    ? 'You are a concise video content summariser. Respond with 3–7 short bullet points (use • as the bullet character) capturing the key insights and takeaways from the video content provided. No preamble, no extra text.'
-    : 'You are a concise video content summariser. Respond with a short, clear summary (2–5 sentences) of the video content provided. No preamble.';
+  const systemPrompt = 'You are a concise video content summariser. Respond with 3–7 short bullet points (use • as the bullet character) capturing the key insights and takeaways from the video content provided. No preamble, no extra text.';
 
   const gen = document.getElementById('videoSummaryGenerating');
   const btn = document.getElementById('generateVideoSummaryBtn');
