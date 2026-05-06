@@ -1045,9 +1045,10 @@ videoSummaryModeBtn.addEventListener('click', () => {
 });
 
 document.getElementById('generateVideoSummaryBtn').addEventListener('click', async () => {
-  const transcript = document.getElementById('videoTranscriptText').value.trim();
-  const text       = transcript;
-  if (!transcript) { showToast('Add a video transcript or notes first', 'error'); return; }
+  const videoTranscript = document.getElementById('videoTranscriptText').value.trim();
+  const voiceTranscript = document.getElementById('transcriptText').value.trim();
+  const transcript = videoTranscript || voiceTranscript;
+  if (!transcript) { showToast('Add a video transcript or record a voice note first', 'error'); return; }
 
   const systemPrompt = videoSummaryMode === 'bullets'
     ? 'You are a concise video content summariser. Respond with 3–7 short bullet points (use • as the bullet character) capturing the key insights and takeaways from the video content provided. No preamble, no extra text.'
