@@ -1011,7 +1011,7 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
   const text       = [transcript, note].filter(Boolean).join('\n\n');
   if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
 
-  const systemPrompt = 'Summarise the following note as short bullet points (use • as the bullet character). Use as few bullets as the content requires. No preamble, no extra text.';
+  const systemPrompt = 'Extract the minimum number of bullet points (use • as the bullet character) needed to fully understand the main information in the transcription. Scale from 1 bullet for a very short or simple note up to as many as the complexity and length require. Each bullet must be essential — no padding, no preamble, no extra text.';
 
   const gen = document.getElementById('summaryGenerating');
   const btn = document.getElementById('generateSummaryBtn');
@@ -1062,7 +1062,7 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   const transcript = videoTranscript || voiceTranscript;
   if (!transcript) { showToast('Add a video transcript or record a voice note first', 'error'); return; }
 
-  const systemPrompt = 'Summarise the following content as short bullet points (use • as the bullet character). Use as few bullets as the content requires. No preamble, no extra text.';
+  const systemPrompt = 'Extract the minimum number of bullet points (use • as the bullet character) needed to fully understand the main information in the transcription. Scale from 1 bullet for a very short or simple note up to as many as the complexity and length require. Each bullet must be essential — no padding, no preamble, no extra text.';
 
   const gen = document.getElementById('videoSummaryGenerating');
   const btn = document.getElementById('generateVideoSummaryBtn');
