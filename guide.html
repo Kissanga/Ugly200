@@ -143,9 +143,9 @@
       </p>
       <div class="features">
         <div class="feature"><div class="feature-icon">🎙️</div><h3>Voice Recording</h3><p>One tap to record. Auto-transcribed via Groq Whisper.</p></div>
-        <div class="feature"><div class="feature-icon">🤖</div><h3>AI Summary</h3><p>Groq LLaMA generates bullet points or paragraph summaries.</p></div>
-        <div class="feature"><div class="feature-icon">📸</div><h3>Photo & Video</h3><p>Attach field photos and videos directly to the Notion page.</p></div>
-        <div class="feature"><div class="feature-icon">🎬</div><h3>Video Summary</h3><p>Paste a video transcript and get an AI summary instantly.</p></div>
+        <div class="feature"><div class="feature-icon">🤖</div><h3>AI Summary</h3><p>Groq LLaMA generates the minimum bullet points needed to capture the key information.</p></div>
+        <div class="feature"><div class="feature-icon">📸</div><h3>Photo & Video</h3><p>Attach field photos and videos. Videos are auto-transcribed and compressed on upload.</p></div>
+        <div class="feature"><div class="feature-icon">🎬</div><h3>Video Summary</h3><p>Upload a local video or paste a YouTube transcript — AI summarises it instantly.</p></div>
         <div class="feature"><div class="feature-icon">📲</div><h3>Works Offline</h3><p>Installs on your phone. Works without internet (submit when back online).</p></div>
         <div class="feature"><div class="feature-icon">🔒</div><h3>PIN Protected</h3><p>Configuration locked with PIN 1234. Data pre-configured.</p></div>
       </div>
@@ -215,10 +215,9 @@
             <div class="mock-label">AI Summary</div>
             <div style="display:flex;gap:6px;margin-bottom:8px">
               <div style="background:#01696f;border-radius:6px;padding:4px 10px;font-size:0.72rem;font-weight:600">Generate</div>
-              <div style="background:#252220;border:1px solid #333;border-radius:6px;padding:4px 10px;font-size:0.72rem;color:#aaa">Bullets</div>
               <div style="background:#252220;border:1px solid #333;border-radius:6px;padding:4px 10px;font-size:0.72rem;color:#aaa">Copy</div>
             </div>
-            <div class="mock-input">AI-generated summary will appear here…</div>
+            <div class="mock-input" style="font-style:normal;color:#ccc;font-size:0.75rem">• Main issue identified on pump valve<br>• Needs replacement before Friday</div>
           </div>
           <div class="mock-field" style="margin-top:14px">
             <div class="mock-label">Tags</div>
@@ -226,13 +225,12 @@
               <div class="mock-chip on">FarmBox</div>
               <div class="mock-chip on">Urgent</div>
               <div class="mock-chip">Greenhouse</div>
-              <div class="mock-chip">Energy</div>
               <div class="mock-chip" style="border-style:dashed;color:#01696f;border-color:#01696f">+ Add</div>
             </div>
           </div>
           <div class="mock-send">✈ Send to Ugly200</div>
         </div>
-        <p class="screenshot-caption" style="margin-top:12px">AI Summary with Generate/Bullets, tag chips with + Add, Send button</p>
+        <p class="screenshot-caption" style="margin-top:12px">AI Summary always in bullet points · Generate + Copy · Tags with + Add</p>
       </div>
     </div>
   </div>
@@ -274,14 +272,14 @@
           <div class="step-num">5</div>
           <div class="step-body">
             <h3>Generate an AI summary (optional)</h3>
-            <p>In the <strong>AI Summary</strong> section, tap <strong>Generate</strong>. Toggle <strong>Bullets</strong> on for bullet points. The summary also becomes the page title if you left the Title field empty.</p>
+            <p>In the <strong>AI Summary</strong> section, tap <strong>Generate</strong>. The AI automatically returns the minimum number of bullet points needed to capture the key information — 1 bullet for a quick note, more for longer recordings. The summary becomes the page title if you left Title empty.</p>
           </div>
         </div>
         <div class="step">
           <div class="step-num">6</div>
           <div class="step-body">
             <h3>Attach media (optional)</h3>
-            <p>Use the <strong>Photo</strong> or <strong>Video</strong> round buttons in the Media card to attach field photos or videos. They upload directly to the Notion page.</p>
+            <p>Use the <strong>Photo</strong> or <strong>Video</strong> round buttons in the Media card. Photos attach as-is. Videos are automatically <strong>audio-extracted and transcribed</strong> — the transcript appears in the Video AI Summary box ready to summarise.</p>
           </div>
         </div>
         <div class="step">
@@ -351,21 +349,31 @@
   <div class="section">
     <div class="section-title">Video AI Summary</div>
     <div class="card">
-      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Use this section to summarise any video content (YouTube, recordings, meetings):</p>
+      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Summarise any video — local file, field recording or YouTube.</p>
       <div class="steps">
         <div class="step">
-          <div class="step-num">1</div>
-          <div class="step-body"><h3>Attach photo or video</h3><p>Use the <strong>Photo</strong> / <strong>Video</strong> round buttons in the Media card above the Video AI Summary section.</p></div>
+          <div class="step-num">A</div>
+          <div class="step-body">
+            <h3>Local video file (auto)</h3>
+            <p>Tap the <strong>Video</strong> button in the Media card and pick a file from your device. The app automatically extracts the audio, compresses it, and transcribes it via Groq Whisper. The transcript appears in the box instantly.</p>
+          </div>
         </div>
         <div class="step">
-          <div class="step-num">2</div>
-          <div class="step-body"><h3>Paste the transcript</h3><p>Copy the transcript from YouTube (<em>… → Show transcript</em>) or any other source and paste it into the transcript box.</p></div>
+          <div class="step-num">B</div>
+          <div class="step-body">
+            <h3>YouTube or external video (manual)</h3>
+            <p>Open the video on YouTube → tap <strong>…</strong> → <strong>Show transcript</strong> → copy it → paste into the transcript box.</p>
+          </div>
         </div>
         <div class="step">
-          <div class="step-num">3</div>
-          <div class="step-body"><h3>Generate summary</h3><p>Tap <strong>Generate</strong> — AI returns bullet points by default. Toggle <strong>Bullets</strong> off for a paragraph. The summary is included in the Notion page when you send.</p></div>
+          <div class="step-num">C</div>
+          <div class="step-body">
+            <h3>Generate summary</h3>
+            <p>Tap <strong>Generate</strong> in the Video AI Summary section. The AI returns the minimum essential bullet points. The summary is included in the Notion page when you send.</p>
+          </div>
         </div>
       </div>
+      <div class="tip"><strong>💡 Tip:</strong> If the Video transcript box is empty, Generate uses the voice transcript automatically.</div>
     </div>
   </div>
 
@@ -384,7 +392,25 @@
         </div>
         <p style="margin-top:10px;font-size:0.75rem;color:#01696f;font-weight:700">PIN: 1 2 3 4</p>
       </div>
-      <div class="tip" style="margin-top:16px"><strong>⚠️ Note:</strong> The app comes pre-configured with all Notion database IDs, the Groq API key and Notion token. Regular users do not need to access the configuration.</div>
+      <div class="tip" style="margin-top:16px"><strong>⚠️ Note:</strong> The app comes pre-configured with all 5 Notion database IDs. API keys and tokens are secured in the Cloudflare backend — they are never stored in the app or visible to users. Regular team members do not need to access the configuration.</div>
+    </div>
+  </div>
+
+  <!-- UPDATES -->
+  <div class="section">
+    <div class="section-title">App Updates</div>
+    <div class="card">
+      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Brain+ checks for updates automatically every 5 minutes. When a new version is deployed you'll see a notification at the bottom of the screen:</p>
+      <div style="background:#1c1b19;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <span style="font-size:1.3rem">✨</span>
+        <div style="flex:1">
+          <div style="font-weight:700;color:#fff;font-size:0.88rem">v 0.96 available</div>
+          <div style="font-size:0.75rem;color:#888">A new version of Brain+ is ready</div>
+        </div>
+        <div style="background:#01696f;border-radius:8px;padding:6px 12px;font-size:0.75rem;font-weight:700;color:#fff;white-space:nowrap">Update now</div>
+        <div style="color:#666;font-size:1rem;cursor:pointer">✕</div>
+      </div>
+      <p style="font-size:0.82rem;color:var(--muted)">Tap <strong>Update now</strong> to get the latest version instantly. Tap <strong>✕</strong> to dismiss and update later.</p>
     </div>
   </div>
 
