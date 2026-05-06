@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v19';
+const CACHE_NAME = 'ugly200-v20';
 const STATIC_ASSETS = [
   './',
   './index.html',
