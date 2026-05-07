@@ -257,6 +257,55 @@
 
     @media (min-width: 600px) { .recorder-card { padding: var(--space-8); } }
     @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+
+    /* PASSWORD GATE */
+    #passwordGate {
+      position: fixed; inset: 0; z-index: 10000;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: var(--space-6);
+      animation: fadeIn 200ms ease-out;
+    }
+    #passwordGate.hidden { display: none; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .pw-card {
+      width: 100%; max-width: 340px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: var(--space-8);
+      display: flex; flex-direction: column; gap: var(--space-5);
+      box-shadow: var(--shadow-lg);
+    }
+    .pw-input-wrap { position: relative; }
+    .pw-input-wrap input {
+      width: 100%;
+      padding: var(--space-3) 2.8rem var(--space-3) var(--space-4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-raised);
+      color: var(--text);
+      font-size: var(--text-base);
+      font-family: var(--font-body);
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .pw-input-wrap input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 20%, transparent); }
+    .pw-eye-btn {
+      position: absolute; right: var(--space-3); top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--text-faint); cursor: pointer;
+      font-size: 1rem; padding: 4px; line-height: 1;
+    }
+    .pw-error { font-size: var(--text-xs); color: #e53e3e; text-align: center; }
+    .pw-unlock-btn {
+      width: 100%; padding: var(--space-3);
+      background: var(--primary); color: var(--text-inverse);
+      border: none; border-radius: var(--radius-md);
+      font-size: var(--text-base); font-weight: 700; cursor: pointer;
+      transition: background var(--transition);
+    }
+    .pw-unlock-btn:hover { background: var(--primary-hover); }
+    .pw-unlock-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -268,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.97';
+  const CURRENT_VERSION = '0.98';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -369,6 +418,92 @@
   setInterval(checkForUpdates, 5 * 60 * 1000);
 </script>
 
+<script>
+// ─── CLOUDFLARE PROXY + PASSWORD ─────────────────────────────
+const PROXY = 'https://notion-proxy.francesco-955.workers.dev';
+
+function getAppPassword()    { return localStorage.getItem('brainplus_pw') || ''; }
+function setAppPassword(pw)  { localStorage.setItem('brainplus_pw', pw); }
+function clearAppPassword()  { localStorage.removeItem('brainplus_pw'); }
+
+function showPasswordGate() {
+  const gate = document.getElementById('passwordGate');
+  gate.classList.remove('hidden');
+  setTimeout(() => document.getElementById('appPasswordInput')?.focus(), 50);
+}
+function hidePasswordGate() {
+  document.getElementById('passwordGate').classList.add('hidden');
+}
+function togglePwVisibility() {
+  const inp = document.getElementById('appPasswordInput');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+async function tryUnlockApp() {
+  const pw  = document.getElementById('appPasswordInput').value;
+  const err = document.getElementById('appPasswordError');
+  const btn = document.getElementById('unlockBtn');
+  if (!pw) return;
+  btn.disabled = true; btn.textContent = 'Checking…';
+  err.style.display = 'none';
+  try {
+    const res = await fetch(PROXY + '/ping', {
+      headers: { 'X-App-Password': pw }
+    });
+    if (res.ok) {
+      setAppPassword(pw);
+      hidePasswordGate();
+    } else {
+      err.textContent = 'Wrong password — try again.';
+      err.style.display = 'block';
+      document.getElementById('appPasswordInput').value = '';
+      document.getElementById('appPasswordInput').focus();
+    }
+  } catch(e) {
+    err.textContent = 'Connection error — check your network.';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Unlock';
+  }
+}
+
+// Wrapper for all Cloudflare proxy calls — injects password, handles 401
+async function cfFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set('X-App-Password', getAppPassword());
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401) {
+    clearAppPassword();
+    showPasswordGate();
+    throw new Error('Session expired — please re-enter your password.');
+  }
+  return res;
+}
+
+// Show gate on load if no password stored
+document.addEventListener('DOMContentLoaded', () => {
+  if (!getAppPassword()) showPasswordGate();
+});
+</script>
+
+<!-- PASSWORD GATE -->
+<div id="passwordGate" class="hidden" role="dialog" aria-modal="true" aria-label="App login">
+  <div class="pw-card">
+    <div style="text-align:center">
+      <div style="font-size:2rem">🔐</div>
+      <div style="font-size:var(--text-lg);font-weight:700;margin-top:var(--space-2)">FarmBox Brain+</div>
+      <div style="font-size:var(--text-sm);color:var(--text-muted);margin-top:var(--space-1)">Enter your team password to continue</div>
+    </div>
+    <div class="pw-input-wrap">
+      <input id="appPasswordInput" type="password" placeholder="Password" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter') tryUnlockApp()">
+      <button class="pw-eye-btn" onclick="togglePwVisibility()" aria-label="Show / hide password">👁</button>
+    </div>
+    <div id="appPasswordError" class="pw-error" style="display:none"></div>
+    <button class="pw-unlock-btn" id="unlockBtn" onclick="tryUnlockApp()">Unlock</button>
+  </div>
+</div>
+
 <a href="#main-content" class="sr-only">Skip to content</a>
 
 <!-- HEADER -->
@@ -391,7 +526,7 @@
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 0.97</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 0.98</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -989,7 +1124,7 @@ async function transcribeAudio(blob) {
     fd.append('file', blob, 'audio.webm');
     fd.append('model', 'whisper-large-v3');
 
-    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
+    const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
       method: 'POST',
       body: fd
     });
@@ -1029,7 +1164,7 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
   gen.style.display = 'flex';
   btn.disabled = true;
   try {
-    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/chat/completions', {
+    const res = await cfFetch(PROXY + '/groq/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1079,7 +1214,7 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   gen.style.display = 'flex';
   btn.disabled = true;
   try {
-    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/chat/completions', {
+    const res = await cfFetch(PROXY + '/groq/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1200,7 +1335,7 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
       const fd = new FormData();
       fd.append('file', audio, 'audio.webm');
       fd.append('model', 'whisper-large-v3');
-      const res = await fetch('https://notion-proxy.francesco-955.workers.dev/groq/openai/v1/audio/transcriptions', {
+      const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
         method: 'POST', body: fd
       });
       if (!res.ok) throw new Error(await res.text());
@@ -1487,7 +1622,7 @@ async function uploadFileToNotion(file, onStatus, compress = true) {
   }
 
   // Create upload slot
-  const cr = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/file_uploads', {
+  const cr = await cfFetch(PROXY + '/v1/file_uploads', {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename: uploadName, content_type: uploadFile.type }),
@@ -1498,7 +1633,7 @@ async function uploadFileToNotion(file, onStatus, compress = true) {
   // Send file
   const fd = new FormData();
   fd.append('file', uploadFile, uploadName);
-  const sr = await fetch(`https://notion-proxy.francesco-955.workers.dev/v1/file_uploads/${id}/send`, {
+  const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28' },
     body: fd,
@@ -1606,7 +1741,7 @@ async function submitToNotion() {
   btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
 
   try {
-    const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/pages', {
+    const res = await cfFetch(PROXY + '/v1/pages', {
       method: 'POST',
       headers: {
         'Notion-Version': '2022-06-28',
@@ -1744,7 +1879,7 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
         }
       });
 
-      const res = await fetch('https://notion-proxy.francesco-955.workers.dev/v1/databases', {
+      const res = await cfFetch(PROXY + '/v1/databases', {
         method: 'POST',
         headers: {
           'Notion-Version': '2022-06-28',

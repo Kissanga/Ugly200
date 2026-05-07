@@ -1,17 +1,34 @@
 export default {
   async fetch(request, env) {
+    // Always allow CORS preflight (no password check on OPTIONS)
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-          'Access-Control-Allow-Headers': 'Authorization,Content-Type,Notion-Version',
+          'Access-Control-Allow-Headers': 'Authorization,Content-Type,Notion-Version,X-App-Password',
         }
+      });
+    }
+
+    // ── App password gate ─────────────────────────────────────────
+    const appPw = request.headers.get('X-App-Password') || '';
+    if (appPw !== env.APP_PASSWORD) {
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: { 'Access-Control-Allow-Origin': '*' }
       });
     }
 
     const url = new URL(request.url);
     const pathname = url.pathname;
+
+    // Ping route — just confirms the password is correct
+    if (pathname === '/ping') {
+      return new Response('{"ok":true}', {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
 
     // Route to Notion API
     if (pathname.startsWith('/v1/')) {
