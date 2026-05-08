@@ -94,6 +94,15 @@
   .pin-input { display: inline-flex; gap: 8px; }
   .pin-dot { width: 12px; height: 12px; background: var(--primary); border-radius: 50%; }
 
+  /* PASSWORD GATE MOCK */
+  .pw-mock { background: #111; border-radius: 16px; padding: 28px 20px; text-align: center; color: #fff; }
+  .pw-mock-card { background: #1e1c1a; border: 1px solid #333; border-radius: 14px; padding: 24px 20px; max-width: 280px; margin: 0 auto; }
+  .pw-mock-icon { font-size: 2rem; margin-bottom: 10px; }
+  .pw-mock-title { font-weight: 800; font-size: 0.95rem; margin-bottom: 4px; }
+  .pw-mock-sub { font-size: 0.75rem; color: #888; margin-bottom: 16px; }
+  .pw-mock-input { background: #252220; border: 1px solid #444; border-radius: 8px; padding: 9px 12px; font-size: 0.82rem; color: #aaa; text-align: left; margin-bottom: 12px; }
+  .pw-mock-btn { background: var(--primary); border-radius: 8px; padding: 10px; font-size: 0.85rem; font-weight: 700; color: #fff; }
+
   /* TIP */
   .tip { background: var(--primary-light); border-left: 3px solid var(--primary); border-radius: 0 8px 8px 0; padding: 12px 16px; font-size: 0.84rem; color: #014d52; margin-top: 12px; }
   .tip strong { font-weight: 700; }
@@ -125,10 +134,11 @@
   <h1>FarmBox Brain<span>+</span></h1>
   <p>Voice-to-Notion field notes for the FarmBox team. Record, transcribe, summarise and send to Notion in seconds.</p>
   <div class="hero-badges">
-    <span class="badge">v 0.96</span>
+    <span class="badge">v 1.02</span>
     <span class="badge">PWA — works offline</span>
     <span class="badge">5 Notion databases</span>
     <span class="badge">AI powered</span>
+    <span class="badge">🔐 Password protected</span>
   </div>
 </div>
 
@@ -147,7 +157,7 @@
         <div class="feature"><div class="feature-icon">📸</div><h3>Photo & Video</h3><p>Attach field photos and videos. Videos are auto-transcribed and compressed on upload.</p></div>
         <div class="feature"><div class="feature-icon">🎬</div><h3>Video Summary</h3><p>Upload a local video or paste a YouTube transcript — AI summarises it instantly.</p></div>
         <div class="feature"><div class="feature-icon">📲</div><h3>Works Offline</h3><p>Installs on your phone. Works without internet (submit when back online).</p></div>
-        <div class="feature"><div class="feature-icon">🔒</div><h3>PIN Protected</h3><p>Configuration locked with PIN 1234. Data pre-configured.</p></div>
+        <div class="feature"><div class="feature-icon">🔐</div><h3>Password Protected</h3><p>Team password required on first launch. Only authorised users can send to Notion.</p></div>
       </div>
     </div>
   </div>
@@ -171,9 +181,38 @@
           <p>Click the <strong>install icon</strong> (⊕) in the address bar → <strong>Install</strong></p>
         </div>
         <div class="install-step">
-          <div class="os">✅ Already configured</div>
-          <p>No setup needed — Notion databases, API keys and tokens are pre-loaded.</p>
+          <div class="os">🔐 First launch</div>
+          <p>Enter the <strong>team password</strong> when prompted. It is saved — you won't need to enter it again unless it changes.</p>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PASSWORD -->
+  <div class="section">
+    <div class="section-title">Team Password</div>
+    <div class="card-row">
+      <div class="card">
+        <div class="pw-mock">
+          <div class="pw-mock-card">
+            <div class="pw-mock-icon">🔐</div>
+            <div class="pw-mock-title">FarmBox Brain+</div>
+            <div class="pw-mock-sub">Enter your team password to continue</div>
+            <div class="pw-mock-input">••••••••••••</div>
+            <div class="pw-mock-btn">Unlock</div>
+          </div>
+        </div>
+        <p class="screenshot-caption" style="margin-top:12px">Password gate — shown on first launch</p>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center;gap:14px">
+        <p style="font-size:0.88rem;color:var(--muted)">The app requires a <strong>team password</strong> before any data can be sent to Notion. This prevents unauthorised use even if someone finds the app URL.</p>
+        <ul style="font-size:0.85rem;color:var(--muted);padding-left:1.2em;display:flex;flex-direction:column;gap:8px">
+          <li>Enter the password once → it is stored on your device</li>
+          <li>No re-entry needed on future launches</li>
+          <li>If the password changes, the gate reappears automatically</li>
+          <li>The password is never visible in the app source code — it lives only in Cloudflare</li>
+        </ul>
+        <div class="tip"><strong>🔑 Ask your admin</strong> for the team password if you don't have it.</div>
       </div>
     </div>
   </div>
@@ -243,54 +282,61 @@
         <div class="step">
           <div class="step-num">1</div>
           <div class="step-body">
+            <h3>Enter the team password (first time only)</h3>
+            <p>On first launch you'll see the password screen. Enter the team password and tap <strong>Unlock</strong>. The app stores it — you won't need to enter it again.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
             <h3>Select your tab</h3>
             <p>Tap the right database tab at the top: <strong>Ugly200</strong> (general notes), <strong>SoP</strong> (procedures), <strong>Ideas</strong>, <strong>Daily</strong> (standup), or <strong>FB1Log</strong> (greenhouse build log).</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">2</div>
+          <div class="step-num">3</div>
           <div class="step-body">
             <h3>Set your author name (first time only)</h3>
             <p>Tap the teal <strong>Enter Author</strong> button in the header → type your name → tap OK. It's saved permanently until you change it.</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">3</div>
+          <div class="step-num">4</div>
           <div class="step-body">
-            <h3>Give your note a title (optional)</h3>
-            <p>Type a short title in the <strong>Title</strong> field. If left empty, the AI summary or transcript will be used as the title automatically.</p>
+            <h3>Give your note a title (optional — not shown on Daily)</h3>
+            <p>Type a short title in the <strong>Title</strong> field. If left empty, the AI summary or transcript is used automatically. On the <strong>Daily</strong> tab, the Title field is hidden — entries are titled with your Author name automatically.</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">4</div>
+          <div class="step-num">5</div>
           <div class="step-body">
             <h3>Record your voice note</h3>
             <p>Tap the big teal <strong>microphone button</strong> to start recording. Tap again to stop. The audio is automatically transcribed using Groq Whisper AI — you'll see the text appear in the <strong>Voice Transcription</strong> box.</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">5</div>
+          <div class="step-num">6</div>
           <div class="step-body">
             <h3>Generate an AI summary (optional)</h3>
-            <p>In the <strong>AI Summary</strong> section, tap <strong>Generate</strong>. The AI automatically returns the minimum number of bullet points needed to capture the key information — 1 bullet for a quick note, more for longer recordings. The summary becomes the page title if you left Title empty.</p>
+            <p>In the <strong>AI Summary</strong> section, tap <strong>Generate</strong>. The AI automatically returns the minimum number of bullet points needed to capture the key information — 1 bullet for a quick note, more for longer recordings.</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">6</div>
+          <div class="step-num">7</div>
           <div class="step-body">
             <h3>Attach media (optional)</h3>
             <p>Use the <strong>Photo</strong> or <strong>Video</strong> round buttons in the Media card. Photos attach as-is. Videos are automatically <strong>audio-extracted and transcribed</strong> — the transcript appears in the Video AI Summary box ready to summarise.</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">7</div>
+          <div class="step-num">8</div>
           <div class="step-body">
             <h3>Fill in tab-specific fields</h3>
             <p>Each tab has its own fields — select tags, status, phase etc. Tap <strong>+ Add</strong> to create a new custom tag on the fly.</p>
           </div>
         </div>
         <div class="step">
-          <div class="step-num">8</div>
+          <div class="step-num">9</div>
           <div class="step-body">
             <h3>Send to Notion</h3>
             <p>Tap the big <strong>Send to [Tab]</strong> button. A new page is created in the corresponding Notion database with all your content, media, tags and metadata.</p>
@@ -331,7 +377,7 @@
           <div class="tab-pill-icon">📅</div>
           <div class="tab-pill-body">
             <div class="tab-pill-name">Daily</div>
-            <div class="tab-pill-desc">Daily standup — Today, Tomorrow, Note, Mood</div>
+            <div class="tab-pill-desc">Daily standup — Decisions needed, Today (Done), Today's priority, FarmLab Update, Key milestone</div>
           </div>
         </div>
         <div class="tab-pill">
@@ -342,6 +388,7 @@
           </div>
         </div>
       </div>
+      <div class="tip" style="margin-top:16px"><strong>📅 Daily tab note:</strong> The Title and Note fields are hidden on the Daily tab — they are not needed. The Notion entry is titled automatically with your <strong>Author name</strong>. Each Daily entry also records the date automatically.</div>
     </div>
   </div>
 
@@ -404,7 +451,7 @@
       <div style="background:#1c1b19;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:12px">
         <span style="font-size:1.3rem">✨</span>
         <div style="flex:1">
-          <div style="font-weight:700;color:#fff;font-size:0.88rem">v 0.96 available</div>
+          <div style="font-weight:700;color:#fff;font-size:0.88rem">v 1.02 available</div>
           <div style="font-size:0.75rem;color:#888">A new version of Brain+ is ready</div>
         </div>
         <div style="background:#01696f;border-radius:8px;padding:6px 12px;font-size:0.75rem;font-weight:700;color:#fff;white-space:nowrap">Update now</div>
@@ -417,7 +464,7 @@
 </div>
 
 <footer>
-  <strong>FarmBox Brain+</strong> · v 0.96 · Built for the FarmBox team<br>
+  <strong>FarmBox Brain+</strong> · v 1.02 · Built for the FarmBox team<br>
   <span style="margin-top:4px;display:block">🔗 <a href="https://kissanga.github.io/Ugly200/" style="color:var(--primary)">kissanga.github.io/Ugly200</a></span>
 </footer>
 
