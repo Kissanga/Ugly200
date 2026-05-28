@@ -173,6 +173,8 @@
     .video-play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.38); pointer-events: none; }
     .video-duration { position: absolute; bottom: 3px; right: 5px; font-size: 9px; color: #fff; background: rgba(0,0,0,0.55); padding: 1px 4px; border-radius: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
     .video-link-thumb { display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--text-faint); text-align: center; padding: 4px; word-break: break-all; height: 100%; background: var(--surface-offset); }
+    .compress-label { position: absolute; top: 3px; left: 3px; font-size: 9px; font-weight: 700; color: #fff; background: rgba(0,0,0,0.65); padding: 1px 4px; border-radius: 3px; pointer-events: none; letter-spacing: 0.02em; }
+    .compress-label.done { background: rgba(16,120,80,0.82); }
     .ct-web { background: var(--primary); color: var(--text-inverse); }
     .ct-web.inactive { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
     .ct-orig { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
@@ -315,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.12';
+  const CURRENT_VERSION = '1.13';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -521,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.12</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.13</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1409,12 +1411,35 @@ document.getElementById('videoSummaryPhotoInput').addEventListener('change', e =
 });
 document.getElementById('videoSummaryVideoInput').addEventListener('change', async e => {
   const files = [...e.target.files];
-  files.forEach(f => mediaFiles.push({ type: 'video', file: f }));
+
+  // Build entries and kick off background compression for each video immediately
+  files.forEach(f => {
+    const entry = { type: 'video', file: f, compressed: null, compressProgress: 0, uid: Math.random().toString(36).slice(2) };
+
+    entry.compressPromise = compressVideoFast(f, p => {
+      entry.compressProgress = p;
+      const lbl = document.getElementById('cl-' + entry.uid);
+      if (lbl) lbl.textContent = `⚙ ${Math.round(p * 100)}%`;
+    }).then(compressed => {
+      entry.compressed = compressed;
+      const lbl = document.getElementById('cl-' + entry.uid);
+      if (lbl) { lbl.textContent = `✓ ${(compressed.size / 1024 / 1024).toFixed(1)} MB`; lbl.classList.add('done'); }
+      return compressed;
+    }).catch(err => {
+      console.warn('Background compression failed, will retry at upload:', err);
+      const lbl = document.getElementById('cl-' + entry.uid);
+      if (lbl) { lbl.textContent = '⚙ later'; }
+      return null; // uploadFileToNotion will compress on demand as fallback
+    });
+
+    mediaFiles.push(entry);
+  });
+
   e.target.value = '';
   renderMediaPreviews();
   updateSubmitBtn();
 
-  // Auto-transcribe the first video file
+  // ── PARALLEL: audio extraction + transcription for the first file ──
   if (files.length > 0) {
     const file = files[0];
     const mb = (file.size / 1024 / 1024);
@@ -1422,7 +1447,6 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
     const status = document.getElementById('videoTranscribingStatus');
     bar.style.display = 'flex';
     try {
-      // Extract audio-only from video before uploading (reduces 15 MB → ~1 MB)
       status.textContent = `Extracting audio from "${file.name}" (${mb.toFixed(1)} MB)…`;
       const audioFile = await extractAudioFromVideo(file);
       const audioMb = (audioFile.size / 1024 / 1024).toFixed(1);
@@ -1469,6 +1493,16 @@ function renderMediaPreviews() {
       overlay.className = 'video-play-overlay';
       overlay.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
       inner.appendChild(overlay);
+      // Compression progress label (only for entries started via video picker)
+      if (m.uid) {
+        const lbl = document.createElement('div');
+        lbl.id = 'cl-' + m.uid;
+        lbl.className = 'compress-label' + (m.compressed ? ' done' : '');
+        lbl.textContent = m.compressed
+          ? `✓ ${(m.compressed.size / 1024 / 1024).toFixed(1)} MB`
+          : `⚙ ${Math.round((m.compressProgress || 0) * 100)}%`;
+        inner.appendChild(lbl);
+      }
       thumb.appendChild(inner);
     } else {
       const linkDiv = document.createElement('div');
@@ -1621,12 +1655,12 @@ document.getElementById('submitBtn').addEventListener('click', submitToNotion);
 
 // ─── VIDEO COMPRESSION — FIXED BITRATE ───────────────────────
 // ─── NOTION FILE UPLOAD ───────────────────────────────────────
-async function uploadFileToNotion(file, onStatus) {
+async function uploadFileToNotion(file, onStatus, alreadyCompressed = false) {
   let uploadFile = file;
 
-  // Compress video before upload (reduces size dramatically for Notion)
   const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(file.name);
-  if (isVideo) {
+  if (isVideo && !alreadyCompressed) {
+    // Background compression didn't finish in time — compress now
     onStatus?.(`Compressing "${file.name}"… 0%`);
     uploadFile = await compressVideoFast(file, p => {
       onStatus?.(`Compressing… ${Math.round(p * 100)}%`);
@@ -1753,10 +1787,13 @@ async function submitToNotion() {
         // External video URL → embed block
         children.push({ object:'block', type:'embed', embed:{ url: m.url } });
       } else {
-        // Real file → smart upload (compress or multipart as needed)
+        // Real file → use pre-compressed if ready, otherwise compress on upload
         try {
-          const uploadId = await uploadFileToNotion(m.file,
-            (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; }
+          const preCompressed = m.compressPromise ? (await m.compressPromise) : null;
+          const fileForUpload = preCompressed || m.file;
+          const uploadId = await uploadFileToNotion(fileForUpload,
+            (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
+            !!preCompressed  // skip re-compression if already done
           );
           const isImage = m.file.type.startsWith('image/');
           const isVideo = m.file.type.startsWith('video/');
