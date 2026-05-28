@@ -315,7 +315,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.08';
+  const CURRENT_VERSION = '1.09';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -521,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.08</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.09</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1271,31 +1271,36 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   renderMediaPreviews();
   updateSubmitBtn();
 
-  // Auto-transcribe the first video file
+  // Auto-transcribe the first video file (Groq limit: 25 MB)
   if (files.length > 0) {
     const file = files[0];
+    const mb = (file.size / 1024 / 1024);
     const bar    = document.getElementById('videoTranscribingBar');
     const status = document.getElementById('videoTranscribingStatus');
-    bar.style.display = 'flex';
-    try {
-      const mb = (file.size / 1024 / 1024).toFixed(1);
-      status.textContent = `Transcribing "${file.name}" (${mb} MB)…`;
 
-      const fd = new FormData();
-      fd.append('file', file, file.name);
-      fd.append('model', 'whisper-large-v3-turbo');
-      const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
-        method: 'POST', body: fd
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      document.getElementById('videoTranscriptText').value = data.text || '';
-      updateSubmitBtn();
-      showToast('Video transcribed ✓', 'success');
-    } catch(err) {
-      showToast('Auto-transcription failed — ' + (err.message || 'unknown error'), 'error');
-    } finally {
-      bar.style.display = 'none';
+    if (mb > 25) {
+      showToast(`Video too large for transcription (${mb.toFixed(0)} MB — max 25 MB)`, 'error');
+    } else {
+      bar.style.display = 'flex';
+      try {
+        status.textContent = `Transcribing "${file.name}" (${mb.toFixed(1)} MB)…`;
+
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+        fd.append('model', 'whisper-large-v3-turbo');
+        const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
+          method: 'POST', body: fd
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        document.getElementById('videoTranscriptText').value = data.text || '';
+        updateSubmitBtn();
+        showToast('Video transcribed ✓', 'success');
+      } catch(err) {
+        showToast('Auto-transcription failed — ' + (err.message || 'unknown error'), 'error');
+      } finally {
+        bar.style.display = 'none';
+      }
     }
   }
 });
@@ -1475,27 +1480,55 @@ document.getElementById('submitBtn').addEventListener('click', submitToNotion);
 // ─── VIDEO COMPRESSION — FIXED BITRATE ───────────────────────
 // ─── NOTION FILE UPLOAD ───────────────────────────────────────
 async function uploadFileToNotion(file, onStatus) {
-  const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-  onStatus?.(`Uploading ${file.name} (${sizeMB} MB)…`, 0);
+  const sizeMB = (file.size / 1024 / 1024);
+  const sizeMBStr = sizeMB.toFixed(1);
+
+  onStatus?.(`Uploading ${file.name} (${sizeMBStr} MB)…`, 0);
+
+  // Notion requires a valid content_type — fall back to generic types if browser doesn't report one
+  const contentType = file.type ||
+    (file.name.match(/\.(mp4|m4v)$/i) ? 'video/mp4' :
+     file.name.match(/\.(mov|qt)$/i)   ? 'video/quicktime' :
+     file.name.match(/\.(jpg|jpeg)$/i) ? 'image/jpeg' :
+     file.name.match(/\.(png)$/i)      ? 'image/png' :
+     'application/octet-stream');
 
   // Create upload slot
   const cr = await cfFetch(PROXY + '/v1/file_uploads', {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: file.name, content_type: file.type }),
+    body: JSON.stringify({ filename: file.name, content_type: contentType }),
   });
-  if (!cr.ok) { const e = await cr.json().catch(()=>{}); throw new Error(e?.message || `Create failed (${cr.status})`); }
+  if (!cr.ok) {
+    const e = await cr.json().catch(() => ({}));
+    throw new Error(e?.message || `Create upload slot failed (${cr.status})`);
+  }
   const { id } = await cr.json();
+  if (!id) throw new Error('Notion did not return an upload ID');
 
-  // Send file
-  const fd = new FormData();
-  fd.append('file', file, file.name);
-  const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
-    method: 'POST',
-    headers: { 'Notion-Version': '2022-06-28' },
-    body: fd,
-  });
-  if (!sr.ok) { const e = await sr.json().catch(()=>{}); throw new Error(e?.message || `Upload failed (${sr.status})`); }
+  // Send file with a 60-second abort timeout
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
+      method: 'POST',
+      headers: { 'Notion-Version': '2022-06-28' },
+      body: fd,
+      signal: controller.signal,
+    });
+    if (!sr.ok) {
+      const e = await sr.json().catch(() => ({}));
+      throw new Error(e?.message || `Upload send failed (${sr.status})`);
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Upload timed out — file may be too large or connection too slow');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
   return id;
 }
 
@@ -1581,9 +1614,9 @@ async function submitToNotion() {
             children.push({ object:'block', type:'file', file:{ type:'file_upload', file_upload:{ id: uploadId }, caption:[{ type:'text', text:{ content: m.file.name } }] } });
           }
         } catch(e) {
-          showToast(`Upload failed for ${m.file.name}: ${e.message}`, 'error');
+          showToast(`⚠️ ${e.message} — note will still be sent`, 'error');
           // Fall back to a text note so the entry isn't lost
-          children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[Upload failed: ${m.file.name}]` } }] } });
+          children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[File not uploaded: ${m.file.name} — ${e.message}]` } }] } });
         }
       }
     }
