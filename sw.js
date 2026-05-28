@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v31';
+const CACHE_NAME = 'ugly200-v32';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -6,6 +6,8 @@ const STATIC_ASSETS = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
+  './icon-192-maskable.png',
+  './icon-512-maskable.png',
 ];
 
 // Install: cache all static assets
