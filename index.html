@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.19';
+  const CURRENT_VERSION = '1.20';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1261,10 +1261,10 @@ const COMPRESS_AUDIO_BPS =  48_000;
 const COMPRESS_FPS       = 24;
 
 // Entry point — tries WebCodecs (4× faster) then falls back to canvas.
-async function compressVideoFast(file, onProgress) {
+async function compressVideoFast(file, onProgress, audioP = null) {
   if (typeof VideoEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
     try {
-      return await _compressWebCodecs(file, onProgress);
+      return await _compressWebCodecs(file, onProgress, audioP);
     } catch(e) {
       console.warn('WebCodecs compression failed, falling back to canvas:', e.message);
       onProgress?.(0); // reset progress display
@@ -1276,7 +1276,7 @@ async function compressVideoFast(file, onProgress) {
 // ── FAST PATH: WebCodecs + 4× playback + fMP4/WebM muxer ─────
 // Video encoded at 4× speed via requestVideoFrameCallback + VideoEncoder.
 // Audio decoded via AudioContext and encoded in parallel via AudioEncoder.
-async function _compressWebCodecs(file, onProgress) {
+async function _compressWebCodecs(file, onProgress, audioP = null) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
@@ -1322,18 +1322,38 @@ async function _compressWebCodecs(file, onProgress) {
       vEnc.configure(vCfg);
 
       // ── Audio: encode in parallel with AudioEncoder ───────────
-      // H.264 path → AAC-LC @ 44100 Hz  (MP4-native)
-      // VP8   path → Opus  @ 48000 Hz  (WebM-native)
-      const AUDIO_SR = useH264 ? 44100 : 48000;
-      const aCODEC   = useH264 ? 'mp4a.40.2' : 'opus';
+      // If audioP is provided (shared promise from transcription extraction),
+      // decode the small WAV (~5 MB) instead of re-reading the original video
+      // file (~100–200 MB). Falls back to decoding the original file if needed.
+      const aCODEC    = useH264 ? 'mp4a.40.2' : 'opus';
       const audioFrames = [];
       let ascConfig = null;
 
       const audioPromise = (async () => {
         try {
           if (typeof AudioEncoder === 'undefined') return;
+
+          // Decode from shared WAV (transcription extraction) or original file
+          let decoded;
+          if (audioP) {
+            const wav = await audioP;
+            if (!wav) return;
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            decoded = await ctx.decodeAudioData(await wav.arrayBuffer());
+            ctx.close();
+          } else {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            decoded = await ctx.decodeAudioData(await file.arrayBuffer());
+            ctx.close();
+          }
+
+          // Use the audio's actual sample rate and channel count
+          const AUDIO_SR = Math.round(decoded.sampleRate);
+          const nCh      = decoded.numberOfChannels;
+          const bitrate  = nCh === 1 ? 48000 : 96000;
+
           const as = await AudioEncoder.isConfigSupported({
-            codec: aCODEC, sampleRate: AUDIO_SR, numberOfChannels: 2, bitrate: 96000
+            codec: aCODEC, sampleRate: AUDIO_SR, numberOfChannels: nCh, bitrate
           });
           if (!as.supported) return;
 
@@ -1345,21 +1365,11 @@ async function _compressWebCodecs(file, onProgress) {
             },
             error: () => {}
           });
-          aEnc.configure({ codec: aCODEC, sampleRate: AUDIO_SR, numberOfChannels: 2, bitrate: 96000 });
+          aEnc.configure({ codec: aCODEC, sampleRate: AUDIO_SR, numberOfChannels: nCh, bitrate });
 
-          // Decode audio from file
-          const rawCtx = new (window.AudioContext || window.webkitAudioContext)();
-          const raw = await rawCtx.decodeAudioData(await file.arrayBuffer());
-          rawCtx.close();
-
-          // Resample to encoder's required sample rate if needed
-          const nCh = Math.min(raw.numberOfChannels, 2);
-          let decoded = raw;
-          if (Math.round(raw.sampleRate) !== AUDIO_SR) {
-            const off = new OfflineAudioContext(nCh, Math.ceil(raw.duration * AUDIO_SR), AUDIO_SR);
-            const src = off.createBufferSource(); src.buffer = raw; src.connect(off.destination); src.start(0);
-            decoded = await off.startRendering();
-          }
+          // Tag frames with actual SR and channels so the muxer knows
+          audioFrames.sr = AUDIO_SR;
+          audioFrames.ch = nCh;
 
           // Feed PCM to AudioEncoder in 4096-frame chunks (f32-planar)
           const CHUNK = 4096, total = decoded.length;
@@ -1446,8 +1456,9 @@ function _buildWebM(frames, width, height, durationMs, audioFrames = []) {
   let trkEl;
   if (audioFrames.length > 0) {
     // OpusHead required as CodecPrivate for A_OPUS track (all fields little-endian)
-    const opusHead = cat(str('OpusHead'), new Uint8Array([1,2]), le(312,2), le(48000,4), le(0,2), new Uint8Array([0]));
-    const aTrack = el(0xAE,[el(0xD7,u(2,1)),el(0x73C5,u(2,8)),el(0x83,u(2,1)),el(0x86,str('A_OPUS')),el(0x63A2,opusHead),el(0xE1,[el(0xB5,f64(48000)),el(0x9F,u(2,1))])]);
+    const aSR = audioFrames.sr || 48000, aCH = audioFrames.ch || 2;
+    const opusHead = cat(str('OpusHead'), new Uint8Array([1,aCH]), le(312,2), le(aSR,4), le(0,2), new Uint8Array([0]));
+    const aTrack = el(0xAE,[el(0xD7,u(2,1)),el(0x73C5,u(2,8)),el(0x83,u(2,1)),el(0x86,str('A_OPUS')),el(0x63A2,opusHead),el(0xE1,[el(0xB5,f64(aSR)),el(0x9F,u(aCH,1))])]);
     trkEl = el(0x1654AE6B,[vTrack, aTrack]);
   } else {
     trkEl = el(0x1654AE6B,[vTrack]);
@@ -1495,7 +1506,8 @@ function _buildMP4(frames, width, height, durationMs, avccBuf, audioFrames = [],
   const desc = (tag,...parts) => { const d=cat(...parts); return cat(new Uint8Array([tag]),dLen(d.byteLength),d); };
 
   const TS  = 90000;   // video/movie timescale
-  const ATS = 44100;   // audio timescale (sample rate)
+  const ATS = audioFrames.sr || 44100;  // audio timescale = actual sample rate
+  const ACH = audioFrames.ch || 2;
   const totTick  = Math.round(durationMs * TS  / 1000);
   const totATick = Math.round(durationMs * ATS / 1000);
   const fpsTick  = Math.round(TS / COMPRESS_FPS);
@@ -1526,13 +1538,21 @@ function _buildMP4(frames, width, height, durationMs, avccBuf, audioFrames = [],
   // ── Audio track (AAC-LC) ─────────────────────────────────────
   let aTrak = null;
   if (hasAudio) {
-    const asc  = ascConfig ? toU8(ascConfig) : new Uint8Array([0x12,0x10]); // AAC-LC 44100 2ch
+    // Build AudioSpecificConfig for the actual SR/channels
+    const aFreqTable = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+    const aFreqIdx = aFreqTable.indexOf(ATS);
+    const ascWord  = (2 << 11) | (aFreqIdx << 7) | (ACH << 3);
+    const asc = (ascConfig && toU8(ascConfig).byteLength)
+      ? toU8(ascConfig)
+      : aFreqIdx >= 0 ? new Uint8Array([(ascWord>>8)&0xFF, ascWord&0xFF])
+      : new Uint8Array([0x12,0x10]); // fallback 44100 Hz stereo
+    const aBitrate = ACH === 1 ? 48000 : 96000;
     const esds = fbox('esds',0,0,
       desc(0x03, u16(1),new Uint8Array([0x00]),
-        desc(0x04, new Uint8Array([0x40,0x15,0,0,0]), u32(96000),u32(96000), desc(0x05,asc)),
+        desc(0x04, new Uint8Array([0x40,0x15,0,0,0]), u32(aBitrate),u32(aBitrate), desc(0x05,asc)),
         desc(0x06, new Uint8Array([0x02]))));
     const mp4a = box('mp4a', new Uint8Array(6),u16(1),new Uint8Array(8),
-      u16(2),u16(16),u16(0),u16(0), u32(44100<<16), esds);
+      u16(ACH),u16(16),u16(0),u16(0), u32(ATS<<16), esds);
     const aTkhd = fbox('tkhd',0,3, u32(0),u32(0),u32(2),u32(0),u32(totTick),
       new Uint8Array(8),u16(0),u16(0),u16(0x0100),u16(0), mat, u32(0),u32(0));
     const aStbl = box('stbl', fbox('stsd',0,0,u32(1),mp4a),
@@ -1743,7 +1763,7 @@ function startBackgroundCompression(entry) {
   entry.compressPromise = compressVideoFast(entry.file, p => {
     entry.compressProgress = p;
     setLbl(`⚙ ${Math.round(p * 100)}%`);
-  }).then(compressed => {
+  }, entry._audioP || null).then(compressed => {
     entry.compressed = compressed;
     releaseWakeLock();
     const sizeMB = compressed.size / 1024 / 1024;
@@ -1793,9 +1813,11 @@ document.getElementById('videoSummaryPhotoInput').addEventListener('change', e =
 document.getElementById('videoSummaryVideoInput').addEventListener('change', async e => {
   const files = [...e.target.files];
 
-  // Build entries and kick off background compression for each video immediately
+  // Build entries — start audio extraction immediately so compression and
+  // transcription can share the same decoded audio (avoids reading the video twice)
   files.forEach(f => {
     const entry = { type: 'video', file: f, compressed: null, compressProgress: 0, compressInterrupted: false, uid: Math.random().toString(36).slice(2) };
+    entry._audioP = extractAudioFromVideo(f).catch(() => null); // shared promise
     mediaFiles.push(entry);
     startBackgroundCompression(entry);
   });
@@ -1804,7 +1826,7 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   renderMediaPreviews();
   updateSubmitBtn();
 
-  // ── PARALLEL: audio extraction + transcription for the first file ──
+  // ── Transcription for the first file (reuses shared audio extraction) ──
   if (files.length > 0) {
     const file = files[0];
     const mb = (file.size / 1024 / 1024);
@@ -1812,8 +1834,10 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
     const status = document.getElementById('videoTranscribingStatus');
     bar.style.display = 'flex';
     try {
+      const firstEntry = mediaFiles.find(e => e.file === file && e.type === 'video');
       status.textContent = `Extracting audio from "${file.name}" (${mb.toFixed(1)} MB)…`;
-      const audioFile = await extractAudioFromVideo(file);
+      const audioFile = await firstEntry._audioP;  // reuse — no second file read
+      if (!audioFile) throw new Error('Audio extraction failed');
       const audioMb = (audioFile.size / 1024 / 1024).toFixed(1);
 
       status.textContent = `Transcribing audio (${audioMb} MB)…`;
