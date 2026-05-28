@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.20';
+  const CURRENT_VERSION = '1.21';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1256,7 +1256,7 @@ document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
 
 // ─── VIDEO COMPRESSION ───────────────────────────────────────
 const COMPRESS_MAX_H     = 360;
-const COMPRESS_VIDEO_BPS = 400_000;
+const COMPRESS_VIDEO_BPS = 600_000;
 const COMPRESS_AUDIO_BPS =  48_000;
 const COMPRESS_FPS       = 24;
 
@@ -2154,6 +2154,34 @@ async function submitToNotion() {
   // Upload files directly to Notion
   const children = [];
 
+  // ── Media blocks: videos first, images second (no heading) ──
+  const uploadMedia = async (m) => {
+    if (m.type === 'link') {
+      children.push({ object:'block', type:'embed', embed:{ url: m.url } });
+      return;
+    }
+    try {
+      const preCompressed = m.compressPromise ? (await m.compressPromise) : null;
+      const fileForUpload = preCompressed || m.file;
+      const uploadId = await uploadFileToNotion(fileForUpload,
+        (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
+        !!preCompressed
+      );
+      const isImage = m.file.type.startsWith('image/');
+      const isVideo = m.file.type.startsWith('video/');
+      if (isImage)       children.push({ object:'block', type:'image', image:{ type:'file_upload', file_upload:{ id: uploadId } } });
+      else if (isVideo)  children.push({ object:'block', type:'video', video:{ type:'file_upload', file_upload:{ id: uploadId } } });
+      else               children.push({ object:'block', type:'file',  file:{  type:'file_upload', file_upload:{ id: uploadId }, caption:[{ type:'text', text:{ content: m.file.name } }] } });
+    } catch(e) {
+      showToast(`⚠️ ${e.message} — note will still be sent`, 'error');
+      children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[File not uploaded: ${m.file.name} — ${e.message}]` } }] } });
+    }
+  };
+
+  for (const m of mediaFiles.filter(m => m.type === 'video' || m.type === 'link')) await uploadMedia(m);
+  for (const m of mediaFiles.filter(m => m.type === 'image'))                       await uploadMedia(m);
+
+  // ── Text blocks at the bottom ─────────────────────────────────
   if (transcript) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Transcript' } }] } });
     children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:transcript } }] } });
@@ -2166,40 +2194,6 @@ async function submitToNotion() {
   if (videoSummary) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Video Summary' } }] } });
     children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:videoSummary } }] } });
-  }
-
-  // Upload media files directly to Notion, then build blocks
-  if (mediaFiles.length) {
-    children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Media' } }] } });
-    for (const m of mediaFiles) {
-      if (m.type === 'link') {
-        // External video URL → embed block
-        children.push({ object:'block', type:'embed', embed:{ url: m.url } });
-      } else {
-        // Real file → use pre-compressed if ready, otherwise compress on upload
-        try {
-          const preCompressed = m.compressPromise ? (await m.compressPromise) : null;
-          const fileForUpload = preCompressed || m.file;
-          const uploadId = await uploadFileToNotion(fileForUpload,
-            (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
-            !!preCompressed  // skip re-compression if already done
-          );
-          const isImage = m.file.type.startsWith('image/');
-          const isVideo = m.file.type.startsWith('video/');
-          if (isImage) {
-            children.push({ object:'block', type:'image', image:{ type:'file_upload', file_upload:{ id: uploadId } } });
-          } else if (isVideo) {
-            children.push({ object:'block', type:'video', video:{ type:'file_upload', file_upload:{ id: uploadId } } });
-          } else {
-            children.push({ object:'block', type:'file', file:{ type:'file_upload', file_upload:{ id: uploadId }, caption:[{ type:'text', text:{ content: m.file.name } }] } });
-          }
-        } catch(e) {
-          showToast(`⚠️ ${e.message} — note will still be sent`, 'error');
-          // Fall back to a text note so the entry isn't lost
-          children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[File not uploaded: ${m.file.name} — ${e.message}]` } }] } });
-        }
-      }
-    }
   }
 
   const properties = {
