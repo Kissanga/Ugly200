@@ -37,20 +37,21 @@ if ($FileSize -gt $MaxBytes) {
             exit 1
         }
     }
-    $Tmp = [System.IO.Path]::ChangeExtension([System.IO.Path]::GetTempFileName(), ".wav")
-    ffmpeg -y -i $File -ar 16000 -ac 1 -c:a pcm_s16le $Tmp -loglevel error
-    $Duration  = [double](ffmpeg -i $Tmp 2>&1 | Select-String "Duration" |
-                 ForEach-Object { $_ -replace ".*Duration: (\d+):(\d+):([\d.]+).*",'$1*3600+$2*60+$3' } |
-                 Invoke-Expression)
-    $ChunkSecs = [math]::Floor($Duration * $MaxBytes / (Get-Item $Tmp).Length) - 5
+    # Get duration without re-encoding
+    $Duration = [double](ffmpeg -i $File 2>&1 | Select-String "Duration" |
+                ForEach-Object { $_ -replace ".*Duration: (\d+):(\d+):([\d.]+).*",'$1*3600+$2*60+$3' } |
+                Invoke-Expression)
+    # Estimate chunk size from file size ratio; use 5 min chunks as safe default
+    $ChunkSecs = [math]::Max(60, [math]::Floor($Duration * $MaxBytes / $FileSize) - 5)
+    $Ext = [System.IO.Path]::GetExtension($File)
     $i = 0
     for ($Start = 0; $Start -lt $Duration; $Start += $ChunkSecs) {
-        $ChunkFile = "$env:TEMP\chunk_$i.wav"
-        ffmpeg -y -i $Tmp -ss $Start -t $ChunkSecs $ChunkFile -loglevel error
+        $ChunkFile = "$env:TEMP\chunk_$i$Ext"
+        # -c copy = no re-encoding, instant split
+        ffmpeg -y -ss $Start -i $File -t $ChunkSecs -c copy $ChunkFile -loglevel error
         $Chunks += $ChunkFile
         $i++
     }
-    Remove-Item $Tmp -ErrorAction SilentlyContinue
 } else {
     $Chunks = @($File)   # send video/audio directly — no extraction needed
 }
