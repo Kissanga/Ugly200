@@ -173,8 +173,6 @@
     .video-play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.38); pointer-events: none; }
     .video-duration { position: absolute; bottom: 3px; right: 5px; font-size: 9px; color: #fff; background: rgba(0,0,0,0.55); padding: 1px 4px; border-radius: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
     .video-link-thumb { display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--text-faint); text-align: center; padding: 4px; word-break: break-all; height: 100%; background: var(--surface-offset); }
-    .compress-toggle { position: absolute; bottom: var(--space-1); left: var(--space-1); right: 22px; display: flex; border-radius: 3px; overflow: hidden; font-size: 8px; font-weight: 700; letter-spacing: 0.03em; line-height: 1; }
-    .compress-toggle button { flex: 1; padding: 3px 2px; border: none; cursor: pointer; transition: background 120ms, color 120ms; text-align: center; }
     .ct-web { background: var(--primary); color: var(--text-inverse); }
     .ct-web.inactive { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
     .ct-orig { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
@@ -1239,52 +1237,6 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
   }
 });
 
-// ─── AUDIO EXTRACTION FROM VIDEO ─────────────────────────────
-// Extracts audio-only from a video file using MediaRecorder (audio/webm;opus).
-// Result is typically 50–200x smaller than the original video.
-async function extractAudioFromVideo(file, onStatus) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    video.src = URL.createObjectURL(file);
-    video.muted = false;
-    video.playsInline = true;
-
-    video.onloadedmetadata = () => {
-      const dur = video.duration;
-      if (!dur || !isFinite(dur)) { reject(new Error('Cannot read video duration')); return; }
-
-      // Capture only the audio stream
-      const stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-      const audioTracks = stream.getAudioTracks();
-      if (!audioTracks.length) { reject(new Error('No audio track found in video')); return; }
-
-      const audioStream = new MediaStream(audioTracks);
-      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus' : 'audio/webm';
-      const recorder = new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 64000 });
-      const chunks = [];
-
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
-        URL.revokeObjectURL(video.src);
-        resolve(new Blob(chunks, { type: mime }));
-      };
-
-      recorder.start(200);
-      video.currentTime = 0;
-      video.play().catch(reject);
-
-      video.ontimeupdate = () => {
-        const pct = Math.round((video.currentTime / dur) * 100);
-        onStatus?.(`Extracting audio… ${pct}%`);
-      };
-      video.onended = () => recorder.stop();
-      video.onerror = reject;
-    };
-    video.onerror = reject;
-  });
-}
 
 
 document.getElementById('copyVideoSummaryBtn').addEventListener('click', () => {
@@ -1314,7 +1266,7 @@ document.getElementById('videoSummaryPhotoInput').addEventListener('change', e =
 });
 document.getElementById('videoSummaryVideoInput').addEventListener('change', async e => {
   const files = [...e.target.files];
-  files.forEach(f => mediaFiles.push({ type: 'video', file: f, compress: true }));
+  files.forEach(f => mediaFiles.push({ type: 'video', file: f }));
   e.target.value = '';
   renderMediaPreviews();
   updateSubmitBtn();
@@ -1326,14 +1278,12 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
     const status = document.getElementById('videoTranscribingStatus');
     bar.style.display = 'flex';
     try {
-      status.textContent = `Extracting audio from "${file.name}"…`;
-      const audio = await extractAudioFromVideo(file, msg => { status.textContent = msg; });
-      const mb = (audio.size / 1024 / 1024).toFixed(1);
-      status.textContent = `Transcribing audio (${mb} MB)…`;
+      const mb = (file.size / 1024 / 1024).toFixed(1);
+      status.textContent = `Transcribing "${file.name}" (${mb} MB)…`;
 
       const fd = new FormData();
-      fd.append('file', audio, 'audio.webm');
-      fd.append('model', 'whisper-large-v3');
+      fd.append('file', file, file.name);
+      fd.append('model', 'whisper-large-v3-turbo');
       const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
         method: 'POST', body: fd
       });
@@ -1373,16 +1323,6 @@ function renderMediaPreviews() {
       overlay.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
       inner.appendChild(overlay);
       thumb.appendChild(inner);
-      // Compress toggle pill
-      const tog = document.createElement('div');
-      tog.className = 'compress-toggle';
-      tog.innerHTML = `
-        <button class="ct-web${m.compress ? '' : ' inactive'}" title="Compress to 480p web quality">Web</button>
-        <button class="ct-orig${m.compress ? '' : ' active'}" title="Upload original file">Orig</button>
-      `;
-      tog.querySelector('.ct-web').addEventListener('click', e => { e.stopPropagation(); mediaFiles[i].compress = true; renderMediaPreviews(); });
-      tog.querySelector('.ct-orig').addEventListener('click', e => { e.stopPropagation(); mediaFiles[i].compress = false; renderMediaPreviews(); });
-      thumb.appendChild(tog);
     } else {
       const linkDiv = document.createElement('div');
       linkDiv.className = 'video-link-thumb';
@@ -1533,92 +1473,10 @@ function updateSubmitBtn() {
 document.getElementById('submitBtn').addEventListener('click', submitToNotion);
 
 // ─── VIDEO COMPRESSION — FIXED BITRATE ───────────────────────
-// Videos are ALWAYS compressed before upload.
-// Target: 600 kbps video, max 480p — good enough for web viewing,
-// small enough for Notion free (5 MB) on clips up to ~1 min.
-// Speed: real-time (1 min video ≈ 1 min to process).
-
-const VIDEO_BITRATE = 600_000;  // 600 kbps — tweak here if needed
-const MAX_HEIGHT    = 480;      // cap at 480p
-const FPS           = 24;
-
-async function compressVideo(file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    video.src = URL.createObjectURL(file);
-    video.muted = true;
-    video.playsInline = true;
-
-    video.onloadedmetadata = () => {
-      const dur = video.duration;
-      if (!dur || !isFinite(dur)) { reject(new Error('Cannot read video duration')); return; }
-
-      // Scale down to max 480p, keep aspect ratio
-      const scale = Math.min(1, MAX_HEIGHT / video.videoHeight);
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(video.videoWidth  * scale / 2) * 2;
-      canvas.height = Math.round(video.videoHeight * scale / 2) * 2;
-      const ctx = canvas.getContext('2d');
-
-      // Capture video frames from canvas + audio track from original video
-      const videoStream = canvas.captureStream(FPS);
-      const srcStream   = video.captureStream ? video.captureStream() : video.mozCaptureStream?.();
-      const audioTracks = srcStream ? srcStream.getAudioTracks() : [];
-      audioTracks.forEach(t => videoStream.addTrack(t));
-
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-        ? 'video/webm;codecs=vp9,opus'
-        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-          ? 'video/webm;codecs=vp9' : 'video/webm';
-
-      const recorder = new MediaRecorder(videoStream, { mimeType: mime, videoBitsPerSecond: VIDEO_BITRATE });
-
-      const chunks = [];
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = () => {
-        videoStream.getTracks().forEach(t => t.stop());
-        URL.revokeObjectURL(video.src);
-        resolve(new Blob(chunks, { type: 'video/webm' }));
-      };
-
-      recorder.start(200);
-      video.currentTime = 0;
-      video.play().catch(reject);
-
-      let raf;
-      const draw = () => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        onProgress?.(video.currentTime / dur);
-        raf = requestAnimationFrame(draw);
-      };
-      video.onplay  = () => { cancelAnimationFrame(raf); draw(); };
-      video.onended = () => { cancelAnimationFrame(raf); recorder.stop(); };
-      video.onerror = reject;
-    };
-    video.onerror = reject;
-  });
-}
-
 // ─── NOTION FILE UPLOAD ───────────────────────────────────────
-// Videos → always compress first, then single-part upload.
-// Images / other files → upload as-is.
-async function uploadFileToNotion(file, onStatus, compress = true) {
-  let uploadFile = file;
-  let uploadName = file.name;
-
-  if (file.type.startsWith('video/') && compress) {
-    onStatus?.(`Compressing… 0%`, 0);
-    const compressed = await compressVideo(file,
-      p => onStatus?.(`Compressing… ${Math.round(p * 100)}%`, p)
-    );
-    const compMB = (compressed.size / 1024 / 1024).toFixed(1);
-    uploadFile = compressed;
-    uploadName = file.name.replace(/\.[^.]+$/, '') + '_web.webm';
-    onStatus?.(`Uploading ${compMB} MB…`, 0.96);
-  } else {
-    const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-    onStatus?.(`Uploading ${file.name} (${sizeMB} MB)…`, 0);
-  }
+async function uploadFileToNotion(file, onStatus) {
+  const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+  onStatus?.(`Uploading ${file.name} (${sizeMB} MB)…`, 0);
 
   // Create upload slot
   const cr = await cfFetch(PROXY + '/v1/file_uploads', {
@@ -1711,8 +1569,7 @@ async function submitToNotion() {
         // Real file → smart upload (compress or multipart as needed)
         try {
           const uploadId = await uploadFileToNotion(m.file,
-            (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
-            m.compress
+            (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; }
           );
           const isImage = m.file.type.startsWith('image/');
           const isVideo = m.file.type.startsWith('video/');
