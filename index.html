@@ -315,7 +315,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.09';
+  const CURRENT_VERSION = '1.10';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -521,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.09</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.10</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1252,6 +1252,58 @@ document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
   updateSubmitBtn();
 });
 
+// ─── AUDIO EXTRACTION ────────────────────────────────────────
+// Extracts audio-only from a video file and returns a 16 kHz mono WAV File.
+// A 15 MB video becomes ~1–2 MB WAV — uploads 10× faster to Groq.
+async function extractAudioFromVideo(videoFile) {
+  const arrayBuffer = await videoFile.arrayBuffer();
+  const tmpCtx = new AudioContext();
+  let audioBuffer;
+  try {
+    audioBuffer = await tmpCtx.decodeAudioData(arrayBuffer);
+  } finally {
+    tmpCtx.close();
+  }
+
+  // Downsample to 16 kHz mono (ideal for Whisper)
+  const sampleRate = 16000;
+  const offCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * sampleRate), sampleRate);
+  const src = offCtx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(offCtx.destination);
+  src.start();
+  const rendered = await offCtx.startRendering();
+
+  return audioBufferToWavFile(rendered);
+}
+
+function audioBufferToWavFile(buffer) {
+  const sampleRate = buffer.sampleRate;
+  const pcmFloat = buffer.getChannelData(0);
+  const pcm16 = new Int16Array(pcmFloat.length);
+  for (let i = 0; i < pcmFloat.length; i++) {
+    pcm16[i] = Math.max(-32768, Math.min(32767, Math.round(pcmFloat[i] * 32767)));
+  }
+
+  const wavBuf = new ArrayBuffer(44 + pcm16.byteLength);
+  const v = new DataView(wavBuf);
+  const str = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+
+  str(0,  'RIFF');  v.setUint32(4,  36 + pcm16.byteLength, true);
+  str(8,  'WAVE');  str(12, 'fmt ');
+  v.setUint32(16, 16, true);   // PCM chunk size
+  v.setUint16(20,  1, true);   // PCM format
+  v.setUint16(22,  1, true);   // mono
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 2, true);  // byte rate
+  v.setUint16(32,  2, true);   // block align
+  v.setUint16(34, 16, true);   // bits per sample
+  str(36, 'data');  v.setUint32(40, pcm16.byteLength, true);
+  new Int16Array(wavBuf, 44).set(pcm16);
+
+  return new File([wavBuf], 'audio.wav', { type: 'audio/wav' });
+}
+
 // ─── MEDIA ───────────────────────────────────────────────────
 let mediaFiles = []; // {type:'image'|'video'|'link', file?, url?, name?}
 
@@ -1271,36 +1323,35 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   renderMediaPreviews();
   updateSubmitBtn();
 
-  // Auto-transcribe the first video file (Groq limit: 25 MB)
+  // Auto-transcribe the first video file
   if (files.length > 0) {
     const file = files[0];
     const mb = (file.size / 1024 / 1024);
     const bar    = document.getElementById('videoTranscribingBar');
     const status = document.getElementById('videoTranscribingStatus');
+    bar.style.display = 'flex';
+    try {
+      // Extract audio-only from video before uploading (reduces 15 MB → ~1 MB)
+      status.textContent = `Extracting audio from "${file.name}" (${mb.toFixed(1)} MB)…`;
+      const audioFile = await extractAudioFromVideo(file);
+      const audioMb = (audioFile.size / 1024 / 1024).toFixed(1);
 
-    if (mb > 25) {
-      showToast(`Video too large for transcription (${mb.toFixed(0)} MB — max 25 MB)`, 'error');
-    } else {
-      bar.style.display = 'flex';
-      try {
-        status.textContent = `Transcribing "${file.name}" (${mb.toFixed(1)} MB)…`;
-
-        const fd = new FormData();
-        fd.append('file', file, file.name);
-        fd.append('model', 'whisper-large-v3-turbo');
-        const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
-          method: 'POST', body: fd
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        document.getElementById('videoTranscriptText').value = data.text || '';
-        updateSubmitBtn();
-        showToast('Video transcribed ✓', 'success');
-      } catch(err) {
-        showToast('Auto-transcription failed — ' + (err.message || 'unknown error'), 'error');
-      } finally {
-        bar.style.display = 'none';
-      }
+      status.textContent = `Transcribing audio (${audioMb} MB)…`;
+      const fd = new FormData();
+      fd.append('file', audioFile, 'audio.wav');
+      fd.append('model', 'whisper-large-v3-turbo');
+      const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
+        method: 'POST', body: fd
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      document.getElementById('videoTranscriptText').value = data.text || '';
+      updateSubmitBtn();
+      showToast('Video transcribed ✓', 'success');
+    } catch(err) {
+      showToast('Auto-transcription failed — ' + (err.message || 'unknown error'), 'error');
+    } finally {
+      bar.style.display = 'none';
     }
   }
 });
