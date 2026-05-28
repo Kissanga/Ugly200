@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.16';
+  const CURRENT_VERSION = '1.17';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1292,18 +1292,42 @@ async function _compressWebCodecs(file, onProgress) {
       const w = Math.round(video.videoWidth  * scale / 2) * 2;
       const h = Math.round(video.videoHeight * scale / 2) * 2;
 
+      // Prefer H.264 Baseline hardware (maps to MediaCodec on Android,
+      // VideoToolbox on macOS/Chrome). Fall back to VP8 if not supported.
+      let useH264 = false;
+      try {
+        const sup = await VideoEncoder.isConfigSupported({
+          codec: 'avc1.42E01E', width: w, height: h,
+          bitrate: COMPRESS_VIDEO_BPS, framerate: COMPRESS_FPS,
+          hardwareAcceleration: 'prefer-hardware',
+        });
+        useH264 = !!sup.supported;
+      } catch(e) { /* VP8 fallback */ }
+
+      const encConfig = useH264
+        ? { codec: 'avc1.42E01E', width: w, height: h, bitrate: COMPRESS_VIDEO_BPS,
+            framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware',
+            avc: { format: 'avc' } }   // AVCC (length-prefixed) for MP4
+        : { codec: 'vp8', width: w, height: h, bitrate: COMPRESS_VIDEO_BPS,
+            framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware' };
+
       const frames = []; // {timestampMs, keyframe, data:ArrayBuffer}
       let encErr = null;
+      let avccConfig = null; // avcDecoderConfigurationRecord for MP4 muxer
 
       const enc = new VideoEncoder({
-        output: (chunk) => {
+        output: (chunk, meta) => {
+          // Grab SPS/PPS from first key frame (H.264 only)
+          if (useH264 && chunk.type === 'key' && !avccConfig && meta?.decoderConfig?.description) {
+            avccConfig = meta.decoderConfig.description;
+          }
           const buf = new ArrayBuffer(chunk.byteLength);
           chunk.copyTo(buf);
           frames.push({ timestampMs: Math.round(chunk.timestamp / 1000), keyframe: chunk.type === 'key', data: buf });
         },
         error: e => { encErr = e; },
       });
-      enc.configure({ codec: 'vp8', width: w, height: h, bitrate: COMPRESS_VIDEO_BPS, framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware' });
+      enc.configure(encConfig);
 
       const ofc = new OffscreenCanvas(w, h);
       const ctx = ofc.getContext('2d', { alpha: false });
@@ -1336,8 +1360,14 @@ async function _compressWebCodecs(file, onProgress) {
           URL.revokeObjectURL(video.src);
           if (encErr) throw encErr;
           frames.sort((a, b) => a.timestampMs - b.timestampMs);
-          const blob = _buildWebM(frames, w, h, Math.round(dur * 1000));
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' }));
+          const durMs = Math.round(dur * 1000);
+          if (useH264 && avccConfig) {
+            const blob = _buildMP4(frames, w, h, durMs, avccConfig);
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' }));
+          } else {
+            const blob = _buildWebM(frames, w, h, durMs);
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' }));
+          }
         } catch(e) { reject(e); }
       };
       video.onerror = () => reject(new Error('Video playback error'));
@@ -1365,6 +1395,103 @@ function _buildWebM(frames, width, height, durationMs) {
   for(const f of frames){ if(ct<0||(f.keyframe&&f.timestampMs-ct>=2000)){flush();ct=f.timestampMs;} cf.push(f); } flush();
 
   return new Blob([hdr, new Uint8Array([0x18,0x53,0x80,0x67,0x01,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]), cat(inf,trk,...clusterEls)], {type:'video/webm'});
+}
+
+// ── FRAGMENTED MP4 MUXER (H.264/AVCC, video-only) ────────────
+// avccBuf = avcDecoderConfigurationRecord from VideoEncoder metadata
+function _buildMP4(frames, width, height, durationMs, avccBuf) {
+  const toU8 = a => a instanceof Uint8Array ? a : ArrayBuffer.isView(a) ? new Uint8Array(a.buffer, a.byteOffset, a.byteLength) : new Uint8Array(a);
+  const cat  = (...aa) => { const p=aa.map(toU8); const o=new Uint8Array(p.reduce((s,a)=>s+a.byteLength,0)); let x=0; for(const a of p){o.set(a,x);x+=a.byteLength;} return o; };
+  const u8   = n => new Uint8Array([n&0xFF]);
+  const u16  = n => new Uint8Array([(n>>8)&0xFF, n&0xFF]);
+  const u24  = n => new Uint8Array([(n>>16)&0xFF, (n>>8)&0xFF, n&0xFF]);
+  const u32  = n => { const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,n>>>0,false); return b; };
+  const i32  = n => { const b=new Uint8Array(4); new DataView(b.buffer).setInt32(0,n,false); return b; };
+  const str  = s => new TextEncoder().encode(s);
+  const box  = (t,...d) => { const data=cat(...d); return cat(u32(data.byteLength+8),str(t),data); };
+  const fbox = (t,v,f,...d) => box(t,u8(v),u24(f),...d);
+
+  const TS      = 90000;  // 90 kHz timescale
+  const totTick = Math.round(durationMs * TS / 1000);
+  const fpsTick = Math.round(TS / COMPRESS_FPS);
+
+  // Per-frame durations derived from consecutive timestamps
+  const durs = frames.map((f,i) =>
+    i < frames.length-1
+      ? Math.max(1, Math.round((frames[i+1].timestampMs - f.timestampMs) * TS / 1000))
+      : fpsTick
+  );
+
+  // ── Init segment (ftyp + moov) ───────────────────────────────
+  const mat = cat(u32(0x00010000),u32(0),u32(0), u32(0),u32(0x00010000),u32(0), u32(0),u32(0),u32(0x40000000));
+
+  const ftyp = box('ftyp', str('isom'), u32(0x200), str('isom'), str('iso2'), str('avc1'), str('mp41'));
+
+  const mvhd = fbox('mvhd',0,0, u32(0),u32(0), u32(TS), u32(totTick),
+    u32(0x00010000), u16(0x0100), new Uint8Array(10), mat, new Uint8Array(24), u32(2));
+
+  const tkhd = fbox('tkhd',0,3, u32(0),u32(0), u32(1), u32(0), u32(totTick),
+    new Uint8Array(8), u16(0),u16(0), u16(0),u16(0), mat, u32(width<<16), u32(height<<16));
+
+  const mdhd = fbox('mdhd',0,0, u32(0),u32(0), u32(TS), u32(totTick), u16(0x55C4), u16(0));
+  const hdlr = fbox('hdlr',0,0, u32(0), str('vide'), new Uint8Array(12), str('VideoHandler'), u8(0));
+
+  const avccBox  = box('avcC', toU8(avccBuf));
+  const avc1Box  = box('avc1',
+    new Uint8Array(6), u16(1), new Uint8Array(16),
+    u16(width), u16(height), u32(0x00480000), u32(0x00480000),
+    u32(0), u16(1), new Uint8Array(32), u16(0x0018), u16(0xFFFF),
+    avccBox);
+
+  const stbl = box('stbl',
+    fbox('stsd',0,0, u32(1), avc1Box),
+    fbox('stts',0,0, u32(0)), fbox('stsc',0,0, u32(0)),
+    fbox('stsz',0,0, u32(0),u32(0)), fbox('stco',0,0, u32(0)));
+  const minf = box('minf',
+    fbox('vmhd',0,1, u16(0),new Uint8Array(6)),
+    box('dinf', fbox('dref',0,0, u32(1), fbox('url ',0,1))),
+    stbl);
+  const trak = box('trak', tkhd, box('mdia', mdhd, hdlr, minf));
+  const mvex = box('mvex', fbox('trex',0,0, u32(1),u32(1),u32(0),u32(0),u32(0)));
+  const moov  = box('moov', mvhd, trak, mvex);
+
+  // ── Fragments: one moof+mdat per keyframe group ──────────────
+  const parts = [ftyp, moov];
+  let seq = 1, fi = 0;
+
+  while (fi < frames.length) {
+    const start = fi++;
+    while (fi < frames.length && !frames[fi].keyframe) fi++;
+    const grp = frames.slice(start, fi);
+
+    const baseT   = Math.round(grp[0].timestampMs * TS / 1000);
+    const nSamples = grp.length;
+    // Flags: data-offset(0x001) + sample-duration(0x100) + sample-size(0x200) + sample-flags(0x400)
+    const TRUN_FL = 0x0701;
+
+    const samples = cat(...grp.map((f,j) => cat(
+      u32(durs[start+j]),                              // duration
+      u32(f.data.byteLength),                          // size
+      u32(f.keyframe ? 0x02000000 : 0x01010000)        // flags: sync vs non-sync
+    )));
+
+    // Build moof twice: first to measure size, then with correct data-offset
+    const buildMoof = (dataOff) => {
+      const trun = fbox('trun',0,TRUN_FL, u32(nSamples), i32(dataOff), samples);
+      const traf = box('traf',
+        fbox('tfhd',0,0x020000, u32(1)),   // default-base-is-moof
+        fbox('tfdt',0,0, u32(baseT)),
+        trun);
+      return box('moof', fbox('mfhd',0,0, u32(seq)), traf);
+    };
+    const moofSz = buildMoof(0).byteLength;
+    const moof   = buildMoof(moofSz + 8); // +8 = mdat size+type
+    seq++;
+
+    parts.push(moof, box('mdat', cat(...grp.map(f => toU8(f.data)))));
+  }
+
+  return new Blob(parts, { type: 'video/mp4' });
 }
 
 // ── FALLBACK: canvas + MediaRecorder (real-time, with audio) ──
