@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.15';
+  const CURRENT_VERSION = '1.16';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1255,56 +1255,146 @@ document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
 });
 
 // ─── VIDEO COMPRESSION ───────────────────────────────────────
-// Compresses video to 360p before uploading to Notion.
-// Codec priority:
-//   1. video/mp4;codecs=avc1  → Safari/iOS hardware H.264 (fastest on iPhone)
-//   2. video/webm;codecs=vp8  → Chrome/Android (VP8 is 2-3× faster than VP9)
-//   3. video/webm              → generic fallback
-const COMPRESS_MAX_H      = 360;
-const COMPRESS_VIDEO_BPS  = 400_000;  // 400 kbps
-const COMPRESS_AUDIO_BPS  =  48_000;  // 48 kbps
-const COMPRESS_FPS        = 24;
+const COMPRESS_MAX_H     = 360;
+const COMPRESS_VIDEO_BPS = 400_000;
+const COMPRESS_AUDIO_BPS =  48_000;
+const COMPRESS_FPS       = 24;
 
+// Entry point — tries WebCodecs (4× faster) then falls back to canvas.
 async function compressVideoFast(file, onProgress) {
+  if (typeof VideoEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+    try {
+      return await _compressWebCodecs(file, onProgress);
+    } catch(e) {
+      console.warn('WebCodecs compression failed, falling back to canvas:', e.message);
+      onProgress?.(0); // reset progress display
+    }
+  }
+  return _compressCanvas(file, onProgress);
+}
+
+// ── FAST PATH: WebCodecs + 4× playback + WebM muxer ──────────
+// Plays the video at 4× speed, captures frames via requestVideoFrameCallback
+// with their real mediaTime timestamps, encodes with VP8 VideoEncoder.
+// Output: normal-speed WebM video, processed ~4× faster than real-time.
+async function _compressWebCodecs(file, onProgress) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
-    video.muted = true;
-    video.playsInline = true;
+    video.muted = true; video.playsInline = true;
+    video.setAttribute('playsinline', '');
+
+    video.onloadedmetadata = async () => {
+      const dur = video.duration;
+      if (!dur || !isFinite(dur)) { reject(new Error('Cannot read duration')); return; }
+
+      const scale = Math.min(1, COMPRESS_MAX_H / video.videoHeight);
+      const w = Math.round(video.videoWidth  * scale / 2) * 2;
+      const h = Math.round(video.videoHeight * scale / 2) * 2;
+
+      const frames = []; // {timestampMs, keyframe, data:ArrayBuffer}
+      let encErr = null;
+
+      const enc = new VideoEncoder({
+        output: (chunk) => {
+          const buf = new ArrayBuffer(chunk.byteLength);
+          chunk.copyTo(buf);
+          frames.push({ timestampMs: Math.round(chunk.timestamp / 1000), keyframe: chunk.type === 'key', data: buf });
+        },
+        error: e => { encErr = e; },
+      });
+      enc.configure({ codec: 'vp8', width: w, height: h, bitrate: COMPRESS_VIDEO_BPS, framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware' });
+
+      const ofc = new OffscreenCanvas(w, h);
+      const ctx = ofc.getContext('2d', { alpha: false });
+      let lastKeyT = -Infinity, ended = false;
+
+      video.playbackRate = 4; // 4× faster wall-clock processing
+      video.play().catch(reject);
+
+      const tick = async (_, meta) => {
+        if (encErr) { reject(encErr); return; }
+        // Back-pressure: pause capture if encoder queue builds up
+        if (enc.encodeQueueSize > 8) { video.requestVideoFrameCallback(tick); return; }
+
+        ctx.drawImage(video, 0, 0, w, h);
+        const tUs   = Math.round(meta.mediaTime * 1_000_000); // microseconds
+        const isKey = (meta.mediaTime - lastKeyT) >= 2;       // keyframe every 2 s
+        const frame = new VideoFrame(ofc, { timestamp: tUs });
+        enc.encode(frame, { keyFrame: isKey });
+        if (isKey) lastKeyT = meta.mediaTime;
+        frame.close();
+        onProgress?.(meta.mediaTime / dur);
+        if (!ended) video.requestVideoFrameCallback(tick);
+      };
+      video.requestVideoFrameCallback(tick);
+
+      video.onended = async () => {
+        ended = true;
+        try {
+          await enc.flush(); enc.close();
+          URL.revokeObjectURL(video.src);
+          if (encErr) throw encErr;
+          frames.sort((a, b) => a.timestampMs - b.timestampMs);
+          const blob = _buildWebM(frames, w, h, Math.round(dur * 1000));
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' }));
+        } catch(e) { reject(e); }
+      };
+      video.onerror = () => reject(new Error('Video playback error'));
+    };
+    video.onerror = () => reject(new Error('Cannot open video'));
+  });
+}
+
+// ── MINIMAL WEBM MUXER (VP8, video-only) ─────────────────────
+function _buildWebM(frames, width, height, durationMs) {
+  const cat = (...aa) => { const t = new Uint8Array(aa.reduce((s,a)=>s+a.byteLength,0)); let o=0; for(const a of aa){t.set(new Uint8Array(a.buffer||a),o);o+=a.byteLength;} return t; };
+  const vi  = n => n<0x7F ? new Uint8Array([0x80|n]) : n<0x3FFF ? new Uint8Array([0x40|(n>>8),n&0xFF]) : n<0x1FFFFF ? new Uint8Array([0x20|(n>>16),(n>>8)&0xFF,n&0xFF]) : new Uint8Array([0x10|(n>>>24),(n>>16)&0xFF,(n>>8)&0xFF,n&0xFF]);
+  const eid = n => n<=0xFF ? new Uint8Array([n]) : n<=0xFFFF ? new Uint8Array([n>>8,n&0xFF]) : n<=0xFFFFFF ? new Uint8Array([(n>>16),(n>>8)&0xFF,n&0xFF]) : new Uint8Array([n>>>24,(n>>16)&0xFF,(n>>8)&0xFF,n&0xFF]);
+  const el  = (id, d) => { const b=d instanceof Uint8Array?d:cat(...d); return cat(eid(id),vi(b.byteLength),b); };
+  const u   = (n,bytes) => { const r=new Uint8Array(bytes); for(let i=bytes-1;i>=0;i--){r[i]=n&0xFF;n=Math.floor(n/256);} return r; };
+  const f64 = n => { const b=new ArrayBuffer(8); new DataView(b).setFloat64(0,n,false); return new Uint8Array(b); };
+  const str = s => new TextEncoder().encode(s);
+
+  const hdr = el(0x1A45DFA3,[el(0x4286,u(1,1)),el(0x42F7,u(1,1)),el(0x42F2,u(4,1)),el(0x42F3,u(8,1)),el(0x4282,str('webm')),el(0x4287,u(4,1)),el(0x4285,u(2,1))]);
+  const inf = el(0x1549A966,[el(0x2AD7B1,u(1000000,4)),el(0x4489,f64(durationMs)),el(0x4D80,str('Brain+')),el(0x5741,str('Brain+'))]);
+  const trk = el(0x1654AE6B,[el(0xAE,[el(0xD7,u(1,1)),el(0x73C5,u(1,8)),el(0x83,u(1,1)),el(0x86,str('V_VP8')),el(0xE0,[el(0xB0,u(width,2)),el(0xBA,u(height,2))])])]);
+
+  const clusterEls = []; let cf=[], ct=-1;
+  const flush = () => { if(!cf.length)return; const t0=cf[0].timestampMs; clusterEls.push(el(0x1F43B675,[el(0xE7,u(t0,4)),...cf.map(f=>el(0xA3,cat(new Uint8Array([0x81,(f.timestampMs-t0)>>8&0xFF,(f.timestampMs-t0)&0xFF,f.keyframe?0x80:0]),new Uint8Array(f.data))))])); cf=[]; };
+  for(const f of frames){ if(ct<0||(f.keyframe&&f.timestampMs-ct>=2000)){flush();ct=f.timestampMs;} cf.push(f); } flush();
+
+  return new Blob([hdr, new Uint8Array([0x18,0x53,0x80,0x67,0x01,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]), cat(inf,trk,...clusterEls)], {type:'video/webm'});
+}
+
+// ── FALLBACK: canvas + MediaRecorder (real-time, with audio) ──
+async function _compressCanvas(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(file);
+    video.muted = true; video.playsInline = true;
     video.setAttribute('playsinline', '');
 
     video.onloadedmetadata = () => {
       const dur = video.duration;
       if (!dur || !isFinite(dur)) { reject(new Error('Cannot read video duration')); return; }
 
-      // Scale to max 360p, keep aspect ratio, ensure even pixel dimensions
       const scale = Math.min(1, COMPRESS_MAX_H / video.videoHeight);
       const canvas = document.createElement('canvas');
       canvas.width  = Math.round(video.videoWidth  * scale / 2) * 2;
       canvas.height = Math.round(video.videoHeight * scale / 2) * 2;
-      const ctx = canvas.getContext('2d', { alpha: false }); // alpha:false is faster
+      const ctx = canvas.getContext('2d', { alpha: false });
 
-      // Pick fastest available codec (hardware H.264 on both iOS and Android)
       let mime = 'video/webm';
-      for (const m of [
-        'video/mp4;codecs=avc1.42E01E,mp4a.40.2', // H.264 Baseline + AAC — widest hardware support (iOS + Android MediaCodec)
-        'video/mp4;codecs=avc1',                   // generic H.264 fallback
-        'video/webm;codecs=vp8,opus',              // Chrome older / desktop fallback
-        'video/webm;codecs=vp8',
-        'video/webm',
-      ]) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
+      for (const m of ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1','video/webm;codecs=vp8,opus','video/webm;codecs=vp8','video/webm']) {
+        if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+      }
 
-      // Merge canvas video stream with original audio tracks
       const canvasStream = canvas.captureStream(COMPRESS_FPS);
       const srcStream = video.captureStream?.() || video.mozCaptureStream?.();
       srcStream?.getAudioTracks().forEach(t => canvasStream.addTrack(t));
 
-      const recorder = new MediaRecorder(canvasStream, {
-        mimeType: mime,
-        videoBitsPerSecond: COMPRESS_VIDEO_BPS,
-        audioBitsPerSecond: COMPRESS_AUDIO_BPS,
-      });
-
+      const recorder = new MediaRecorder(canvasStream, { mimeType: mime, videoBitsPerSecond: COMPRESS_VIDEO_BPS, audioBitsPerSecond: COMPRESS_AUDIO_BPS });
       const chunks = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = () => {
@@ -1316,28 +1406,19 @@ async function compressVideoFast(file, onProgress) {
       };
 
       const draw = () => ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
       recorder.start(500);
       video.currentTime = 0;
       video.play().catch(reject);
 
-      // requestVideoFrameCallback fires only when a new frame is ready —
-      // more efficient than requestAnimationFrame (no wasted draws between frames)
       if ('requestVideoFrameCallback' in video) {
-        const tick = (_, meta) => {
-          draw();
-          onProgress?.(meta.mediaTime / dur);
-          if (!video.ended) video.requestVideoFrameCallback(tick);
-        };
+        const tick = (_, meta) => { draw(); onProgress?.(meta.mediaTime / dur); if (!video.ended) video.requestVideoFrameCallback(tick); };
         video.requestVideoFrameCallback(tick);
       } else {
-        // rAF fallback for Firefox / older browsers
         let raf;
         const tick = () => { draw(); onProgress?.(video.currentTime / dur); raf = requestAnimationFrame(tick); };
-        video.onplay  = () => { cancelAnimationFrame(raf); tick(); };
+        video.onplay = () => { cancelAnimationFrame(raf); tick(); };
         video.onpause = () => cancelAnimationFrame(raf);
       }
-
       video.onended = () => { draw(); recorder.stop(); };
       video.onerror = () => reject(new Error('Video load error during compression'));
     };
