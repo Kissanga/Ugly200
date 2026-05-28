@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.18';
+  const CURRENT_VERSION = '1.19';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1273,10 +1273,9 @@ async function compressVideoFast(file, onProgress) {
   return _compressCanvas(file, onProgress);
 }
 
-// ── FAST PATH: WebCodecs + 4× playback + WebM muxer ──────────
-// Plays the video at 4× speed, captures frames via requestVideoFrameCallback
-// with their real mediaTime timestamps, encodes with VP8 VideoEncoder.
-// Output: normal-speed WebM video, processed ~4× faster than real-time.
+// ── FAST PATH: WebCodecs + 4× playback + fMP4/WebM muxer ─────
+// Video encoded at 4× speed via requestVideoFrameCallback + VideoEncoder.
+// Audio decoded via AudioContext and encoded in parallel via AudioEncoder.
 async function _compressWebCodecs(file, onProgress) {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
@@ -1292,60 +1291,110 @@ async function _compressWebCodecs(file, onProgress) {
       const w = Math.round(video.videoWidth  * scale / 2) * 2;
       const h = Math.round(video.videoHeight * scale / 2) * 2;
 
-      // Prefer H.264 Baseline hardware (maps to MediaCodec on Android,
-      // VideoToolbox on macOS/Chrome). Fall back to VP8 if not supported.
+      // ── Video codec: H.264 hardware > VP8 ────────────────────
       let useH264 = false;
       try {
-        const sup = await VideoEncoder.isConfigSupported({
+        const s = await VideoEncoder.isConfigSupported({
           codec: 'avc1.42E01E', width: w, height: h,
           bitrate: COMPRESS_VIDEO_BPS, framerate: COMPRESS_FPS,
           hardwareAcceleration: 'prefer-hardware',
         });
-        useH264 = !!sup.supported;
-      } catch(e) { /* VP8 fallback */ }
+        useH264 = !!s.supported;
+      } catch(e) {}
 
-      const encConfig = useH264
+      const vCfg = useH264
         ? { codec: 'avc1.42E01E', width: w, height: h, bitrate: COMPRESS_VIDEO_BPS,
-            framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware',
-            avc: { format: 'avc' } }   // AVCC (length-prefixed) for MP4
+            framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware', avc: { format: 'avc' } }
         : { codec: 'vp8', width: w, height: h, bitrate: COMPRESS_VIDEO_BPS,
             framerate: COMPRESS_FPS, hardwareAcceleration: 'prefer-hardware' };
 
-      const frames = []; // {timestampMs, keyframe, data:ArrayBuffer}
-      let encErr = null;
-      let avccConfig = null; // avcDecoderConfigurationRecord for MP4 muxer
-
-      const enc = new VideoEncoder({
+      const videoFrames = [];
+      let vErr = null, avccConfig = null;
+      const vEnc = new VideoEncoder({
         output: (chunk, meta) => {
-          // Grab SPS/PPS from first key frame (H.264 only)
-          if (useH264 && chunk.type === 'key' && !avccConfig && meta?.decoderConfig?.description) {
+          if (useH264 && chunk.type === 'key' && !avccConfig && meta?.decoderConfig?.description)
             avccConfig = meta.decoderConfig.description;
-          }
-          const buf = new ArrayBuffer(chunk.byteLength);
-          chunk.copyTo(buf);
-          frames.push({ timestampMs: Math.round(chunk.timestamp / 1000), keyframe: chunk.type === 'key', data: buf });
+          const b = new ArrayBuffer(chunk.byteLength); chunk.copyTo(b);
+          videoFrames.push({ timestampMs: Math.round(chunk.timestamp / 1000), keyframe: chunk.type === 'key', data: b });
         },
-        error: e => { encErr = e; },
+        error: e => { vErr = e; }
       });
-      enc.configure(encConfig);
+      vEnc.configure(vCfg);
 
+      // ── Audio: encode in parallel with AudioEncoder ───────────
+      // H.264 path → AAC-LC @ 44100 Hz  (MP4-native)
+      // VP8   path → Opus  @ 48000 Hz  (WebM-native)
+      const AUDIO_SR = useH264 ? 44100 : 48000;
+      const aCODEC   = useH264 ? 'mp4a.40.2' : 'opus';
+      const audioFrames = [];
+      let ascConfig = null;
+
+      const audioPromise = (async () => {
+        try {
+          if (typeof AudioEncoder === 'undefined') return;
+          const as = await AudioEncoder.isConfigSupported({
+            codec: aCODEC, sampleRate: AUDIO_SR, numberOfChannels: 2, bitrate: 96000
+          });
+          if (!as.supported) return;
+
+          const aEnc = new AudioEncoder({
+            output: (chunk, meta) => {
+              if (!ascConfig && meta?.decoderConfig?.description) ascConfig = meta.decoderConfig.description;
+              const b = new ArrayBuffer(chunk.byteLength); chunk.copyTo(b);
+              audioFrames.push({ timestampMs: Math.round(chunk.timestamp / 1000), data: b });
+            },
+            error: () => {}
+          });
+          aEnc.configure({ codec: aCODEC, sampleRate: AUDIO_SR, numberOfChannels: 2, bitrate: 96000 });
+
+          // Decode audio from file
+          const rawCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const raw = await rawCtx.decodeAudioData(await file.arrayBuffer());
+          rawCtx.close();
+
+          // Resample to encoder's required sample rate if needed
+          const nCh = Math.min(raw.numberOfChannels, 2);
+          let decoded = raw;
+          if (Math.round(raw.sampleRate) !== AUDIO_SR) {
+            const off = new OfflineAudioContext(nCh, Math.ceil(raw.duration * AUDIO_SR), AUDIO_SR);
+            const src = off.createBufferSource(); src.buffer = raw; src.connect(off.destination); src.start(0);
+            decoded = await off.startRendering();
+          }
+
+          // Feed PCM to AudioEncoder in 4096-frame chunks (f32-planar)
+          const CHUNK = 4096, total = decoded.length;
+          const chs = Array.from({ length: nCh }, (_, i) => decoded.getChannelData(i));
+          for (let off = 0; off < total; off += CHUNK) {
+            const len = Math.min(CHUNK, total - off);
+            const tUs = Math.round(off / AUDIO_SR * 1_000_000);
+            const pcm = new Float32Array(len * nCh);
+            for (let c = 0; c < nCh; c++) pcm.set(chs[c].subarray(off, off + len), c * len);
+            const ad = new AudioData({ format: 'f32-planar', sampleRate: AUDIO_SR,
+              numberOfFrames: len, numberOfChannels: nCh, timestamp: tUs, data: pcm });
+            aEnc.encode(ad); ad.close();
+          }
+          await aEnc.flush(); aEnc.close();
+        } catch(e) {
+          console.warn('Audio encoding failed, video will be silent:', e.message);
+        }
+      })();
+
+      // ── Video: 4× playback + frame capture ───────────────────
       const ofc = new OffscreenCanvas(w, h);
       const ctx = ofc.getContext('2d', { alpha: false });
       let lastKeyT = -Infinity, ended = false;
 
-      video.playbackRate = 4; // 4× faster wall-clock processing
+      video.playbackRate = 4;
       video.play().catch(reject);
 
       const tick = async (_, meta) => {
-        if (encErr) { reject(encErr); return; }
-        // Back-pressure: pause capture if encoder queue builds up
-        if (enc.encodeQueueSize > 8) { video.requestVideoFrameCallback(tick); return; }
-
+        if (vErr) { reject(vErr); return; }
+        if (vEnc.encodeQueueSize > 8) { video.requestVideoFrameCallback(tick); return; }
         ctx.drawImage(video, 0, 0, w, h);
-        const tUs   = Math.round(meta.mediaTime * 1_000_000); // microseconds
-        const isKey = (meta.mediaTime - lastKeyT) >= 2;       // keyframe every 2 s
+        const tUs   = Math.round(meta.mediaTime * 1_000_000);
+        const isKey = (meta.mediaTime - lastKeyT) >= 2;
         const frame = new VideoFrame(ofc, { timestamp: tUs });
-        enc.encode(frame, { keyFrame: isKey });
+        vEnc.encode(frame, { keyFrame: isKey });
         if (isKey) lastKeyT = meta.mediaTime;
         frame.close();
         onProgress?.(meta.mediaTime / dur);
@@ -1356,16 +1405,18 @@ async function _compressWebCodecs(file, onProgress) {
       video.onended = async () => {
         ended = true;
         try {
-          await enc.flush(); enc.close();
+          await vEnc.flush(); vEnc.close();
           URL.revokeObjectURL(video.src);
-          if (encErr) throw encErr;
-          frames.sort((a, b) => a.timestampMs - b.timestampMs);
+          if (vErr) throw vErr;
+          await audioPromise;  // wait for parallel audio encoding
+          videoFrames.sort((a, b) => a.timestampMs - b.timestampMs);
+          audioFrames.sort((a, b) => a.timestampMs - b.timestampMs);
           const durMs = Math.round(dur * 1000);
           if (useH264 && avccConfig) {
-            const blob = _buildMP4(frames, w, h, durMs, avccConfig);
+            const blob = _buildMP4(videoFrames, w, h, durMs, avccConfig, audioFrames, ascConfig);
             resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.mp4'), { type: 'video/mp4' }));
           } else {
-            const blob = _buildWebM(frames, w, h, durMs);
+            const blob = _buildWebM(videoFrames, w, h, durMs, audioFrames);
             resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' }));
           }
         } catch(e) { reject(e); }
@@ -1376,31 +1427,61 @@ async function _compressWebCodecs(file, onProgress) {
   });
 }
 
-// ── MINIMAL WEBM MUXER (VP8, video-only) ─────────────────────
-function _buildWebM(frames, width, height, durationMs) {
-  const cat = (...aa) => { const t = new Uint8Array(aa.reduce((s,a)=>s+a.byteLength,0)); let o=0; for(const a of aa){t.set(new Uint8Array(a.buffer||a),o);o+=a.byteLength;} return t; };
-  const vi  = n => n<0x7F ? new Uint8Array([0x80|n]) : n<0x3FFF ? new Uint8Array([0x40|(n>>8),n&0xFF]) : n<0x1FFFFF ? new Uint8Array([0x20|(n>>16),(n>>8)&0xFF,n&0xFF]) : new Uint8Array([0x10|(n>>>24),(n>>16)&0xFF,(n>>8)&0xFF,n&0xFF]);
-  const eid = n => n<=0xFF ? new Uint8Array([n]) : n<=0xFFFF ? new Uint8Array([n>>8,n&0xFF]) : n<=0xFFFFFF ? new Uint8Array([(n>>16),(n>>8)&0xFF,n&0xFF]) : new Uint8Array([n>>>24,(n>>16)&0xFF,(n>>8)&0xFF,n&0xFF]);
-  const el  = (id, d) => { const b=d instanceof Uint8Array?d:cat(...d); return cat(eid(id),vi(b.byteLength),b); };
-  const u   = (n,bytes) => { const r=new Uint8Array(bytes); for(let i=bytes-1;i>=0;i--){r[i]=n&0xFF;n=Math.floor(n/256);} return r; };
-  const f64 = n => { const b=new ArrayBuffer(8); new DataView(b).setFloat64(0,n,false); return new Uint8Array(b); };
-  const str = s => new TextEncoder().encode(s);
+// ── WEBM MUXER (VP8 video + optional Opus audio) ─────────────
+function _buildWebM(frames, width, height, durationMs, audioFrames = []) {
+  const toU8 = a => a instanceof Uint8Array ? a : ArrayBuffer.isView(a) ? new Uint8Array(a.buffer,a.byteOffset,a.byteLength) : new Uint8Array(a);
+  const cat  = (...aa) => { const p=aa.map(toU8); const o=new Uint8Array(p.reduce((s,a)=>s+a.byteLength,0)); let x=0; for(const a of p){o.set(a,x);x+=a.byteLength;} return o; };
+  const vi   = n => n<0x7F?new Uint8Array([0x80|n]):n<0x3FFF?new Uint8Array([0x40|(n>>8),n&0xFF]):n<0x1FFFFF?new Uint8Array([0x20|(n>>16),(n>>8)&0xFF,n&0xFF]):new Uint8Array([0x10|(n>>>24),(n>>16)&0xFF,(n>>8)&0xFF,n&0xFF]);
+  const eid  = n => n<=0xFF?new Uint8Array([n]):n<=0xFFFF?new Uint8Array([n>>8,n&0xFF]):n<=0xFFFFFF?new Uint8Array([(n>>16),(n>>8)&0xFF,n&0xFF]):new Uint8Array([n>>>24,(n>>16)&0xFF,(n>>8)&0xFF,n&0xFF]);
+  const el   = (id,d) => { const b=d instanceof Uint8Array?d:cat(...d); return cat(eid(id),vi(b.byteLength),b); };
+  const u    = (n,bytes) => { const r=new Uint8Array(bytes); for(let i=bytes-1;i>=0;i--){r[i]=n&0xFF;n=Math.floor(n/256);} return r; };
+  const f64  = n => { const b=new ArrayBuffer(8); new DataView(b).setFloat64(0,n,false); return new Uint8Array(b); };
+  const str  = s => new TextEncoder().encode(s);
+  const le   = (n,bytes) => { const r=new Uint8Array(bytes); for(let i=0;i<bytes;i++){r[i]=n&0xFF;n=Math.floor(n/256);} return r; };
 
-  const hdr = el(0x1A45DFA3,[el(0x4286,u(1,1)),el(0x42F7,u(1,1)),el(0x42F2,u(4,1)),el(0x42F3,u(8,1)),el(0x4282,str('webm')),el(0x4287,u(4,1)),el(0x4285,u(2,1))]);
-  const inf = el(0x1549A966,[el(0x2AD7B1,u(1000000,4)),el(0x4489,f64(durationMs)),el(0x4D80,str('Brain+')),el(0x5741,str('Brain+'))]);
-  const trk = el(0x1654AE6B,[el(0xAE,[el(0xD7,u(1,1)),el(0x73C5,u(1,8)),el(0x83,u(1,1)),el(0x86,str('V_VP8')),el(0xE0,[el(0xB0,u(width,2)),el(0xBA,u(height,2))])])]);
+  const ebml = el(0x1A45DFA3,[el(0x4286,u(1,1)),el(0x42F7,u(1,1)),el(0x42F2,u(4,1)),el(0x42F3,u(8,1)),el(0x4282,str('webm')),el(0x4287,u(4,1)),el(0x4285,u(2,1))]);
+  const inf  = el(0x1549A966,[el(0x2AD7B1,u(1000000,4)),el(0x4489,f64(durationMs)),el(0x4D80,str('Brain+')),el(0x5741,str('Brain+'))]);
 
-  const clusterEls = []; let cf=[], ct=-1;
-  const flush = () => { if(!cf.length)return; const t0=cf[0].timestampMs; clusterEls.push(el(0x1F43B675,[el(0xE7,u(t0,4)),...cf.map(f=>el(0xA3,cat(new Uint8Array([0x81,(f.timestampMs-t0)>>8&0xFF,(f.timestampMs-t0)&0xFF,f.keyframe?0x80:0]),new Uint8Array(f.data))))])); cf=[]; };
-  for(const f of frames){ if(ct<0||(f.keyframe&&f.timestampMs-ct>=2000)){flush();ct=f.timestampMs;} cf.push(f); } flush();
+  const vTrack = el(0xAE,[el(0xD7,u(1,1)),el(0x73C5,u(1,8)),el(0x83,u(1,1)),el(0x86,str('V_VP8')),el(0xE0,[el(0xB0,u(width,2)),el(0xBA,u(height,2))])]);
+  let trkEl;
+  if (audioFrames.length > 0) {
+    // OpusHead required as CodecPrivate for A_OPUS track (all fields little-endian)
+    const opusHead = cat(str('OpusHead'), new Uint8Array([1,2]), le(312,2), le(48000,4), le(0,2), new Uint8Array([0]));
+    const aTrack = el(0xAE,[el(0xD7,u(2,1)),el(0x73C5,u(2,8)),el(0x83,u(2,1)),el(0x86,str('A_OPUS')),el(0x63A2,opusHead),el(0xE1,[el(0xB5,f64(48000)),el(0x9F,u(2,1))])]);
+    trkEl = el(0x1654AE6B,[vTrack, aTrack]);
+  } else {
+    trkEl = el(0x1654AE6B,[vTrack]);
+  }
 
-  return new Blob([hdr, new Uint8Array([0x18,0x53,0x80,0x67,0x01,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]), cat(inf,trk,...clusterEls)], {type:'video/webm'});
+  // Merge video + audio by timestamp; new cluster on every video keyframe
+  const all = [
+    ...frames.map(f => ({ track:1, timestampMs:f.timestampMs, keyframe:f.keyframe, data:f.data })),
+    ...audioFrames.map(f => ({ track:2, timestampMs:f.timestampMs, keyframe:false, data:f.data }))
+  ].sort((a,b) => a.timestampMs - b.timestampMs);
+
+  const clusterEls = []; let cf=[], clusterT=-1;
+  const flush = () => {
+    if (!cf.length) return;
+    const t0 = clusterT;
+    clusterEls.push(el(0x1F43B675,[el(0xE7,u(t0,4)),...cf.map(b => {
+      const rel = b.timestampMs - t0;
+      return el(0xA3, cat(new Uint8Array([b.track===2?0x82:0x81,(rel>>8)&0xFF,rel&0xFF,(b.track===1&&b.keyframe)?0x80:0x00]), toU8(b.data)));
+    })]));
+    cf = [];
+  };
+  for (const b of all) {
+    if (b.track===1 && b.keyframe && (clusterT<0 || b.timestampMs-clusterT>=2000)) { flush(); clusterT=b.timestampMs; }
+    else if (clusterT<0) clusterT=b.timestampMs;
+    cf.push(b);
+  }
+  flush();
+
+  return new Blob([ebml, new Uint8Array([0x18,0x53,0x80,0x67,0x01,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]), cat(inf,trkEl,...clusterEls)], {type:'video/webm'});
 }
 
-// ── FRAGMENTED MP4 MUXER (H.264/AVCC, video-only) ────────────
-// avccBuf = avcDecoderConfigurationRecord from VideoEncoder metadata
-function _buildMP4(frames, width, height, durationMs, avccBuf) {
-  const toU8 = a => a instanceof Uint8Array ? a : ArrayBuffer.isView(a) ? new Uint8Array(a.buffer, a.byteOffset, a.byteLength) : new Uint8Array(a);
+// ── FRAGMENTED MP4 MUXER (H.264/AVCC + optional AAC audio) ───
+function _buildMP4(frames, width, height, durationMs, avccBuf, audioFrames = [], ascConfig = null) {
+  const toU8 = a => a instanceof Uint8Array ? a : ArrayBuffer.isView(a) ? new Uint8Array(a.buffer,a.byteOffset,a.byteLength) : new Uint8Array(a);
   const cat  = (...aa) => { const p=aa.map(toU8); const o=new Uint8Array(p.reduce((s,a)=>s+a.byteLength,0)); let x=0; for(const a of p){o.set(a,x);x+=a.byteLength;} return o; };
   const u8   = n => new Uint8Array([n&0xFF]);
   const u16  = n => new Uint8Array([(n>>8)&0xFF, n&0xFF]);
@@ -1410,85 +1491,107 @@ function _buildMP4(frames, width, height, durationMs, avccBuf) {
   const str  = s => new TextEncoder().encode(s);
   const box  = (t,...d) => { const data=cat(...d); return cat(u32(data.byteLength+8),str(t),data); };
   const fbox = (t,v,f,...d) => box(t,u8(v),u24(f),...d);
+  const dLen = n => n<128 ? new Uint8Array([n]) : new Uint8Array([0x80|(n>>7),n&0x7F]);
+  const desc = (tag,...parts) => { const d=cat(...parts); return cat(new Uint8Array([tag]),dLen(d.byteLength),d); };
 
-  const TS      = 90000;  // 90 kHz timescale
-  const totTick = Math.round(durationMs * TS / 1000);
-  const fpsTick = Math.round(TS / COMPRESS_FPS);
+  const TS  = 90000;   // video/movie timescale
+  const ATS = 44100;   // audio timescale (sample rate)
+  const totTick  = Math.round(durationMs * TS  / 1000);
+  const totATick = Math.round(durationMs * ATS / 1000);
+  const fpsTick  = Math.round(TS / COMPRESS_FPS);
+  const hasAudio = audioFrames.length > 0;
 
-  // Per-frame durations derived from consecutive timestamps
-  const durs = frames.map((f,i) =>
-    i < frames.length-1
-      ? Math.max(1, Math.round((frames[i+1].timestampMs - f.timestampMs) * TS / 1000))
-      : fpsTick
+  const vDurs = frames.map((f,i) =>
+    i < frames.length-1 ? Math.max(1, Math.round((frames[i+1].timestampMs - f.timestampMs) * TS / 1000)) : fpsTick
   );
-
-  // ── Init segment (ftyp + moov) ───────────────────────────────
   const mat = cat(u32(0x00010000),u32(0),u32(0), u32(0),u32(0x00010000),u32(0), u32(0),u32(0),u32(0x40000000));
 
-  const ftyp = box('ftyp', str('isom'), u32(0x200), str('isom'), str('iso2'), str('avc1'), str('mp41'));
+  // ── Video track ──────────────────────────────────────────────
+  const ftyp = box('ftyp', str('isom'),u32(0x200), str('isom'),str('iso2'),str('avc1'),str('mp41'));
+  const mvhd = fbox('mvhd',0,0, u32(0),u32(0), u32(TS),u32(totTick),
+    u32(0x00010000),u16(0x0100),new Uint8Array(10), mat, new Uint8Array(24), u32(hasAudio?3:2));
+  const vTkhd = fbox('tkhd',0,3, u32(0),u32(0),u32(1),u32(0),u32(totTick),
+    new Uint8Array(8),u16(0),u16(0),u16(0),u16(0), mat, u32(width<<16),u32(height<<16));
+  const vMdhd = fbox('mdhd',0,0, u32(0),u32(0),u32(TS),u32(totTick),u16(0x55C4),u16(0));
+  const vHdlr = fbox('hdlr',0,0, u32(0),str('vide'),new Uint8Array(12),str('VideoHandler'),u8(0));
+  const avc1  = box('avc1', new Uint8Array(6),u16(1),new Uint8Array(16),
+    u16(width),u16(height),u32(0x00480000),u32(0x00480000),
+    u32(0),u16(1),new Uint8Array(32),u16(0x0018),u16(0xFFFF), box('avcC',toU8(avccBuf)));
+  const vStbl = box('stbl', fbox('stsd',0,0,u32(1),avc1),
+    fbox('stts',0,0,u32(0)),fbox('stsc',0,0,u32(0)),fbox('stsz',0,0,u32(0),u32(0)),fbox('stco',0,0,u32(0)));
+  const vTrak = box('trak', vTkhd,
+    box('mdia', vMdhd, vHdlr, box('minf', fbox('vmhd',0,1,u16(0),new Uint8Array(6)),
+      box('dinf',fbox('dref',0,0,u32(1),fbox('url ',0,1))), vStbl)));
 
-  const mvhd = fbox('mvhd',0,0, u32(0),u32(0), u32(TS), u32(totTick),
-    u32(0x00010000), u16(0x0100), new Uint8Array(10), mat, new Uint8Array(24), u32(2));
+  // ── Audio track (AAC-LC) ─────────────────────────────────────
+  let aTrak = null;
+  if (hasAudio) {
+    const asc  = ascConfig ? toU8(ascConfig) : new Uint8Array([0x12,0x10]); // AAC-LC 44100 2ch
+    const esds = fbox('esds',0,0,
+      desc(0x03, u16(1),new Uint8Array([0x00]),
+        desc(0x04, new Uint8Array([0x40,0x15,0,0,0]), u32(96000),u32(96000), desc(0x05,asc)),
+        desc(0x06, new Uint8Array([0x02]))));
+    const mp4a = box('mp4a', new Uint8Array(6),u16(1),new Uint8Array(8),
+      u16(2),u16(16),u16(0),u16(0), u32(44100<<16), esds);
+    const aTkhd = fbox('tkhd',0,3, u32(0),u32(0),u32(2),u32(0),u32(totTick),
+      new Uint8Array(8),u16(0),u16(0),u16(0x0100),u16(0), mat, u32(0),u32(0));
+    const aStbl = box('stbl', fbox('stsd',0,0,u32(1),mp4a),
+      fbox('stts',0,0,u32(0)),fbox('stsc',0,0,u32(0)),fbox('stsz',0,0,u32(0),u32(0)),fbox('stco',0,0,u32(0)));
+    aTrak = box('trak', aTkhd,
+      box('mdia', fbox('mdhd',0,0,u32(0),u32(0),u32(ATS),u32(totATick),u16(0x55C4),u16(0)),
+        fbox('hdlr',0,0,u32(0),str('soun'),new Uint8Array(12),str('SoundHandler'),u8(0)),
+        box('minf', fbox('smhd',0,0,u16(0),u16(0)),
+          box('dinf',fbox('dref',0,0,u32(1),fbox('url ',0,1))), aStbl)));
+  }
 
-  const tkhd = fbox('tkhd',0,3, u32(0),u32(0), u32(1), u32(0), u32(totTick),
-    new Uint8Array(8), u16(0),u16(0), u16(0),u16(0), mat, u32(width<<16), u32(height<<16));
+  const mvex = hasAudio
+    ? box('mvex', fbox('trex',0,0,u32(1),u32(1),u32(0),u32(0),u32(0)), fbox('trex',0,0,u32(2),u32(1),u32(0),u32(0),u32(0)))
+    : box('mvex', fbox('trex',0,0,u32(1),u32(1),u32(0),u32(0),u32(0)));
+  const moov = hasAudio ? box('moov',mvhd,vTrak,aTrak,mvex) : box('moov',mvhd,vTrak,mvex);
 
-  const mdhd = fbox('mdhd',0,0, u32(0),u32(0), u32(TS), u32(totTick), u16(0x55C4), u16(0));
-  const hdlr = fbox('hdlr',0,0, u32(0), str('vide'), new Uint8Array(12), str('VideoHandler'), u8(0));
-
-  const avccBox  = box('avcC', toU8(avccBuf));
-  const avc1Box  = box('avc1',
-    new Uint8Array(6), u16(1), new Uint8Array(16),
-    u16(width), u16(height), u32(0x00480000), u32(0x00480000),
-    u32(0), u16(1), new Uint8Array(32), u16(0x0018), u16(0xFFFF),
-    avccBox);
-
-  const stbl = box('stbl',
-    fbox('stsd',0,0, u32(1), avc1Box),
-    fbox('stts',0,0, u32(0)), fbox('stsc',0,0, u32(0)),
-    fbox('stsz',0,0, u32(0),u32(0)), fbox('stco',0,0, u32(0)));
-  const minf = box('minf',
-    fbox('vmhd',0,1, u16(0),new Uint8Array(6)),
-    box('dinf', fbox('dref',0,0, u32(1), fbox('url ',0,1))),
-    stbl);
-  const trak = box('trak', tkhd, box('mdia', mdhd, hdlr, minf));
-  const mvex = box('mvex', fbox('trex',0,0, u32(1),u32(1),u32(0),u32(0),u32(0)));
-  const moov  = box('moov', mvhd, trak, mvex);
-
-  // ── Fragments: one moof+mdat per keyframe group ──────────────
+  // ── Fragments: one moof+mdat per video keyframe group ────────
   const parts = [ftyp, moov];
-  let seq = 1, fi = 0;
+  const VFL = 0x0701; // data-offset + duration + size + flags
+  const AFL = 0x0301; // data-offset + duration + size
+  let seq=1, fi=0, ai=0;
 
   while (fi < frames.length) {
-    const start = fi++;
+    const vStart=fi++;
     while (fi < frames.length && !frames[fi].keyframe) fi++;
-    const grp = frames.slice(start, fi);
+    const grp = frames.slice(vStart, fi);
+    const fragEndMs = fi < frames.length ? frames[fi].timestampMs : Infinity;
 
-    const baseT   = Math.round(grp[0].timestampMs * TS / 1000);
-    const nSamples = grp.length;
-    // Flags: data-offset(0x001) + sample-duration(0x100) + sample-size(0x200) + sample-flags(0x400)
-    const TRUN_FL = 0x0701;
+    const vBaseT  = Math.round(grp[0].timestampMs * TS / 1000);
+    const vSamples = cat(...grp.map((f,j) => cat(u32(vDurs[vStart+j]),u32(f.data.byteLength),u32(f.keyframe?0x02000000:0x01010000))));
+    const vTotalSz = grp.reduce((s,f)=>s+f.data.byteLength,0);
 
-    const samples = cat(...grp.map((f,j) => cat(
-      u32(durs[start+j]),                              // duration
-      u32(f.data.byteLength),                          // size
-      u32(f.keyframe ? 0x02000000 : 0x01010000)        // flags: sync vs non-sync
-    )));
+    // Audio frames for this fragment's time range
+    const aStart = ai;
+    while (ai < audioFrames.length && audioFrames[ai].timestampMs < fragEndMs) ai++;
+    const aGrp = audioFrames.slice(aStart, ai);
+    const aBaseT   = aGrp.length>0 ? Math.round(aGrp[0].timestampMs * ATS / 1000) : 0;
+    const aSamples = aGrp.length>0 ? cat(...aGrp.map((f,j) => cat(
+      u32(j<aGrp.length-1 ? Math.max(1,Math.round((aGrp[j+1].timestampMs-f.timestampMs)*ATS/1000)) : 1024),
+      u32(f.data.byteLength)
+    ))) : null;
 
-    // Build moof twice: first to measure size, then with correct data-offset
-    const buildMoof = (dataOff) => {
-      const trun = fbox('trun',0,TRUN_FL, u32(nSamples), i32(dataOff), samples);
-      const traf = box('traf',
-        fbox('tfhd',0,0x020000, u32(1)),   // default-base-is-moof
-        fbox('tfdt',0,0, u32(baseT)),
-        trun);
-      return box('moof', fbox('mfhd',0,0, u32(seq)), traf);
+    const buildMoof = (vOff, aOff) => {
+      const vTrun = fbox('trun',0,VFL, u32(grp.length),i32(vOff),vSamples);
+      const vTraf = box('traf', fbox('tfhd',0,0x020000,u32(1)), fbox('tfdt',0,0,u32(vBaseT)), vTrun);
+      if (aGrp.length>0) {
+        const aTrun = fbox('trun',0,AFL, u32(aGrp.length),i32(aOff),aSamples);
+        const aTraf = box('traf', fbox('tfhd',0,0x020000,u32(2)), fbox('tfdt',0,0,u32(aBaseT)), aTrun);
+        return box('moof', fbox('mfhd',0,0,u32(seq)), vTraf, aTraf);
+      }
+      return box('moof', fbox('mfhd',0,0,u32(seq)), vTraf);
     };
-    const moofSz = buildMoof(0).byteLength;
-    const moof   = buildMoof(moofSz + 8); // +8 = mdat size+type
+    const dummy = buildMoof(0,0);
+    const vOff  = dummy.byteLength + 8;   // +8 = mdat size+type header
+    const aOff  = vOff + vTotalSz;
+    const moof  = buildMoof(vOff, aOff);
     seq++;
 
-    parts.push(moof, box('mdat', cat(...grp.map(f => toU8(f.data)))));
+    parts.push(moof, box('mdat', cat(...grp.map(f=>toU8(f.data)), ...aGrp.map(f=>toU8(f.data)))));
   }
 
   return new Blob(parts, { type: 'video/mp4' });
