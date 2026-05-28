@@ -315,7 +315,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.10';
+  const CURRENT_VERSION = '1.11';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -521,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.10</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.11</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1252,6 +1252,96 @@ document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
   updateSubmitBtn();
 });
 
+// ─── VIDEO COMPRESSION ───────────────────────────────────────
+// Compresses video to 360p before uploading to Notion.
+// Codec priority:
+//   1. video/mp4;codecs=avc1  → Safari/iOS hardware H.264 (fastest on iPhone)
+//   2. video/webm;codecs=vp8  → Chrome/Android (VP8 is 2-3× faster than VP9)
+//   3. video/webm              → generic fallback
+const COMPRESS_MAX_H      = 360;
+const COMPRESS_VIDEO_BPS  = 400_000;  // 400 kbps
+const COMPRESS_AUDIO_BPS  =  48_000;  // 48 kbps
+const COMPRESS_FPS        = 24;
+
+async function compressVideoFast(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(file);
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+
+    video.onloadedmetadata = () => {
+      const dur = video.duration;
+      if (!dur || !isFinite(dur)) { reject(new Error('Cannot read video duration')); return; }
+
+      // Scale to max 360p, keep aspect ratio, ensure even pixel dimensions
+      const scale = Math.min(1, COMPRESS_MAX_H / video.videoHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(video.videoWidth  * scale / 2) * 2;
+      canvas.height = Math.round(video.videoHeight * scale / 2) * 2;
+      const ctx = canvas.getContext('2d', { alpha: false }); // alpha:false is faster
+
+      // Pick fastest available codec
+      let mime = 'video/webm';
+      for (const m of [
+        'video/mp4;codecs=avc1',           // Safari/iOS — hardware H.264
+        'video/webm;codecs=vp8,opus',      // Chrome — VP8 faster than VP9
+        'video/webm;codecs=vp8',
+        'video/webm',
+      ]) { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } }
+
+      // Merge canvas video stream with original audio tracks
+      const canvasStream = canvas.captureStream(COMPRESS_FPS);
+      const srcStream = video.captureStream?.() || video.mozCaptureStream?.();
+      srcStream?.getAudioTracks().forEach(t => canvasStream.addTrack(t));
+
+      const recorder = new MediaRecorder(canvasStream, {
+        mimeType: mime,
+        videoBitsPerSecond: COMPRESS_VIDEO_BPS,
+        audioBitsPerSecond: COMPRESS_AUDIO_BPS,
+      });
+
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        canvasStream.getTracks().forEach(t => t.stop());
+        URL.revokeObjectURL(video.src);
+        const type = mime.startsWith('video/mp4') ? 'video/mp4' : 'video/webm';
+        const ext  = mime.startsWith('video/mp4') ? '.mp4' : '.webm';
+        resolve(new File(chunks, file.name.replace(/\.[^.]+$/, ext), { type }));
+      };
+
+      const draw = () => ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      recorder.start(500);
+      video.currentTime = 0;
+      video.play().catch(reject);
+
+      // requestVideoFrameCallback fires only when a new frame is ready —
+      // more efficient than requestAnimationFrame (no wasted draws between frames)
+      if ('requestVideoFrameCallback' in video) {
+        const tick = (_, meta) => {
+          draw();
+          onProgress?.(meta.mediaTime / dur);
+          if (!video.ended) video.requestVideoFrameCallback(tick);
+        };
+        video.requestVideoFrameCallback(tick);
+      } else {
+        // rAF fallback for Firefox / older browsers
+        let raf;
+        const tick = () => { draw(); onProgress?.(video.currentTime / dur); raf = requestAnimationFrame(tick); };
+        video.onplay  = () => { cancelAnimationFrame(raf); tick(); };
+        video.onpause = () => cancelAnimationFrame(raf);
+      }
+
+      video.onended = () => { draw(); recorder.stop(); };
+      video.onerror = () => reject(new Error('Video load error during compression'));
+    };
+    video.onerror = () => reject(new Error('Cannot open video file'));
+  });
+}
+
 // ─── AUDIO EXTRACTION ────────────────────────────────────────
 // Extracts audio-only from a video file and returns a 16 kHz mono WAV File.
 // A 15 MB video becomes ~1–2 MB WAV — uploads 10× faster to Groq.
@@ -1531,24 +1621,36 @@ document.getElementById('submitBtn').addEventListener('click', submitToNotion);
 // ─── VIDEO COMPRESSION — FIXED BITRATE ───────────────────────
 // ─── NOTION FILE UPLOAD ───────────────────────────────────────
 async function uploadFileToNotion(file, onStatus) {
-  const sizeMB = (file.size / 1024 / 1024);
-  const sizeMBStr = sizeMB.toFixed(1);
+  let uploadFile = file;
 
-  onStatus?.(`Uploading ${file.name} (${sizeMBStr} MB)…`, 0);
+  // Compress video before upload (reduces size dramatically for Notion)
+  const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(file.name);
+  if (isVideo) {
+    onStatus?.(`Compressing "${file.name}"… 0%`);
+    uploadFile = await compressVideoFast(file, p => {
+      onStatus?.(`Compressing… ${Math.round(p * 100)}%`);
+    });
+    const mb = (uploadFile.size / 1024 / 1024).toFixed(1);
+    onStatus?.(`Uploading compressed video (${mb} MB)…`);
+  } else {
+    const sizeMBStr = (file.size / 1024 / 1024).toFixed(1);
+    onStatus?.(`Uploading ${file.name} (${sizeMBStr} MB)…`);
+  }
 
-  // Notion requires a valid content_type — fall back to generic types if browser doesn't report one
-  const contentType = file.type ||
-    (file.name.match(/\.(mp4|m4v)$/i) ? 'video/mp4' :
-     file.name.match(/\.(mov|qt)$/i)   ? 'video/quicktime' :
-     file.name.match(/\.(jpg|jpeg)$/i) ? 'image/jpeg' :
-     file.name.match(/\.(png)$/i)      ? 'image/png' :
+  // Notion requires a valid content_type — derive from uploadFile (may differ from original after compression)
+  const contentType = uploadFile.type ||
+    (uploadFile.name.match(/\.(mp4|m4v)$/i) ? 'video/mp4' :
+     uploadFile.name.match(/\.(mov|qt)$/i)   ? 'video/quicktime' :
+     uploadFile.name.match(/\.(webm)$/i)      ? 'video/webm' :
+     uploadFile.name.match(/\.(jpg|jpeg)$/i)  ? 'image/jpeg' :
+     uploadFile.name.match(/\.(png)$/i)       ? 'image/png' :
      'application/octet-stream');
 
   // Create upload slot
   const cr = await cfFetch(PROXY + '/v1/file_uploads', {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: file.name, content_type: contentType }),
+    body: JSON.stringify({ filename: uploadFile.name, content_type: contentType }),
   });
   if (!cr.ok) {
     const e = await cr.json().catch(() => ({}));
@@ -1557,12 +1659,12 @@ async function uploadFileToNotion(file, onStatus) {
   const { id } = await cr.json();
   if (!id) throw new Error('Notion did not return an upload ID');
 
-  // Send file with a 60-second abort timeout
+  // Send file with a 90-second abort timeout (compressed video is small, should be fast)
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60_000);
+  const timer = setTimeout(() => controller.abort(), 90_000);
   try {
     const fd = new FormData();
-    fd.append('file', file, file.name);
+    fd.append('file', uploadFile, uploadFile.name);
     const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
       method: 'POST',
       headers: { 'Notion-Version': '2022-06-28' },
