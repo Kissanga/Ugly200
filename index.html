@@ -1593,9 +1593,6 @@ async function submitToNotion() {
     [titleProp]: { title: [{ text: { content: title } }] },
     'Date':      { date: { start: noteStartTime.toISOString() } },
   };
-  if (authorName && activeTab !== 'daily') {
-    properties[authorProp] = { rich_text: [{ text: { content: authorName } }] };
-  }
   if (note && noteProp) {
     properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
   }
@@ -1741,7 +1738,6 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
       const dbProps = {
         'Title':  { title: {} },
         'Date':   { date: {} },
-        'Author': { rich_text: {} },
         'Note':   { rich_text: {} },
       };
       (TAB_SCHEMAS[tab] || []).forEach(field => {
