@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.17';
+  const CURRENT_VERSION = '1.18';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1121,7 +1121,7 @@ async function transcribeAudio(blob) {
   try {
     const fd = new FormData();
     fd.append('file', blob, 'audio.webm');
-    fd.append('model', 'whisper-large-v3');
+    fd.append('model', 'whisper-large-v3-turbo');
 
     const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
       method: 'POST',
