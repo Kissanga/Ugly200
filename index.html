@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.13';
+  const CURRENT_VERSION = '1.14';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -523,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.13</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.14</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1422,8 +1422,12 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
       if (lbl) lbl.textContent = `⚙ ${Math.round(p * 100)}%`;
     }).then(compressed => {
       entry.compressed = compressed;
+      const sizeMB = compressed.size / 1024 / 1024;
       const lbl = document.getElementById('cl-' + entry.uid);
-      if (lbl) { lbl.textContent = `✓ ${(compressed.size / 1024 / 1024).toFixed(1)} MB`; lbl.classList.add('done'); }
+      if (lbl) { lbl.textContent = `✓ ${sizeMB.toFixed(1)} MB`; lbl.classList.add('done'); }
+      if (sizeMB > 20) {
+        showToast(`⚠️ Compressed video is ${sizeMB.toFixed(0)} MB — Notion may reject it`, 'error');
+      }
       return compressed;
     }).catch(err => {
       console.warn('Background compression failed, will retry at upload:', err);
