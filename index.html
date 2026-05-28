@@ -1482,14 +1482,14 @@ async function uploadFileToNotion(file, onStatus) {
   const cr = await cfFetch(PROXY + '/v1/file_uploads', {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: uploadName, content_type: uploadFile.type }),
+    body: JSON.stringify({ filename: file.name, content_type: file.type }),
   });
   if (!cr.ok) { const e = await cr.json().catch(()=>{}); throw new Error(e?.message || `Create failed (${cr.status})`); }
   const { id } = await cr.json();
 
   // Send file
   const fd = new FormData();
-  fd.append('file', uploadFile, uploadName);
+  fd.append('file', file, file.name);
   const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28' },
