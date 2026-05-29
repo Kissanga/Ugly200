@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v40';
+const CACHE_NAME = 'ugly200-v41';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -27,25 +27,47 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch: cache-first for static assets, network-first for API calls
+// Fetch strategy:
+//   • HTML / navigations → NETWORK-FIRST (so new releases always reach the
+//     device when online; cache is only the offline fallback). Serving the
+//     HTML cache-first is what previously pinned phones to an old index.html
+//     and made shipped fixes invisible.
+//   • Other same-origin static assets (icons, manifest) → cache-first.
+//   • Cross-origin API calls (Groq, Notion proxy) → straight to network.
 self.addEventListener('fetch', e => {
   const { request } = e;
   const url = new URL(request.url);
 
   // Let external API calls (Groq, Notion proxy) go straight to network
   if (!url.origin.startsWith(self.location.origin)) return;
+  if (request.method !== 'GET') return;
 
-  // Cache-first for same-origin static assets
+  const isHTML = request.mode === 'navigate' ||
+    request.destination === 'document' ||
+    /\/(index\.html)?$/.test(url.pathname);
+
+  if (isHTML) {
+    // Network-first: fetch fresh HTML, fall back to cache only when offline.
+    e.respondWith(
+      fetch(request).then(response => {
+        if (response && response.status === 200 && response.type !== 'opaque') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+        }
+        return response;
+      }).catch(() =>
+        caches.match(request).then(c => c || caches.match('./index.html'))
+      )
+    );
+    return;
+  }
+
+  // Cache-first for other same-origin static assets
   e.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
       return fetch(request).then(response => {
-        // Only cache valid same-origin GET responses
-        if (
-          request.method === 'GET' &&
-          response.status === 200 &&
-          response.type !== 'opaque'
-        ) {
+        if (response.status === 200 && response.type !== 'opaque') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
