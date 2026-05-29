@@ -309,6 +309,8 @@
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
+  <!-- MP4Box: demuxes the source AAC track so the compressor can remux audio into the output MP4 (iOS fix). Bundled for offline use. -->
+  <script src="mp4box.all.min.js"></script>
 </head>
 <body>
 <script>
@@ -317,7 +319,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.29';
+  const CURRENT_VERSION = '1.30';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -529,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.29</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.30</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1361,6 +1363,21 @@ async function _compressWebCodecs(file, onProgress, audioP = null) {
 
       const audioPromise = (async () => {
         try {
+          // iOS-first path: when the output is MP4/AAC, copy (remux) the source's
+          // AAC track verbatim — no decodeAudioData (fails on iOS), no re-encode.
+          // This is what gives the compressed video (and the Groq transcript) audio
+          // on iPhone. Falls through to decode+encode for webm output / non-AAC.
+          if (useH264) {
+            const remux = await _demuxAacFrames(file).catch(() => null);
+            if (remux && remux.frames.length) {
+              for (const fr of remux.frames) audioFrames.push(fr);
+              audioFrames.sr = remux.sampleRate;
+              audioFrames.ch = remux.channels;
+              ascConfig = remux.asc || null;
+              return;
+            }
+          }
+
           if (typeof AudioEncoder === 'undefined') return;
 
           // Decode from shared WAV (transcription extraction) or original file
@@ -1733,6 +1750,59 @@ async function _decodeViaWebAudio(videoFile) {
     tmpCtx.close();
   }
   return _resampleToWav16kMono(audioBuffer);
+}
+
+// Demux the source's AAC audio track with MP4Box and return its encoded samples
+// verbatim (no decoding) so the compressor can remux them into the output MP4.
+// This is the iOS audio fix: decodeAudioData can't read the camera container,
+// but copying the already-encoded AAC frames needs no decoder at all.
+async function _demuxAacFrames(file) {
+  if (typeof MP4Box === 'undefined') throw new Error('MP4Box unavailable');
+  const buf = await file.arrayBuffer();
+  buf.fileStart = 0;
+  return await new Promise((resolve, reject) => {
+    const mp4 = MP4Box.createFile();
+    const frames = [];
+    mp4.onError = e => reject(new Error('mp4box: ' + e));
+    mp4.onReady = info => {
+      const at = info.audioTracks && info.audioTracks[0];
+      if (!at) { reject(new Error('no audio track')); return; }
+      if (!/mp4a/i.test(at.codec || '')) { reject(new Error('audio not AAC: ' + at.codec)); return; }
+      const asc = _audioSpecificConfig(mp4, at.id);
+      mp4.onSamples = (id, user, samples) => {
+        for (const s of samples) {
+          frames.push({ timestampMs: (s.cts / s.timescale) * 1000, data: s.data.slice(0) });
+        }
+      };
+      mp4.setExtractionOptions(at.id, null, { nbSamples: 10_000_000 });
+      mp4.start();
+      // appendBuffer + flush below run synchronously; resolve once they finish.
+      Promise.resolve().then(() => resolve({
+        frames,
+        sampleRate: (at.audio && at.audio.sample_rate) || 44100,
+        channels: (at.audio && at.audio.channel_count) || 2,
+        asc,
+      }));
+    };
+    mp4.appendBuffer(buf);
+    mp4.flush();
+  });
+}
+
+// Pull the AAC AudioSpecificConfig (esds DecoderSpecificInfo) MP4Box parsed out
+// of the sample description — used as the output track's esds so players/Groq
+// decode the remuxed audio correctly.
+function _audioSpecificConfig(mp4, trackId) {
+  try {
+    const trak = mp4.getTrackById(trackId);
+    for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+      const esds = entry.esds;
+      const dcd = esds && esds.esd && esds.esd.descs && esds.esd.descs[0];
+      const dsi = dcd && dcd.descs && dcd.descs[0];
+      if (dsi && dsi.data) return dsi.data; // Uint8Array
+    }
+  } catch (_) {}
+  return null;
 }
 
 // Downsample/downmix any AudioBuffer to a 16 kHz mono WAV File (ideal for Whisper).
