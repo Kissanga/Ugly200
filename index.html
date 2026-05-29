@@ -309,6 +309,8 @@
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
+  <!-- MP4Box: demuxes audio for the WebCodecs transcription path on iOS (bundled for offline use) -->
+  <script src="mp4box.all.min.js"></script>
 </head>
 <body>
 <script>
@@ -317,7 +319,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.26';
+  const CURRENT_VERSION = '1.27';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -529,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.26</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.27</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1710,26 +1712,147 @@ async function _compressCanvas(file, onProgress) {
 // Extracts audio-only from a video file and returns a 16 kHz mono WAV File.
 // A 15 MB video becomes ~1–2 MB WAV — uploads 10× faster to Groq.
 async function extractAudioFromVideo(videoFile) {
+  // Fast path: Web Audio decodeAudioData — quick on Android/desktop. iOS camera
+  // videos (HEVC/AAC .mov) fail or hang here, so the attempt is time-capped and
+  // we fall back to a WebCodecs (MP4Box demux + AudioDecoder) pipeline that
+  // works on iOS 16.4+. Either way we return a small 16 kHz mono WAV.
+  try {
+    return await _decodeViaWebAudio(videoFile);
+  } catch (e) {
+    return await _decodeViaWebCodecs(videoFile);
+  }
+}
+
+// Web Audio path, with a hard timeout so a hung decodeAudioData can't stall.
+async function _decodeViaWebAudio(videoFile) {
   const arrayBuffer = await videoFile.arrayBuffer();
   const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
   let audioBuffer;
   try {
     if (tmpCtx.state === 'suspended') { try { await tmpCtx.resume(); } catch(_) {} }
-    audioBuffer = await tmpCtx.decodeAudioData(arrayBuffer);
+    audioBuffer = await Promise.race([
+      tmpCtx.decodeAudioData(arrayBuffer),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('decodeAudioData-timeout')), 7000))
+    ]);
   } finally {
     tmpCtx.close();
   }
+  return _resampleToWav16kMono(audioBuffer);
+}
 
-  // Downsample to 16 kHz mono (ideal for Whisper)
+// WebCodecs path: demux the audio track with MP4Box, decode it to PCM with
+// AudioDecoder, then resample to a 16 kHz mono WAV. This is the iOS workhorse —
+// it never touches decodeAudioData and produces a tiny file regardless of the
+// original video size (so >25 MB videos transcribe fine).
+async function _decodeViaWebCodecs(videoFile) {
+  if (typeof MP4Box === 'undefined' || typeof AudioDecoder === 'undefined' ||
+      typeof EncodedAudioChunk === 'undefined')
+    throw new Error('WebCodecs/MP4Box unavailable');
+
+  const buf = await videoFile.arrayBuffer();
+  buf.fileStart = 0;
+
+  // 1) Demux — pull encoded audio chunks + decoder config out of the container.
+  const { chunks, config } = await new Promise((resolve, reject) => {
+    const mp4 = MP4Box.createFile();
+    const collected = [];
+    mp4.onError = err => reject(new Error('mp4box: ' + err));
+    mp4.onReady = info => {
+      const at = (info.audioTracks && info.audioTracks[0]) ||
+        info.tracks.find(t => /mp4a|aac|ac-3|ec-3|opus|alac/i.test(t.codec || ''));
+      if (!at) { reject(new Error('no audio track in video')); return; }
+      const cfg = {
+        codec: at.codec || 'mp4a.40.2',
+        sampleRate: at.audio ? at.audio.sample_rate : 44100,
+        numberOfChannels: at.audio ? at.audio.channel_count : 1,
+      };
+      const asc = _audioSpecificConfig(mp4, at.id);
+      if (asc) cfg.description = asc;
+      mp4.onSamples = (id, user, samples) => {
+        for (const s of samples) {
+          collected.push(new EncodedAudioChunk({
+            type: s.is_sync ? 'key' : 'delta',
+            timestamp: (s.cts / s.timescale) * 1e6,
+            duration: (s.duration / s.timescale) * 1e6,
+            data: s.data,
+          }));
+        }
+      };
+      mp4.setExtractionOptions(at.id, null, { nbSamples: 10_000_000 });
+      mp4.start();
+      // appendBuffer + flush below run synchronously; resolve once they finish.
+      Promise.resolve().then(() => resolve({ chunks: collected, config: cfg }));
+    };
+    mp4.appendBuffer(buf);
+    mp4.flush();
+  });
+
+  if (!chunks.length) throw new Error('no audio samples found');
+
+  const supported = await AudioDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
+  if (!supported.supported) throw new Error('AudioDecoder cannot decode ' + config.codec);
+
+  // 2) Decode encoded chunks → planar float PCM.
+  let sr = config.sampleRate, nCh = config.numberOfChannels, decErr = null;
+  const planes = []; // each entry: [Float32Array per channel]
+  const dec = new AudioDecoder({
+    output: ad => {
+      sr = ad.sampleRate; nCh = ad.numberOfChannels;
+      const frame = [];
+      for (let c = 0; c < nCh; c++) {
+        const out = new Float32Array(ad.numberOfFrames);
+        ad.copyTo(out, { planeIndex: c, format: 'f32-planar' });
+        frame.push(out);
+      }
+      planes.push(frame);
+      ad.close();
+    },
+    error: e => { decErr = e; },
+  });
+  dec.configure(config);
+  for (const ch of chunks) dec.decode(ch);
+  await dec.flush();
+  dec.close();
+  if (decErr) throw decErr;
+  if (!planes.length) throw new Error('AudioDecoder produced no PCM');
+
+  // 3) Concatenate at native rate, then resample to 16 kHz mono.
+  const total = planes.reduce((s, f) => s + f[0].length, 0);
+  const ab = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(nCh, total, sr)
+    .createBuffer(nCh, total, sr);
+  for (let c = 0; c < nCh; c++) {
+    const data = ab.getChannelData(c);
+    let off = 0;
+    for (const f of planes) { const s = f[c] || f[0]; data.set(s, off); off += s.length; }
+  }
+  return _resampleToWav16kMono(ab);
+}
+
+// Pull the AAC AudioSpecificConfig (esds DecoderSpecificInfo) MP4Box parsed out
+// of the sample description — AudioDecoder needs it to decode raw AAC.
+function _audioSpecificConfig(mp4, trackId) {
+  try {
+    const trak = mp4.getTrackById(trackId);
+    for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+      const esds = entry.esds;
+      const dcd = esds && esds.esd && esds.esd.descs && esds.esd.descs[0];
+      const dsi = dcd && dcd.descs && dcd.descs[0];
+      if (dsi && dsi.data) return dsi.data; // Uint8Array
+    }
+  } catch (_) {}
+  return null;
+}
+
+// Downsample/downmix any AudioBuffer to a 16 kHz mono WAV File (ideal for Whisper).
+function _resampleToWav16kMono(audioBuffer) {
   const sampleRate = 16000;
-  const offCtx = new OfflineAudioContext(1, Math.ceil(audioBuffer.duration * sampleRate), sampleRate);
+  const offCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+    1, Math.max(1, Math.ceil(audioBuffer.duration * sampleRate)), sampleRate);
   const src = offCtx.createBufferSource();
   src.buffer = audioBuffer;
-  src.connect(offCtx.destination);
+  src.connect(offCtx.destination); // mono destination downmixes multi-channel input
   src.start();
-  const rendered = await offCtx.startRendering();
-
-  return audioBufferToWavFile(rendered);
+  return offCtx.startRendering().then(audioBufferToWavFile);
 }
 
 function audioBufferToWavFile(buffer) {
@@ -1848,10 +1971,11 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   // transcription can share the same decoded audio (avoids reading the video twice)
   files.forEach(f => {
     const entry = { type: 'video', file: f, compressed: null, compressProgress: 0, compressInterrupted: false, uid: Math.random().toString(36).slice(2) };
-    // Timeout of 30 s: on iOS, decodeAudioData can hang forever (never rejects)
+    // Safety cap (extractAudioFromVideo already has its own internal timeouts;
+    // the WebCodecs decode path can run a while on long clips, so allow 2 min).
     entry._audioP = Promise.race([
       extractAudioFromVideo(f),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('audio-extract-timeout')), 30000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('audio-extract-timeout')), 120000))
     ]).catch(() => null); // shared promise
     mediaFiles.push(entry);
     startBackgroundCompression(entry);
