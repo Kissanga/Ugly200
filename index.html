@@ -317,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.23';
+  const CURRENT_VERSION = '1.24';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -523,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.23</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.24</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1107,7 +1107,8 @@ function stopRecording() {
 }
 
 async function handleRecordingStop() {
-  recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+  const mimeType = mediaRecorder.mimeType || 'audio/webm';
+  recordedBlob = new Blob(audioChunks, { type: mimeType });
   recStatus.textContent = 'Tap to record voice note';
   updateSubmitBtn();
 
@@ -1119,8 +1120,10 @@ async function transcribeAudio(blob) {
   const bar = document.getElementById('transcribingBar');
   bar.style.display = 'flex';
   try {
+    const t = blob.type || '';
+    const ext = (t.includes('mp4') || t.includes('aac') || t.includes('mpeg') || t.includes('m4a')) ? 'm4a' : 'webm';
     const fd = new FormData();
-    fd.append('file', blob, 'audio.webm');
+    fd.append('file', blob, `audio.${ext}`);
     fd.append('model', 'whisper-large-v3-turbo');
 
     const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
@@ -1681,9 +1684,10 @@ async function _compressCanvas(file, onProgress) {
 // A 15 MB video becomes ~1–2 MB WAV — uploads 10× faster to Groq.
 async function extractAudioFromVideo(videoFile) {
   const arrayBuffer = await videoFile.arrayBuffer();
-  const tmpCtx = new AudioContext();
+  const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
   let audioBuffer;
   try {
+    if (tmpCtx.state === 'suspended') { try { await tmpCtx.resume(); } catch(_) {} }
     audioBuffer = await tmpCtx.decodeAudioData(arrayBuffer);
   } finally {
     tmpCtx.close();
@@ -1836,13 +1840,24 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
     try {
       const firstEntry = mediaFiles.find(e => e.file === file && e.type === 'video');
       status.textContent = `Extracting audio from "${file.name}" (${mb.toFixed(1)} MB)…`;
-      const audioFile = await firstEntry._audioP;  // reuse — no second file read
-      if (!audioFile) throw new Error('Audio extraction failed');
+      let audioFile = await firstEntry._audioP;  // reuse — no second file read
+      let audioFilename = 'audio.wav';
+      if (!audioFile) {
+        // iOS fallback: decodeAudioData can't handle MOV/some MP4 — send the video directly.
+        // Groq Whisper accepts mp4/m4a; rename .mov → .mp4 so Groq recognises the container.
+        if (file.size > 25 * 1024 * 1024) throw new Error('Audio extraction failed and file too large to send directly (>25 MB)');
+        const isQuicktime = file.type === 'video/quicktime' || /\.mov$/i.test(file.name);
+        audioFile = isQuicktime
+          ? new File([file], file.name.replace(/\.mov$/i, '.mp4'), { type: 'video/mp4' })
+          : file;
+        audioFilename = audioFile.name;
+        status.textContent = `Transcribing video directly (${mb.toFixed(1)} MB)…`;
+      }
       const audioMb = (audioFile.size / 1024 / 1024).toFixed(1);
 
-      status.textContent = `Transcribing audio (${audioMb} MB)…`;
+      if (!status.textContent.includes('directly')) status.textContent = `Transcribing audio (${audioMb} MB)…`;
       const fd = new FormData();
-      fd.append('file', audioFile, 'audio.wav');
+      fd.append('file', audioFile, audioFilename);
       fd.append('model', 'whisper-large-v3-turbo');
       const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
         method: 'POST', body: fd
