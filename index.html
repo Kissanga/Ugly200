@@ -309,8 +309,6 @@
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <!-- MP4Box: demuxes audio for the WebCodecs transcription path on iOS (bundled for offline use) -->
-  <script src="mp4box.all.min.js"></script>
 </head>
 <body>
 <script>
@@ -319,7 +317,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.27';
+  const CURRENT_VERSION = '1.28';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -531,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.27</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.28</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1713,13 +1711,14 @@ async function _compressCanvas(file, onProgress) {
 // A 15 MB video becomes ~1–2 MB WAV — uploads 10× faster to Groq.
 async function extractAudioFromVideo(videoFile) {
   // Fast path: Web Audio decodeAudioData — quick on Android/desktop. iOS camera
-  // videos (HEVC/AAC .mov) fail or hang here, so the attempt is time-capped and
-  // we fall back to a WebCodecs (MP4Box demux + AudioDecoder) pipeline that
-  // works on iOS 16.4+. Either way we return a small 16 kHz mono WAV.
+  // videos (HEVC/AAC .mov) fail or hang here (capped at 7 s), so we fall back to
+  // the original capture-stream method: play the video and record its audio
+  // track with MediaRecorder. Slower (real time) but it bypasses all container
+  // decoding, so it works where decodeAudioData can't read the file.
   try {
     return await _decodeViaWebAudio(videoFile);
   } catch (e) {
-    return await _decodeViaWebCodecs(videoFile);
+    return await _decodeViaCaptureStream(videoFile);
   }
 }
 
@@ -1740,107 +1739,69 @@ async function _decodeViaWebAudio(videoFile) {
   return _resampleToWav16kMono(audioBuffer);
 }
 
-// WebCodecs path: demux the audio track with MP4Box, decode it to PCM with
-// AudioDecoder, then resample to a 16 kHz mono WAV. This is the iOS workhorse —
-// it never touches decodeAudioData and produces a tiny file regardless of the
-// original video size (so >25 MB videos transcribe fine).
-async function _decodeViaWebCodecs(videoFile) {
-  if (typeof MP4Box === 'undefined' || typeof AudioDecoder === 'undefined' ||
-      typeof EncodedAudioChunk === 'undefined')
-    throw new Error('WebCodecs/MP4Box unavailable');
+// Original capture-stream method (revived): play the video in a hidden element,
+// grab its audio track via captureStream(), and record it with MediaRecorder.
+// Real-time, but it never decodes the container, so it works on iOS where
+// decodeAudioData fails. Produces a small compressed audio file (64 kbps) that
+// Groq accepts directly — so videos over 25 MB transcribe fine too.
+function _decodeViaCaptureStream(videoFile) {
+  return new Promise((resolve, reject) => {
+    if (typeof MediaRecorder === 'undefined') { reject(new Error('MediaRecorder unavailable')); return; }
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(videoFile);
+    video.muted = false;          // audio must be audible for the track to carry signal
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    const status = document.getElementById('videoTranscribingStatus');
+    const cleanup = () => { try { URL.revokeObjectURL(video.src); } catch (_) {} };
 
-  const buf = await videoFile.arrayBuffer();
-  buf.fileStart = 0;
+    video.onloadedmetadata = () => {
+      const dur = video.duration;
+      if (!dur || !isFinite(dur)) { cleanup(); reject(new Error('Cannot read video duration')); return; }
 
-  // 1) Demux — pull encoded audio chunks + decoder config out of the container.
-  const { chunks, config } = await new Promise((resolve, reject) => {
-    const mp4 = MP4Box.createFile();
-    const collected = [];
-    mp4.onError = err => reject(new Error('mp4box: ' + err));
-    mp4.onReady = info => {
-      const at = (info.audioTracks && info.audioTracks[0]) ||
-        info.tracks.find(t => /mp4a|aac|ac-3|ec-3|opus|alac/i.test(t.codec || ''));
-      if (!at) { reject(new Error('no audio track in video')); return; }
-      const cfg = {
-        codec: at.codec || 'mp4a.40.2',
-        sampleRate: at.audio ? at.audio.sample_rate : 44100,
-        numberOfChannels: at.audio ? at.audio.channel_count : 1,
+      const capture = video.captureStream || video.webkitCaptureStream || video.mozCaptureStream;
+      if (!capture) { cleanup(); reject(new Error('captureStream unsupported')); return; }
+      let stream;
+      try { stream = capture.call(video); } catch (e) { cleanup(); reject(e); return; }
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks.length) { cleanup(); reject(new Error('No audio track in video')); return; }
+
+      // iOS MediaRecorder can only produce audio/mp4 (not webm); Android/desktop prefer webm/opus.
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+                 : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+                 : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+      let recorder;
+      try {
+        recorder = mime
+          ? new MediaRecorder(new MediaStream(audioTracks), { mimeType: mime, audioBitsPerSecond: 64000 })
+          : new MediaRecorder(new MediaStream(audioTracks));
+      } catch (e) { cleanup(); reject(e); return; }
+
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        cleanup();
+        if (!chunks.length) { reject(new Error('No audio captured')); return; }
+        const type = recorder.mimeType || mime || 'audio/webm';
+        const ext = /mp4|m4a|aac|mpeg/.test(type) ? 'm4a' : 'webm';
+        resolve(new File(chunks, `audio.${ext}`, { type }));
       };
-      const asc = _audioSpecificConfig(mp4, at.id);
-      if (asc) cfg.description = asc;
-      mp4.onSamples = (id, user, samples) => {
-        for (const s of samples) {
-          collected.push(new EncodedAudioChunk({
-            type: s.is_sync ? 'key' : 'delta',
-            timestamp: (s.cts / s.timescale) * 1e6,
-            duration: (s.duration / s.timescale) * 1e6,
-            data: s.data,
-          }));
-        }
+      recorder.onerror = ev => { cleanup(); reject(ev.error || new Error('MediaRecorder error')); };
+
+      video.ontimeupdate = () => {
+        if (status) status.textContent = `Extracting audio… ${Math.round((video.currentTime / dur) * 100)}%`;
       };
-      mp4.setExtractionOptions(at.id, null, { nbSamples: 10_000_000 });
-      mp4.start();
-      // appendBuffer + flush below run synchronously; resolve once they finish.
-      Promise.resolve().then(() => resolve({ chunks: collected, config: cfg }));
+      video.onended = () => { try { if (recorder.state !== 'inactive') recorder.stop(); } catch (_) {} };
+      video.onerror = () => { cleanup(); reject(new Error('Video playback error')); };
+
+      recorder.start(250);
+      video.currentTime = 0;
+      const p = video.play();
+      if (p && p.catch) p.catch(err => { cleanup(); reject(new Error('Autoplay blocked: ' + (err.message || err))); });
     };
-    mp4.appendBuffer(buf);
-    mp4.flush();
+    video.onerror = () => { cleanup(); reject(new Error('Cannot open video file')); };
   });
-
-  if (!chunks.length) throw new Error('no audio samples found');
-
-  const supported = await AudioDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
-  if (!supported.supported) throw new Error('AudioDecoder cannot decode ' + config.codec);
-
-  // 2) Decode encoded chunks → planar float PCM.
-  let sr = config.sampleRate, nCh = config.numberOfChannels, decErr = null;
-  const planes = []; // each entry: [Float32Array per channel]
-  const dec = new AudioDecoder({
-    output: ad => {
-      sr = ad.sampleRate; nCh = ad.numberOfChannels;
-      const frame = [];
-      for (let c = 0; c < nCh; c++) {
-        const out = new Float32Array(ad.numberOfFrames);
-        ad.copyTo(out, { planeIndex: c, format: 'f32-planar' });
-        frame.push(out);
-      }
-      planes.push(frame);
-      ad.close();
-    },
-    error: e => { decErr = e; },
-  });
-  dec.configure(config);
-  for (const ch of chunks) dec.decode(ch);
-  await dec.flush();
-  dec.close();
-  if (decErr) throw decErr;
-  if (!planes.length) throw new Error('AudioDecoder produced no PCM');
-
-  // 3) Concatenate at native rate, then resample to 16 kHz mono.
-  const total = planes.reduce((s, f) => s + f[0].length, 0);
-  const ab = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(nCh, total, sr)
-    .createBuffer(nCh, total, sr);
-  for (let c = 0; c < nCh; c++) {
-    const data = ab.getChannelData(c);
-    let off = 0;
-    for (const f of planes) { const s = f[c] || f[0]; data.set(s, off); off += s.length; }
-  }
-  return _resampleToWav16kMono(ab);
-}
-
-// Pull the AAC AudioSpecificConfig (esds DecoderSpecificInfo) MP4Box parsed out
-// of the sample description — AudioDecoder needs it to decode raw AAC.
-function _audioSpecificConfig(mp4, trackId) {
-  try {
-    const trak = mp4.getTrackById(trackId);
-    for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-      const esds = entry.esds;
-      const dcd = esds && esds.esd && esds.esd.descs && esds.esd.descs[0];
-      const dsi = dcd && dcd.descs && dcd.descs[0];
-      if (dsi && dsi.data) return dsi.data; // Uint8Array
-    }
-  } catch (_) {}
-  return null;
 }
 
 // Downsample/downmix any AudioBuffer to a 16 kHz mono WAV File (ideal for Whisper).
@@ -1996,7 +1957,7 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
       const firstEntry = mediaFiles.find(e => e.file === file && e.type === 'video');
       status.textContent = `Extracting audio from "${file.name}" (${mb.toFixed(1)} MB)…`;
       let audioFile = await firstEntry._audioP;  // reuse — no second file read
-      let audioFilename = 'audio.wav';
+      let audioFilename = (audioFile && audioFile.name) || 'audio.wav';
       if (!audioFile) {
         // iOS fallback: decodeAudioData can't handle MOV/some MP4 — send the video directly.
         // Groq Whisper accepts mp4/m4a; rename .mov → .mp4 so Groq recognises the container.

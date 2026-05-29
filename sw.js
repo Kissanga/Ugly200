@@ -1,9 +1,8 @@
-const CACHE_NAME = 'ugly200-v42';
+const CACHE_NAME = 'ugly200-v43';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './guide.html',
-  './mp4box.all.min.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
