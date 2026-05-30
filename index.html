@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.35';
+  const CURRENT_VERSION = '1.36';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.35</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.36</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -852,7 +852,7 @@ const TAB_SCHEMAS = {
   daily: [
     { key: 'Decisions needed', type: 'text', multiline: true },
     { key: 'Done today',             type: 'text', multiline: true },
-    { key: 'Priorities (this week)', label: 'Priorities this week', type: 'priorities', persist: true, props: ['P0','P1','P2'] },
+    { key: 'Priorities (this week)', label: 'Priorities', type: 'priorities', persist: true, props: ['P0','P1','P2'] },
     { key: 'FarmLab Update',  type: 'text', multiline: true },
     { key: 'Key milestone',   type: 'text', multiline: true },
   ],
