@@ -200,6 +200,9 @@
     .tab-fields-wrap { margin-bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
     .tab-field-text { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--text); font-family: var(--font-body); resize: vertical; }
     .tab-field-text:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent); }
+    .priority-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+    .priority-row:last-child { margin-bottom: 0; }
+    .priority-tag { flex: none; min-width: 2.2rem; text-align: center; font-size: var(--text-xs); font-weight: 700; color: var(--text-inverse); background: var(--primary); border-radius: var(--radius-md); padding: var(--space-2) var(--space-2); }
 
     /* CONFIG */
     .config-toggle { display: flex; align-items: center; justify-content: space-between; padding: var(--space-3) var(--space-4); background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border); font-size: var(--text-sm); font-weight: 500; color: var(--text-muted); margin-bottom: var(--space-2); cursor: pointer; width: 100%; }
@@ -319,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.34';
+  const CURRENT_VERSION = '1.35';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -531,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.34</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.35</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -848,8 +851,8 @@ const TAB_SCHEMAS = {
   ],
   daily: [
     { key: 'Decisions needed', type: 'text', multiline: true },
-    { key: 'Priorities (done)',      type: 'text', multiline: true },
-    { key: 'Priorities (this week)', type: 'text', multiline: true },
+    { key: 'Done today',             type: 'text', multiline: true },
+    { key: 'Priorities (this week)', label: 'Priorities this week', type: 'priorities', persist: true, props: ['P0','P1','P2'] },
     { key: 'FarmLab Update',  type: 'text', multiline: true },
     { key: 'Key milestone',   type: 'text', multiline: true },
   ],
@@ -2102,7 +2105,7 @@ function renderTabFields(tab) {
     const wrap = document.createElement('div');
     const label = document.createElement('div');
     label.className = 'section-label';
-    label.textContent = field.key;
+    label.textContent = field.label || field.key;
     wrap.appendChild(label);
 
     if (field.type === 'multi_select') {
@@ -2147,13 +2150,36 @@ function renderTabFields(tab) {
       if (!field.multiline) input.type = 'text';
       input.className = 'tab-field-text';
       input.value = getTabValue(tab, field.key) || '';
-      input.placeholder = `${field.key}…`;
+      input.placeholder = `${field.label || field.key}…`;
       if (field.multiline) input.rows = 3;
       input.addEventListener('input', () => {
         setTabValue(tab, field.key, input.value);
         updateSubmitBtn();
       });
       wrap.appendChild(input);
+    } else if (field.type === 'priorities') {
+      const stored = getTabValue(tab, field.key) || {};
+      ['P0','P1','P2'].forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'priority-row';
+        const tag = document.createElement('span');
+        tag.className = 'priority-tag';
+        tag.textContent = p;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'tab-field-text';
+        input.value = stored[p] || '';
+        input.placeholder = `${p}…`;
+        input.addEventListener('input', () => {
+          const cur = getTabValue(tab, field.key) || {};
+          cur[p] = input.value;
+          setTabValue(tab, field.key, cur);
+          updateSubmitBtn();
+        });
+        row.appendChild(tag);
+        row.appendChild(input);
+        wrap.appendChild(row);
+      });
     }
 
     const target = (field.beforeMedia && pre) ? pre : post;
@@ -2163,8 +2189,9 @@ function renderTabFields(tab) {
 
 // ─── SUBMIT BUTTON STATE ─────────────────────────────────────
 function updateSubmitBtn() {
-  const tabHasValues = Object.values(tabValues[activeTab] || {}).some(v =>
-    Array.isArray(v) ? v.length > 0 : !!v
+  const persistKeys = (TAB_SCHEMAS[activeTab] || []).filter(f => f.persist).map(f => f.key);
+  const tabHasValues = Object.entries(tabValues[activeTab] || {}).some(([k, v]) =>
+    !persistKeys.includes(k) && (Array.isArray(v) ? v.length > 0 : (typeof v === 'object' ? Object.values(v).some(x => x) : !!v))
   );
   const hasContent = document.getElementById('transcriptText').value.trim() ||
                      document.getElementById('summaryText').value.trim() ||
@@ -2385,6 +2412,10 @@ async function submitToNotion() {
       properties[field.key] = { multi_select: val.map(name => ({ name })) };
     } else if (field.type === 'select') {
       properties[field.key] = { select: { name: val } };
+    } else if (field.type === 'priorities') {
+      (field.props || ['P0','P1','P2']).forEach(p => {
+        if (val[p]?.trim()) properties[p] = { rich_text: [{ text: { content: val[p].trim().slice(0, 2000) } }] };
+      });
     } else if (field.type === 'text') {
       properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
     }
@@ -2427,8 +2458,11 @@ function resetForm() {
   document.getElementById('videoSummaryText').value = '';
   mediaFiles = [];
   renderMediaPreviews();
-  // Clear active tab's field values
-  delete tabValues[activeTab];
+  // Clear active tab's field values, but keep persistent fields (e.g. weekly priorities)
+  const persistKeys = (TAB_SCHEMAS[activeTab] || []).filter(f => f.persist).map(f => f.key);
+  const kept = {};
+  persistKeys.forEach(k => { if (tabValues[activeTab]?.[k] !== undefined) kept[k] = tabValues[activeTab][k]; });
+  if (Object.keys(kept).length) tabValues[activeTab] = kept; else delete tabValues[activeTab];
   localStorage.setItem('brain_tabValues', JSON.stringify(tabValues));
   renderTabFields(activeTab);
   recordedBlob = null;
@@ -2527,6 +2561,8 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
           dbProps[field.key] = { select: { options: field.options.map(n => ({ name: n, color: tagColor(n) })) } };
         } else if (field.type === 'text') {
           dbProps[field.key] = { rich_text: {} };
+        } else if (field.type === 'priorities') {
+          (field.props || ['P0','P1','P2']).forEach(p => { dbProps[p] = { rich_text: {} }; });
         }
       });
 
