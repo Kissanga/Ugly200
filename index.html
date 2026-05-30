@@ -319,7 +319,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.32';
+  const CURRENT_VERSION = '1.33';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -531,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.32</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.33</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -2360,12 +2360,11 @@ async function submitToNotion() {
   };
 
   if (activeTab === 'daily') {
-    // Daily DB: title + author (both the app author) + the date.
+    // Daily: author → title property + detected Author property; date → detected date property.
     const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
     if (authorEntry && authorName) {
       properties[authorEntry[0]] = buildPropValue(authorEntry[1].type, authorName);
     }
-    // Send the date to whatever date-type property the DB has (named "Date", "Day", …).
     const dateEntry = Object.entries(dbProps).find(([, v]) => v.type === 'date');
     if (dateEntry) {
       properties[dateEntry[0]] = { date: { start: noteStartTime.toISOString() } };
@@ -2375,20 +2374,21 @@ async function submitToNotion() {
     if (note && noteProp) {
       properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
     }
-    // Add schema-based fields for the active tab
-    const schema = TAB_SCHEMAS[activeTab] || [];
-    schema.forEach(field => {
-      const val = getTabValue(activeTab, field.key);
-      if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
-      if (field.type === 'multi_select') {
-        properties[field.key] = { multi_select: val.map(name => ({ name })) };
-      } else if (field.type === 'select') {
-        properties[field.key] = { select: { name: val } };
-      } else if (field.type === 'text') {
-        properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
-      }
-    });
   }
+
+  // Schema-based fields (all tabs, including Daily).
+  const schema = TAB_SCHEMAS[activeTab] || [];
+  schema.forEach(field => {
+    const val = getTabValue(activeTab, field.key);
+    if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
+    if (field.type === 'multi_select') {
+      properties[field.key] = { multi_select: val.map(name => ({ name })) };
+    } else if (field.type === 'select') {
+      properties[field.key] = { select: { name: val } };
+    } else if (field.type === 'text') {
+      properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
+    }
+  });
 
   btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
 
