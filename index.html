@@ -319,7 +319,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.30';
+  const CURRENT_VERSION = '1.31';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -531,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.30</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.31</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -2249,19 +2249,37 @@ async function uploadFileToNotion(file, onStatus, alreadyCompressed = false) {
 }
 
 // Cache title property names per DB to avoid repeated lookups
-const _titlePropCache = {};
-async function getTitlePropName(dbId) {
-  if (_titlePropCache[dbId]) return _titlePropCache[dbId];
+const _dbPropsCache = {};
+// Fetch (and cache) a database's property schema: { name: {type, ...} }.
+async function getDbProps(dbId) {
+  if (_dbPropsCache[dbId]) return _dbPropsCache[dbId];
   try {
     const res = await cfFetch(PROXY + '/v1/databases/' + dbId, {
       headers: { 'Notion-Version': '2022-06-28' }
     });
-    if (!res.ok) return (_titlePropCache[dbId] = 'Title');
+    if (!res.ok) return {};
     const data = await res.json();
-    const entry = Object.entries(data.properties || {}).find(([, v]) => v.type === 'title');
-    return (_titlePropCache[dbId] = entry ? entry[0] : 'Title');
+    return (_dbPropsCache[dbId] = data.properties || {});
   } catch(e) {
-    return 'Title';
+    return {};
+  }
+}
+
+async function getTitlePropName(dbId) {
+  const props = await getDbProps(dbId);
+  const entry = Object.entries(props).find(([, v]) => v.type === 'title');
+  return entry ? entry[0] : 'Title';
+}
+
+// Format a string value to match a Notion property's type (for the Author prop).
+function buildPropValue(type, value) {
+  const s = String(value);
+  switch (type) {
+    case 'select':       return { select: { name: s } };
+    case 'multi_select': return { multi_select: [{ name: s }] };
+    case 'title':        return { title: [{ text: { content: s } }] };
+    case 'rich_text':
+    default:             return { rich_text: [{ text: { content: s.slice(0, 2000) } }] };
   }
 }
 
@@ -2269,7 +2287,6 @@ async function submitToNotion() {
   const dbId       = document.getElementById(TAB_DB[activeTab]).value.trim();
   const tagsProp   = 'Tags';
   const noteProp   = 'Note';
-  const authorProp = 'Author';
   const authorName = document.getElementById('authorName').value.trim();
 
   if (!dbId) {
@@ -2277,7 +2294,8 @@ async function submitToNotion() {
     return;
   }
 
-  const titleProp   = await getTitlePropName(dbId);
+  const dbProps     = await getDbProps(dbId);
+  const titleProp   = Object.entries(dbProps).find(([, v]) => v.type === 'title')?.[0] || 'Title';
   const voiceTranscript = document.getElementById('transcriptText').value.trim();
   const videoTranscriptVal = document.getElementById('videoTranscriptText').value.trim();
   const transcript  = [videoTranscriptVal, voiceTranscript].filter(Boolean).join('\n\n');
@@ -2339,24 +2357,33 @@ async function submitToNotion() {
 
   const properties = {
     [titleProp]: { title: [{ text: { content: title } }] },
-    'Date':      { date: { start: noteStartTime.toISOString() } },
   };
-  if (note && noteProp) {
-    properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
-  }
-  // Add schema-based fields for the active tab
-  const schema = TAB_SCHEMAS[activeTab] || [];
-  schema.forEach(field => {
-    const val = getTabValue(activeTab, field.key);
-    if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
-    if (field.type === 'multi_select') {
-      properties[field.key] = { multi_select: val.map(name => ({ name })) };
-    } else if (field.type === 'select') {
-      properties[field.key] = { select: { name: val } };
-    } else if (field.type === 'text') {
-      properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
+
+  if (activeTab === 'daily') {
+    // Daily DB has just two properties: title + author, both set to the app author.
+    const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
+    if (authorEntry && authorName) {
+      properties[authorEntry[0]] = buildPropValue(authorEntry[1].type, authorName);
     }
-  });
+  } else {
+    properties['Date'] = { date: { start: noteStartTime.toISOString() } };
+    if (note && noteProp) {
+      properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
+    }
+    // Add schema-based fields for the active tab
+    const schema = TAB_SCHEMAS[activeTab] || [];
+    schema.forEach(field => {
+      const val = getTabValue(activeTab, field.key);
+      if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
+      if (field.type === 'multi_select') {
+        properties[field.key] = { multi_select: val.map(name => ({ name })) };
+      } else if (field.type === 'select') {
+        properties[field.key] = { select: { name: val } };
+      } else if (field.type === 'text') {
+        properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
+      }
+    });
+  }
 
   btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
 
