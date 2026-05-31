@@ -852,7 +852,7 @@ const TAB_SCHEMAS = {
   daily: [
     { key: 'Decisions needed', type: 'text', multiline: true },
     { key: 'Done today',             type: 'text', multiline: true },
-    { key: 'Priorities (this week)', label: 'Priorities', type: 'priorities', persist: true, props: ['P0','P1','P2'] },
+    { key: 'Priorities (this week)', label: 'Priorities', type: 'priorities', persist: true, props: ['P1','P2','P3'] },
     { key: 'FarmLab Update',  type: 'text', multiline: true },
     { key: 'Key milestone',   type: 'text', multiline: true },
   ],
@@ -2159,7 +2159,7 @@ function renderTabFields(tab) {
       wrap.appendChild(input);
     } else if (field.type === 'priorities') {
       const stored = getTabValue(tab, field.key) || {};
-      ['P0','P1','P2'].forEach(p => {
+      (field.props || ['P1','P2','P3']).forEach(p => {
         const row = document.createElement('div');
         row.className = 'priority-row';
         const tag = document.createElement('span');
@@ -2413,7 +2413,7 @@ async function submitToNotion() {
     } else if (field.type === 'select') {
       properties[field.key] = { select: { name: val } };
     } else if (field.type === 'priorities') {
-      (field.props || ['P0','P1','P2']).forEach(p => {
+      (field.props || ['P1','P2','P3']).forEach(p => {
         if (val[p]?.trim()) properties[p] = { rich_text: [{ text: { content: val[p].trim().slice(0, 2000) } }] };
       });
     } else if (field.type === 'text') {
@@ -2562,7 +2562,7 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
         } else if (field.type === 'text') {
           dbProps[field.key] = { rich_text: {} };
         } else if (field.type === 'priorities') {
-          (field.props || ['P0','P1','P2']).forEach(p => { dbProps[p] = { rich_text: {} }; });
+          (field.props || ['P1','P2','P3']).forEach(p => { dbProps[p] = { rich_text: {} }; });
         }
       });
 
