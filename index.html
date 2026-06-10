@@ -2339,6 +2339,13 @@ async function submitToNotion() {
 
   // Upload files directly to Notion
   const children = [];
+  // Notion caps rich_text content at 2000 chars per object; split long text into multiple paragraph blocks.
+  const pushTextBlocks = (text) => {
+    const LIMIT = 2000;
+    for (let i = 0; i < text.length; i += LIMIT) {
+      children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content: text.slice(i, i + LIMIT) } }] } });
+    }
+  };
 
   // ── Media blocks: videos first, images second (no heading) ──
   const uploadMedia = async (m) => {
@@ -2371,27 +2378,29 @@ async function submitToNotion() {
   const videoSummary = document.getElementById('videoSummaryText').value.trim();
   if (videoSummary) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Video Summary' } }] } });
-    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:videoSummary } }] } });
+    pushTextBlocks(videoSummary);
   }
   if (transcript) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Transcript' } }] } });
-    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:transcript } }] } });
+    pushTextBlocks(transcript);
   }
   if (note) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Note' } }] } });
-    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:note } }] } });
+    pushTextBlocks(note);
   }
 
   const properties = {
     [titleProp]: { title: [{ text: { content: title } }] },
   };
 
+  // Author: send to any tab whose DB has an Author property.
+  const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
+  if (authorEntry && authorName) {
+    properties[authorEntry[0]] = buildPropValue(authorEntry[1].type, authorName);
+  }
+
   if (activeTab === 'daily') {
-    // Daily: author → title property + detected Author property; date → detected date property.
-    const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
-    if (authorEntry && authorName) {
-      properties[authorEntry[0]] = buildPropValue(authorEntry[1].type, authorName);
-    }
+    // Daily: date → detected date property.
     const dateEntry = Object.entries(dbProps).find(([, v]) => v.type === 'date');
     if (dateEntry) {
       properties[dateEntry[0]] = { date: { start: noteStartTime.toISOString() } };
