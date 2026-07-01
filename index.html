@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.38';
+  const CURRENT_VERSION = '1.39';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.38</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.39</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1290,9 +1290,13 @@ document.getElementById('clearTranscriptBtn').addEventListener('click', () => {
 });
 
 // ─── VIDEO COMPRESSION ───────────────────────────────────────
-const COMPRESS_MAX_H     = 360;
-const COMPRESS_VIDEO_BPS = 600_000;
-const COMPRESS_AUDIO_BPS =  48_000;
+// No longer gated by Groq's 25 MB cap (transcription now uses extracted audio
+// — see extractGroqAudio) — this now targets "average quality" for Notion:
+// ~85 MB for a full 8-minute clip (1.35 Mbps video + 128 kbps audio), safely
+// under the 100 MB budget with headroom for encoder/container variance.
+const COMPRESS_MAX_H     = 720;
+const COMPRESS_VIDEO_BPS = 1_350_000;
+const COMPRESS_AUDIO_BPS =   128_000;
 const COMPRESS_FPS       = 24;
 
 // Entry point — tries WebCodecs (4× faster) then falls back to canvas.
@@ -1808,6 +1812,47 @@ function _audioSpecificConfig(mp4, trackId) {
   return null;
 }
 
+// ─── GROQ AUDIO (demux, no decode) ────────────────────────────
+// Wraps demuxed AAC frames (see _demuxAacFrames) in ADTS headers — a raw AAC
+// stream ffmpeg/Whisper reads natively. Needs no decode and no encode, so it
+// works on iOS (where decodeAudioData fails) and is ~1/15th the size of the
+// compressed video, since Groq only ever needed the audio track.
+const ADTS_SAMPLE_RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+
+function _buildAdtsFile(demux) {
+  const freqIdx = Math.max(0, ADTS_SAMPLE_RATES.indexOf(demux.sampleRate));
+  const chanCfg = demux.channels || 2;
+  let total = 0;
+  for (const f of demux.frames) total += 7 + f.data.byteLength;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const f of demux.frames) {
+    const frameLen = 7 + f.data.byteLength;
+    out[off]   = 0xFF;
+    out[off+1] = 0xF1; // MPEG-4, layer 0, no CRC
+    out[off+2] = (1 << 6) | (freqIdx << 2) | ((chanCfg >> 2) & 0x1); // profile=AAC LC
+    out[off+3] = ((chanCfg & 0x3) << 6) | ((frameLen >> 11) & 0x3);
+    out[off+4] = (frameLen >> 3) & 0xFF;
+    out[off+5] = ((frameLen & 0x7) << 5) | 0x1F; // + buffer fullness (VBR)
+    out[off+6] = 0xFC;
+    out.set(new Uint8Array(f.data), off + 7);
+    off += frameLen;
+  }
+  return new File([out], 'audio.aac', { type: 'audio/aac' });
+}
+
+// Primary path for Groq transcription: demux the AAC track directly (no
+// decode — works on iOS camera video). Falls back to the Web Audio decode
+// path (extractAudioFromVideo) when the source audio isn't AAC or has no
+// audio track at all; that path still fails on iOS, same as it always has.
+async function extractGroqAudio(videoFile) {
+  try {
+    const demux = await _demuxAacFrames(videoFile);
+    if (demux && demux.frames.length) return _buildAdtsFile(demux);
+  } catch (e) {}
+  return extractAudioFromVideo(videoFile).catch(() => null);
+}
+
 // Downsample/downmix any AudioBuffer to a 16 kHz mono WAV File (ideal for Whisper).
 function _resampleToWav16kMono(audioBuffer) {
   const sampleRate = 16000;
@@ -1967,12 +2012,13 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   }
   if (!files.length) return;
 
-  // Build entries — start the fast audio decode so compression can reuse it for
-  // its audio track (avoids reading the video twice). On iOS this resolves null
-  // and compression decodes the file itself; transcription no longer depends on it.
+  // Build entries. _audioP is the decode-based WAV extraction (still shared
+  // with the compressor's audio track on non-H264 output); _groqAudioP is the
+  // demux-based ADTS audio used for transcription — see extractGroqAudio.
   files.forEach(f => {
     const entry = { type: 'video', file: f, compressed: null, compressProgress: 0, compressInterrupted: false, uid: Math.random().toString(36).slice(2) };
-    entry._audioP = extractAudioFromVideo(f).catch(() => null); // shared promise (fast decode only)
+    entry._audioP = extractAudioFromVideo(f).catch(() => null);
+    entry._groqAudioP = extractGroqAudio(f).catch(() => null);
     mediaFiles.push(entry);
     startBackgroundCompression(entry);
   });
@@ -1992,29 +2038,26 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
       const firstEntry = mediaFiles.find(e => e.file === file && e.type === 'video');
       const LIMIT = 25 * 1024 * 1024;
 
-      // Primary path: transcribe the COMPRESSED video directly. Compression runs
-      // at 4× playback (fast) and outputs a small file (<~20 MB) that Groq accepts
-      // and extracts audio from server-side — no slow real-time audio capture.
-      status.textContent = 'Preparing video for transcription…';
-      const compressed = await firstEntry.compressPromise.catch(() => null);
+      // Primary path: demuxed AAC audio (see extractGroqAudio) — a few MB,
+      // no decode required, works on iOS. Falls back to the original file if
+      // small enough, then the compressed video as a last resort.
+      status.textContent = 'Extracting audio for transcription…';
+      const groqAudio = await firstEntry._groqAudioP;
 
       let toSend = null, srcLabel = '';
-      if (compressed && compressed.size <= LIMIT) {
-        toSend = compressed; srcLabel = 'compressed video';
+      if (groqAudio && groqAudio.size <= LIMIT) {
+        toSend = groqAudio; srcLabel = 'audio';
+      } else if (file.size <= LIMIT) {
+        const isQuicktime = file.type === 'video/quicktime' || /\.mov$/i.test(file.name);
+        toSend = isQuicktime
+          ? new File([file], file.name.replace(/\.mov$/i, '.mp4'), { type: 'video/mp4' })
+          : file;
+        srcLabel = 'original video';
       } else {
-        // Fallbacks: extracted audio (Android/desktop), then the original if small enough.
-        const wav = await firstEntry._audioP;
-        if (wav && wav.size <= LIMIT) {
-          toSend = wav; srcLabel = 'audio';
-        } else if (file.size <= LIMIT) {
-          const isQuicktime = file.type === 'video/quicktime' || /\.mov$/i.test(file.name);
-          toSend = isQuicktime
-            ? new File([file], file.name.replace(/\.mov$/i, '.mp4'), { type: 'video/mp4' })
-            : file;
-          srcLabel = 'original video';
-        }
+        const compressed = await firstEntry.compressPromise.catch(() => null);
+        if (compressed && compressed.size <= LIMIT) { toSend = compressed; srcLabel = 'compressed video'; }
       }
-      if (!toSend) throw new Error('No file under 25 MB to transcribe (compression unavailable)');
+      if (!toSend) throw new Error('No file under 25 MB to transcribe (audio extraction unavailable)');
 
       const sendMb = (toSend.size / 1024 / 1024).toFixed(1);
       status.textContent = `Transcribing ${srcLabel} (${sendMb} MB)…`;
@@ -2458,7 +2501,15 @@ async function submitToNotion() {
       return;
     }
     try {
-      const uploadId = await uploadFileToNotion(m.file,
+      // Prefer the compressed video (~85 MB budget for 8 min, average quality)
+      // over the raw original (can be 400+ MB) — falls back to the original
+      // if compression failed or hasn't finished.
+      let fileForUpload = m.file;
+      if (m.type === 'video' && m.compressPromise) {
+        const compressed = await m.compressPromise.catch(() => null);
+        if (compressed) fileForUpload = compressed;
+      }
+      const uploadId = await uploadFileToNotion(fileForUpload,
         (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; }
       );
       const isImage = m.file.type.startsWith('image/');
