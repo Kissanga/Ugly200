@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.39';
+  const CURRENT_VERSION = '1.40';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.39</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.40</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1813,32 +1813,76 @@ function _audioSpecificConfig(mp4, trackId) {
 }
 
 // ─── GROQ AUDIO (demux, no decode) ────────────────────────────
-// Wraps demuxed AAC frames (see _demuxAacFrames) in ADTS headers — a raw AAC
-// stream ffmpeg/Whisper reads natively. Needs no decode and no encode, so it
-// works on iOS (where decodeAudioData fails) and is ~1/15th the size of the
-// compressed video, since Groq only ever needed the audio track.
-const ADTS_SAMPLE_RATES = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+// Wraps demuxed AAC frames (see _demuxAacFrames) in a minimal, non-fragmented
+// .m4a container — one of Groq's officially supported formats (flac, mp3,
+// mp4, mpeg, mpga, m4a, ogg, wav, webm; raw ".aac" is NOT on that list, which
+// is why the original ADTS-only version got rejected). Needs no decode and
+// no encode, so it works on iOS (where decodeAudioData fails) and is a
+// fraction of the size of the compressed video, since Groq only ever needed
+// the audio track.
+function _buildM4a(demux) {
+  const toU8 = a => a instanceof Uint8Array ? a : ArrayBuffer.isView(a) ? new Uint8Array(a.buffer,a.byteOffset,a.byteLength) : new Uint8Array(a);
+  const cat  = (...aa) => { const p=aa.map(toU8); const o=new Uint8Array(p.reduce((s,a)=>s+a.byteLength,0)); let x=0; for(const a of p){o.set(a,x);x+=a.byteLength;} return o; };
+  const u8   = n => new Uint8Array([n&0xFF]);
+  const u16  = n => new Uint8Array([(n>>8)&0xFF, n&0xFF]);
+  const u24  = n => new Uint8Array([(n>>16)&0xFF, (n>>8)&0xFF, n&0xFF]);
+  const u32  = n => { const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,n>>>0,false); return b; };
+  const str  = s => new TextEncoder().encode(s);
+  const box  = (t,...d) => { const data=cat(...d); return cat(u32(data.byteLength+8),str(t),data); };
+  const fbox = (t,v,f,...d) => box(t,u8(v),u24(f),...d);
+  const dLen = n => n<128 ? new Uint8Array([n]) : new Uint8Array([0x80|(n>>7),n&0x7F]);
+  const desc = (tag,...parts) => { const d=cat(...parts); return cat(new Uint8Array([tag]),dLen(d.byteLength),d); };
 
-function _buildAdtsFile(demux) {
-  const freqIdx = Math.max(0, ADTS_SAMPLE_RATES.indexOf(demux.sampleRate));
-  const chanCfg = demux.channels || 2;
-  let total = 0;
-  for (const f of demux.frames) total += 7 + f.data.byteLength;
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const f of demux.frames) {
-    const frameLen = 7 + f.data.byteLength;
-    out[off]   = 0xFF;
-    out[off+1] = 0xF1; // MPEG-4, layer 0, no CRC
-    out[off+2] = (1 << 6) | (freqIdx << 2) | ((chanCfg >> 2) & 0x1); // profile=AAC LC
-    out[off+3] = ((chanCfg & 0x3) << 6) | ((frameLen >> 11) & 0x3);
-    out[off+4] = (frameLen >> 3) & 0xFF;
-    out[off+5] = ((frameLen & 0x7) << 5) | 0x1F; // + buffer fullness (VBR)
-    out[off+6] = 0xFC;
-    out.set(new Uint8Array(f.data), off + 7);
-    off += frameLen;
-  }
-  return new File([out], 'audio.aac', { type: 'audio/aac' });
+  const frames = demux.frames;
+  const N   = frames.length;
+  const ATS = demux.sampleRate || 44100; // audio timescale = actual sample rate
+  const ACH = demux.channels || 2;
+  const FRAME_TICKS = 1024; // samples per AAC-LC frame — universal for this codec
+  const totalTicks = N * FRAME_TICKS;
+  const mat = cat(u32(0x00010000),u32(0),u32(0), u32(0),u32(0x00010000),u32(0), u32(0),u32(0),u32(0x40000000));
+
+  const ftyp = box('ftyp', str('M4A '), u32(0), str('M4A '), str('mp42'), str('isom'));
+
+  const aFreqTable = [96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350];
+  const aFreqIdx = Math.max(0, aFreqTable.indexOf(ATS));
+  const ascWord  = (2 << 11) | (aFreqIdx << 7) | (ACH << 3);
+  const asc = (demux.asc && toU8(demux.asc).byteLength) ? toU8(demux.asc) : new Uint8Array([(ascWord>>8)&0xFF, ascWord&0xFF]);
+  const aBitrate = ACH === 1 ? 48000 : 96000;
+  const esds = fbox('esds',0,0,
+    desc(0x03, u16(1),new Uint8Array([0x00]),
+      desc(0x04, new Uint8Array([0x40,0x15,0,0,0]), u32(aBitrate),u32(aBitrate), desc(0x05,asc)),
+      desc(0x06, new Uint8Array([0x02]))));
+  const mp4a = box('mp4a', new Uint8Array(6),u16(1),new Uint8Array(8),
+    u16(ACH),u16(16),u16(0),u16(0), u32(ATS<<16), esds);
+
+  const sizes = frames.map(f => f.data.byteLength);
+  const stsz = fbox('stsz',0,0, u32(0), u32(N), ...sizes.map(u32));
+  const stsc = fbox('stsc',0,0, u32(1), u32(1),u32(N),u32(1)); // one chunk holding all samples
+  const stts = fbox('stts',0,0, u32(1), u32(N),u32(FRAME_TICKS));
+
+  const buildMoov = (chunkOffset) => {
+    const stbl = box('stbl', fbox('stsd',0,0,u32(1),mp4a), stts, stsc, stsz,
+      fbox('stco',0,0,u32(1), u32(chunkOffset)));
+    const mdia = box('mdia',
+      fbox('mdhd',0,0, u32(0),u32(0), u32(ATS),u32(totalTicks), u16(0x55C4),u16(0)),
+      fbox('hdlr',0,0, u32(0),str('soun'), new Uint8Array(12), str('SoundHandler'), u8(0)),
+      box('minf', fbox('smhd',0,0,u16(0),u16(0)),
+        box('dinf', fbox('dref',0,0,u32(1), fbox('url ',0,1))), stbl));
+    const tkhd = fbox('tkhd',0,3, u32(0),u32(0),u32(1),u32(0),u32(totalTicks),
+      new Uint8Array(8), u16(0),u16(0),u16(0x0100),u16(0), mat, u32(0),u32(0));
+    const mvhd = fbox('mvhd',0,0, u32(0),u32(0), u32(ATS),u32(totalTicks),
+      u32(0x00010000),u16(0x0100), new Uint8Array(10), mat, new Uint8Array(24), u32(2));
+    return box('moov', mvhd, box('trak', tkhd, mdia));
+  };
+
+  // Two-pass: the chunk offset only changes the STCO value (fixed 4 bytes),
+  // never the box sizes, so building once with a placeholder gives the exact
+  // prefix length needed to compute the real mdat offset.
+  const prefixLen = ftyp.byteLength + buildMoov(0).byteLength + 8; // +8 = mdat header
+  const moov = buildMoov(prefixLen);
+  const mdat = box('mdat', cat(...frames.map(f => toU8(f.data))));
+
+  return new File([ftyp, moov, mdat], 'audio.m4a', { type: 'audio/mp4' });
 }
 
 // Primary path for Groq transcription: demux the AAC track directly (no
@@ -1848,7 +1892,7 @@ function _buildAdtsFile(demux) {
 async function extractGroqAudio(videoFile) {
   try {
     const demux = await _demuxAacFrames(videoFile);
-    if (demux && demux.frames.length) return _buildAdtsFile(demux);
+    if (demux && demux.frames.length) return _buildM4a(demux);
   } catch (e) {}
   return extractAudioFromVideo(videoFile).catch(() => null);
 }
