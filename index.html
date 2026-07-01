@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.37';
+  const CURRENT_VERSION = '1.38';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.37</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.38</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1887,7 +1887,6 @@ function startBackgroundCompression(entry) {
     releaseWakeLock();
     const sizeMB = compressed.size / 1024 / 1024;
     setLbl(`✓ ${sizeMB.toFixed(1)} MB`, true);
-    if (sizeMB > 20) showToast(`⚠️ Compressed video is ${sizeMB.toFixed(0)} MB — Notion may reject it`, 'error');
     return compressed;
   }).catch(err => {
     releaseWakeLock();
@@ -1929,8 +1928,44 @@ document.getElementById('videoSummaryPhotoInput').addEventListener('change', e =
   renderMediaPreviews();
   updateSubmitBtn();
 });
+
+// ─── VIDEO LENGTH CAP ──────────────────────────────────────────
+// Notion multi-part upload goes up to 5 GB, but we still bound video length
+// so a single note can't balloon into a huge chunked upload / long transcription.
+const MAX_VIDEO_SECONDS = 8 * 60;
+
+function getVideoDuration(file) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    const timer = setTimeout(() => { URL.revokeObjectURL(video.src); resolve(null); }, 10_000);
+    video.onloadedmetadata = () => {
+      clearTimeout(timer);
+      URL.revokeObjectURL(video.src);
+      resolve(isFinite(video.duration) ? video.duration : null);
+    };
+    video.onerror = () => { clearTimeout(timer); URL.revokeObjectURL(video.src); resolve(null); };
+    video.src = URL.createObjectURL(file);
+  });
+}
+
 document.getElementById('videoSummaryVideoInput').addEventListener('change', async e => {
-  const files = [...e.target.files];
+  const rawFiles = [...e.target.files];
+  e.target.value = '';
+
+  // Reject anything over 8 minutes before it touches compression/upload. If
+  // duration can't be read (rare), let the file through — downstream size
+  // limits still apply.
+  const files = [];
+  for (const f of rawFiles) {
+    const dur = await getVideoDuration(f);
+    if (dur !== null && dur > MAX_VIDEO_SECONDS) {
+      showToast(`"${f.name}" is ${formatTime(Math.round(dur))} — videos must be 8 minutes or under. Please trim it and try again.`, 'error');
+      continue;
+    }
+    files.push(f);
+  }
+  if (!files.length) return;
 
   // Build entries — start the fast audio decode so compression can reuse it for
   // its audio track (avoids reading the video twice). On iOS this resolves null
@@ -2208,39 +2243,37 @@ function updateSubmitBtn() {
 // ─── NOTION SUBMIT ───────────────────────────────────────────
 document.getElementById('submitBtn').addEventListener('click', submitToNotion);
 
-// ─── VIDEO COMPRESSION — FIXED BITRATE ───────────────────────
 // ─── NOTION FILE UPLOAD ───────────────────────────────────────
-async function uploadFileToNotion(file, onStatus, alreadyCompressed = false) {
-  let uploadFile = file;
+// Always uploads the original file (never a compressed copy) — full-quality
+// video, up to 5 GB, requires a paid Notion workspace for multi-part.
+const NOTION_SINGLE_PART_LIMIT = 20 * 1024 * 1024; // Notion's single-request cap
+const NOTION_MULTIPART_CHUNK   = 10 * 1024 * 1024; // Notion recommends 5–20 MB per part
 
-  const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv|m4v)$/i.test(file.name);
-  if (isVideo && !alreadyCompressed) {
-    // Background compression didn't finish in time — compress now
-    onStatus?.(`Compressing "${file.name}"… 0%`);
-    uploadFile = await compressVideoFast(file, p => {
-      onStatus?.(`Compressing… ${Math.round(p * 100)}%`);
-    });
-    const mb = (uploadFile.size / 1024 / 1024).toFixed(1);
-    onStatus?.(`Uploading compressed video (${mb} MB)…`);
-  } else {
-    const sizeMBStr = (file.size / 1024 / 1024).toFixed(1);
-    onStatus?.(`Uploading ${file.name} (${sizeMBStr} MB)…`);
+function guessContentType(file) {
+  return file.type ||
+    (file.name.match(/\.(mp4|m4v)$/i) ? 'video/mp4' :
+     file.name.match(/\.(mov|qt)$/i)   ? 'video/quicktime' :
+     file.name.match(/\.(webm)$/i)      ? 'video/webm' :
+     file.name.match(/\.(jpg|jpeg)$/i)  ? 'image/jpeg' :
+     file.name.match(/\.(png)$/i)       ? 'image/png' :
+     'application/octet-stream');
+}
+
+async function uploadFileToNotion(file, onStatus) {
+  const contentType = guessContentType(file);
+
+  if (file.size > NOTION_SINGLE_PART_LIMIT) {
+    return uploadFileMultiPart(file, contentType, onStatus);
   }
 
-  // Notion requires a valid content_type — derive from uploadFile (may differ from original after compression)
-  const contentType = uploadFile.type ||
-    (uploadFile.name.match(/\.(mp4|m4v)$/i) ? 'video/mp4' :
-     uploadFile.name.match(/\.(mov|qt)$/i)   ? 'video/quicktime' :
-     uploadFile.name.match(/\.(webm)$/i)      ? 'video/webm' :
-     uploadFile.name.match(/\.(jpg|jpeg)$/i)  ? 'image/jpeg' :
-     uploadFile.name.match(/\.(png)$/i)       ? 'image/png' :
-     'application/octet-stream');
+  const sizeMBStr = (file.size / 1024 / 1024).toFixed(1);
+  onStatus?.(`Uploading ${file.name} (${sizeMBStr} MB)…`);
 
   // Create upload slot
   const cr = await cfFetch(PROXY + '/v1/file_uploads', {
     method: 'POST',
     headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename: uploadFile.name, content_type: contentType }),
+    body: JSON.stringify({ filename: file.name, content_type: contentType }),
   });
   if (!cr.ok) {
     const e = await cr.json().catch(() => ({}));
@@ -2249,12 +2282,12 @@ async function uploadFileToNotion(file, onStatus, alreadyCompressed = false) {
   const { id } = await cr.json();
   if (!id) throw new Error('Notion did not return an upload ID');
 
-  // Send file with a 90-second abort timeout (compressed video is small, should be fast)
+  // Send file with a 90-second abort timeout
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
   try {
     const fd = new FormData();
-    fd.append('file', uploadFile, uploadFile.name);
+    fd.append('file', file, file.name);
     const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
       method: 'POST',
       headers: { 'Notion-Version': '2022-06-28' },
@@ -2270,6 +2303,77 @@ async function uploadFileToNotion(file, onStatus, alreadyCompressed = false) {
     throw e;
   } finally {
     clearTimeout(timer);
+  }
+
+  return id;
+}
+
+// ── Multi-part upload (paid Notion workspaces, up to 5 GB) ────
+// Chunks are sent sequentially, not in parallel — a dropped chunk on a flaky
+// mobile connection is cheaper to retry alone than to re-race a whole batch.
+async function uploadFileMultiPart(file, contentType, onStatus) {
+  const numParts = Math.ceil(file.size / NOTION_MULTIPART_CHUNK);
+  const sizeMBStr = (file.size / 1024 / 1024).toFixed(1);
+
+  const cr = await cfFetch(PROXY + '/v1/file_uploads', {
+    method: 'POST',
+    headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name, content_type: contentType,
+      mode: 'multi_part', number_of_parts: numParts,
+    }),
+  });
+  if (!cr.ok) {
+    const e = await cr.json().catch(() => ({}));
+    throw new Error(e?.message || `Create multi-part upload failed (${cr.status})`);
+  }
+  const { id } = await cr.json();
+  if (!id) throw new Error('Notion did not return an upload ID');
+
+  for (let part = 1; part <= numParts; part++) {
+    const start = (part - 1) * NOTION_MULTIPART_CHUNK;
+    const chunk = file.slice(start, start + NOTION_MULTIPART_CHUNK);
+    onStatus?.(`Uploading ${file.name} (${sizeMBStr} MB) — part ${part}/${numParts}…`);
+
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60_000);
+      try {
+        const fd = new FormData();
+        fd.append('file', chunk, file.name);
+        fd.append('part_number', String(part));
+        const sr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/send`, {
+          method: 'POST',
+          headers: { 'Notion-Version': '2022-06-28' },
+          body: fd,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!sr.ok) {
+          const e = await sr.json().catch(() => ({}));
+          throw new Error(e?.message || `Part ${part} failed (${sr.status})`);
+        }
+        lastErr = null;
+        break;
+      } catch (e) {
+        clearTimeout(timer);
+        lastErr = e.name === 'AbortError' ? new Error(`Part ${part} timed out`) : e;
+        if (attempt < 3) await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
+    }
+    if (lastErr) throw new Error(`Upload failed on part ${part}/${numParts}: ${lastErr.message}`);
+  }
+
+  onStatus?.(`Finalizing upload…`);
+  const fr = await cfFetch(`${PROXY}/v1/file_uploads/${id}/complete`, {
+    method: 'POST',
+    headers: { 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!fr.ok) {
+    const e = await fr.json().catch(() => ({}));
+    throw new Error(e?.message || `Finalizing upload failed (${fr.status})`);
   }
 
   return id;
@@ -2354,11 +2458,8 @@ async function submitToNotion() {
       return;
     }
     try {
-      const preCompressed = m.compressPromise ? (await m.compressPromise) : null;
-      const fileForUpload = preCompressed || m.file;
-      const uploadId = await uploadFileToNotion(fileForUpload,
-        (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; },
-        !!preCompressed
+      const uploadId = await uploadFileToNotion(m.file,
+        (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; }
       );
       const isImage = m.file.type.startsWith('image/');
       const isVideo = m.file.type.startsWith('video/');
