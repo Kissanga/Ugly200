@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.42';
+  const CURRENT_VERSION = '1.43';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1299,10 +1299,10 @@ const COMPRESS_VIDEO_BPS = 1_350_000;
 const COMPRESS_AUDIO_BPS =   128_000;
 const COMPRESS_FPS       = 24;
 // Frame-capture speed for the WebCodecs path (video.playbackRate). Bumped
-// 4→8 to test whether iOS can decode/capture faster than real-time × 4;
-// the encoder already has backpressure (encodeQueueSize check below) so a
-// device that can't keep up just drops captured frames rather than failing.
-const COMPRESS_PLAYBACK_RATE = 8;
+// 4→8→16 to test how fast iOS can decode/capture; the encoder already has
+// backpressure (encodeQueueSize check below) so a device that can't keep
+// up just drops captured frames rather than failing.
+const COMPRESS_PLAYBACK_RATE = 16;
 
 // Entry point — tries WebCodecs (faster) then falls back to canvas.
 async function compressVideoFast(file, onProgress, audioP = null) {
