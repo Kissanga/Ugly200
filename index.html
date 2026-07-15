@@ -409,10 +409,17 @@
     });
   }
 
+  // Keep the header version label in sync with CURRENT_VERSION (was hardcoded before).
+  function updateVersionDisplay() {
+    const el = document.getElementById('versionDisplay');
+    if (el) el.textContent = 'v ' + CURRENT_VERSION;
+  }
+
   // Check for updates on page load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', checkForUpdates);
+    document.addEventListener('DOMContentLoaded', () => { updateVersionDisplay(); checkForUpdates(); });
   } else {
+    updateVersionDisplay();
     checkForUpdates();
   }
 
@@ -534,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.40</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.43</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
