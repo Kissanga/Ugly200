@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.40';
+  const CURRENT_VERSION = '1.42';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1298,8 +1298,13 @@ const COMPRESS_MAX_H     = 720;
 const COMPRESS_VIDEO_BPS = 1_350_000;
 const COMPRESS_AUDIO_BPS =   128_000;
 const COMPRESS_FPS       = 24;
+// Frame-capture speed for the WebCodecs path (video.playbackRate). Bumped
+// 4→8 to test whether iOS can decode/capture faster than real-time × 4;
+// the encoder already has backpressure (encodeQueueSize check below) so a
+// device that can't keep up just drops captured frames rather than failing.
+const COMPRESS_PLAYBACK_RATE = 8;
 
-// Entry point — tries WebCodecs (4× faster) then falls back to canvas.
+// Entry point — tries WebCodecs (faster) then falls back to canvas.
 async function compressVideoFast(file, onProgress, audioP = null) {
   if (typeof VideoEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
     try {
@@ -1312,8 +1317,8 @@ async function compressVideoFast(file, onProgress, audioP = null) {
   return _compressCanvas(file, onProgress);
 }
 
-// ── FAST PATH: WebCodecs + 4× playback + fMP4/WebM muxer ─────
-// Video encoded at 4× speed via requestVideoFrameCallback + VideoEncoder.
+// ── FAST PATH: WebCodecs + sped-up playback + fMP4/WebM muxer ─────
+// Video encoded at COMPRESS_PLAYBACK_RATE× via requestVideoFrameCallback + VideoEncoder.
 // Audio decoded via AudioContext and encoded in parallel via AudioEncoder.
 async function _compressWebCodecs(file, onProgress, audioP = null) {
   return new Promise((resolve, reject) => {
@@ -1443,12 +1448,12 @@ async function _compressWebCodecs(file, onProgress, audioP = null) {
         }
       })();
 
-      // ── Video: 4× playback + frame capture ───────────────────
+      // ── Video: sped-up playback + frame capture ───────────────
       const ofc = new OffscreenCanvas(w, h);
       const ctx = ofc.getContext('2d', { alpha: false });
       let lastKeyT = -Infinity, ended = false;
 
-      video.playbackRate = 4;
+      video.playbackRate = COMPRESS_PLAYBACK_RATE;
       video.play().catch(reject);
 
       const tick = async (_, meta) => {
@@ -2489,13 +2494,40 @@ async function getTitlePropName(dbId) {
   return entry ? entry[0] : 'Title';
 }
 
+// Cache the workspace member list (rarely changes) to resolve author names to Notion user IDs.
+let _workspaceUsersCache = null;
+async function getWorkspaceUsers() {
+  if (_workspaceUsersCache) return _workspaceUsersCache;
+  try {
+    const res = await cfFetch(PROXY + '/v1/users', { headers: { 'Notion-Version': '2022-06-28' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (_workspaceUsersCache = (data.results || []).filter(u => u.type === 'person'));
+  } catch(e) {
+    return [];
+  }
+}
+
+// Match a typed author name against workspace members (exact, then partial).
+async function findNotionUserByName(name) {
+  const users = await getWorkspaceUsers();
+  const lower = name.trim().toLowerCase();
+  return users.find(u => (u.name || '').toLowerCase() === lower)
+      || users.find(u => (u.name || '').toLowerCase().includes(lower));
+}
+
 // Format a string value to match a Notion property's type (for the Author prop).
-function buildPropValue(type, value) {
+// 'people' properties need a real Notion user id, not free text — resolved via findNotionUserByName.
+async function buildPropValue(type, value) {
   const s = String(value);
   switch (type) {
     case 'select':       return { select: { name: s } };
     case 'multi_select': return { multi_select: [{ name: s }] };
     case 'title':        return { title: [{ text: { content: s } }] };
+    case 'people': {
+      const user = await findNotionUserByName(s);
+      return user ? { people: [{ object: 'user', id: user.id }] } : null;
+    }
     case 'rich_text':
     default:             return { rich_text: [{ text: { content: s.slice(0, 2000) } }] };
   }
@@ -2592,7 +2624,12 @@ async function submitToNotion() {
   // Author: send to any tab whose DB has an Author property.
   const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
   if (authorEntry && authorName) {
-    properties[authorEntry[0]] = buildPropValue(authorEntry[1].type, authorName);
+    const authorValue = await buildPropValue(authorEntry[1].type, authorName);
+    if (authorValue) {
+      properties[authorEntry[0]] = authorValue;
+    } else if (authorEntry[1].type === 'people') {
+      showToast(`⚠️ No Notion member matches "${authorName}" — Author left blank`, 'error');
+    }
   }
 
   if (activeTab === 'daily') {
