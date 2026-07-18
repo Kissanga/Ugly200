@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.45';
+  const CURRENT_VERSION = '1.46';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -541,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.45</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.46</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1314,21 +1314,26 @@ const COMPRESS_PLAYBACK_RATE = 4;
 
 // Entry point — demux+decode (hardware speed, no frame drops), then
 // playback capture (4×), then canvas+MediaRecorder (real-time) as last resort.
-async function compressVideoFast(file, onProgress, audioP = null) {
+// audioLazy: () => Promise<WAV File|null> — decode-based audio extraction,
+// started only if a fallback path actually needs it (the eager version held a
+// whole-file ArrayBuffer at select time, part of the iOS memory spike).
+// groqAudioP: Promise<m4a File|null> from the transcription extraction,
+// reused by the fast path so the source AAC is only demuxed once.
+async function compressVideoFast(file, onProgress, audioLazy = null, groqAudioP = null) {
   // Tag results with the path that produced them (shown as ⚡ in the label
   // for the fast path — tells us on-device which pipeline made a given file).
   const tag = (f, path) => { try { f._compressPath = path; } catch(_) {} return f; };
   if (typeof VideoEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
     if (typeof VideoDecoder !== 'undefined') {
       try {
-        return tag(await _compressDemuxDecode(file, onProgress), 'demux');
+        return tag(await _compressDemuxDecode(file, onProgress, groqAudioP), 'demux');
       } catch(e) {
         console.warn('Demux-decode compression failed, falling back to playback capture:', e.message);
         onProgress?.(0); // reset progress display
       }
     }
     try {
-      return tag(await _compressWebCodecs(file, onProgress, audioP), 'playback');
+      return tag(await _compressWebCodecs(file, onProgress, audioLazy), 'playback');
     } catch(e) {
       console.warn('WebCodecs compression failed, falling back to canvas:', e.message);
       onProgress?.(0); // reset progress display
@@ -1347,32 +1352,18 @@ async function compressVideoFast(file, onProgress, audioP = null) {
 // failure was AudioDecoder, which this never touches). Also keeps running
 // when the tab is backgrounded, since nothing here depends on playback.
 // Throws whenever anything is unsupported so compressVideoFast falls back.
-async function _compressDemuxDecode(file, onProgress) {
-  // Audio: remux the source AAC track verbatim. Throws for sources without
-  // one (no audio / non-AAC) — the playback fallback can re-encode those.
-  const remux = await _demuxAacFrames(file);
+async function _compressDemuxDecode(file, onProgress, groqAudioP = null) {
+  // Audio: reuse the transcription extraction's .m4a when available — same
+  // AAC track, already demuxed, a few MB — instead of a second whole-file
+  // read (long clips were hitting iOS's per-tab memory kill). Falls back to
+  // demuxing the source; throws for non-AAC → playback fallback re-encodes.
+  let remux = null;
+  if (groqAudioP) {
+    const m4a = await groqAudioP.catch(() => null);
+    if (m4a && m4a.type === 'audio/mp4') remux = await _demuxAacFrames(m4a).catch(() => null);
+  }
+  if (!remux) remux = await _demuxAacFrames(file);
   if (!remux.frames.length) throw new Error('no AAC frames to remux');
-
-  const dmx = await _demuxVideoSamples(file);
-  if (!dmx.samples.length) throw new Error('no video samples');
-
-  // Display dims = coded dims with the container rotation applied (portrait
-  // camera video stores landscape frames + a 90° matrix; the playback path
-  // got the rotation for free from <video>, here it must be applied by hand).
-  const rot = dmx.rotation;
-  const dw = rot % 180 ? dmx.codedHeight : dmx.codedWidth;
-  const dh = rot % 180 ? dmx.codedWidth  : dmx.codedHeight;
-  const scale = Math.min(1, COMPRESS_MAX_H / dh);
-  const w = Math.round(dw * scale / 2) * 2;
-  const h = Math.round(dh * scale / 2) * 2;
-
-  const last  = dmx.samples[dmx.samples.length - 1];
-  const srcDurMs = Math.round((last.cts + (last.duration || 0)) / last.timescale * 1000);
-
-  // Deterministic thinning for high-fps sources (60 → 30): even cadence at
-  // the fixed bitrate, instead of the load-dependent drops of the old path.
-  const srcFps = dmx.samples.length / (srcDurMs / 1000);
-  const keepEvery = (isFinite(srcFps) && srcFps > 34) ? 2 : 1;
 
   // Prefer hardware, but settle for software (helps desktops; iOS is
   // always hardware for both).
@@ -1384,85 +1375,107 @@ async function _compressDemuxDecode(file, onProgress) {
     }
     return null;
   };
-  const dCfg = await pickCfg(VideoDecoder, { codec: dmx.codec, codedWidth: dmx.codedWidth,
-    codedHeight: dmx.codedHeight, description: dmx.description });
-  if (!dCfg) throw new Error('decoder unsupported: ' + dmx.codec);
-
-  const vCfg = await pickCfg(VideoEncoder, { codec: 'avc1.42E01E', width: w, height: h,
-    bitrate: COMPRESS_VIDEO_BPS, framerate: COMPRESS_FPS, avc: { format: 'avc' } });
-  if (!vCfg) throw new Error('H.264 encoder unsupported');
 
   const videoFrames = [];
-  let avccConfig = null, vErr = null;
-  const vEnc = new VideoEncoder({
-    output: (chunk, meta) => {
-      if (chunk.type === 'key' && !avccConfig && meta?.decoderConfig?.description)
-        avccConfig = meta.decoderConfig.description;
-      const b = new ArrayBuffer(chunk.byteLength); chunk.copyTo(b);
-      videoFrames.push({ timestampMs: Math.round(chunk.timestamp / 1000), keyframe: chunk.type === 'key', data: b });
-    },
-    error: e => { vErr = e; }
-  });
-
-  const ofc = new OffscreenCanvas(w, h);
-  const ctx = ofc.getContext('2d', { alpha: false });
-  // Scaled coded dims before rotation — ctx.rotate() below maps them onto w×h.
-  const sw = rot % 180 ? h : w;
-  const sh = rot % 180 ? w : h;
-
+  let avccConfig = null, vErr = null, vEnc = null, dec = null;
+  let w = 0, h = 0, rot = 0, sw = 0, sh = 0, ofc = null, ctx = null;
+  let keepEvery = 1, total = 0, fed = 0;
   // Re-base timestamps to 0 (first decoded frame = presentation-order start):
   // camera files can have nonzero cts bases (edit lists, B-frame offsets), and
   // the muxer's proven input profile — from the playback path — starts at ~0.
   let frameIdx = 0, lastKeyUs = -Infinity, baseUs = null;
-  const dec = new VideoDecoder({
-    output: (vf) => {
-      const idx = frameIdx++;
-      if (baseUs === null) baseUs = vf.timestamp;
-      if (idx % keepEvery) { vf.close(); return; }
-      ctx.save();
-      ctx.translate(w / 2, h / 2);
-      ctx.rotate(rot * Math.PI / 180);
-      ctx.drawImage(vf, -sw / 2, -sh / 2, sw, sh);
-      ctx.restore();
-      const tUs = Math.max(0, vf.timestamp - baseUs);
-      const isKey = (tUs - lastKeyUs) >= 2_000_000;
-      const out = new VideoFrame(ofc, { timestamp: tUs });
-      vEnc.encode(out, { keyFrame: isKey });
-      if (isKey) lastKeyUs = tUs;
-      out.close();
-      vf.close();
-    },
-    error: e => { vErr = e; }
-  });
+
+  // Called by the streamer once moov is parsed, before any samples arrive.
+  const onTrackReady = async (vt, description) => {
+    // Display dims = coded dims with the container rotation applied (portrait
+    // camera video stores landscape frames + a 90° matrix; the playback path
+    // got the rotation for free from <video>, here it must be applied by hand).
+    rot = _trackRotation(vt.matrix);
+    const cw = (vt.video && vt.video.width)  || vt.track_width;
+    const chh = (vt.video && vt.video.height) || vt.track_height;
+    const dw = rot % 180 ? chh : cw;
+    const dh = rot % 180 ? cw : chh;
+    const scale = Math.min(1, COMPRESS_MAX_H / dh);
+    w = Math.round(dw * scale / 2) * 2;
+    h = Math.round(dh * scale / 2) * 2;
+    sw = rot % 180 ? h : w;   // scaled coded dims before rotation —
+    sh = rot % 180 ? w : h;   // ctx.rotate() maps them onto w×h
+    total = vt.nb_samples || 0;
+
+    // Deterministic thinning for high-fps sources (60 → 30): even cadence at
+    // the fixed bitrate, instead of the load-dependent drops of the old path.
+    const srcFps = vt.samples_duration ? vt.nb_samples / (vt.samples_duration / vt.timescale) : 0;
+    keepEvery = (isFinite(srcFps) && srcFps > 34) ? 2 : 1;
+
+    const dCfg = await pickCfg(VideoDecoder, { codec: vt.codec, codedWidth: cw,
+      codedHeight: chh, description });
+    if (!dCfg) throw new Error('decoder unsupported: ' + vt.codec);
+    const vCfg = await pickCfg(VideoEncoder, { codec: 'avc1.42E01E', width: w, height: h,
+      bitrate: COMPRESS_VIDEO_BPS, framerate: COMPRESS_FPS, avc: { format: 'avc' } });
+    if (!vCfg) throw new Error('H.264 encoder unsupported');
+
+    ofc = new OffscreenCanvas(w, h);
+    ctx = ofc.getContext('2d', { alpha: false });
+    vEnc = new VideoEncoder({
+      output: (chunk, meta) => {
+        if (chunk.type === 'key' && !avccConfig && meta?.decoderConfig?.description)
+          avccConfig = meta.decoderConfig.description;
+        const b = new ArrayBuffer(chunk.byteLength); chunk.copyTo(b);
+        videoFrames.push({ timestampMs: Math.round(chunk.timestamp / 1000), keyframe: chunk.type === 'key', data: b });
+      },
+      error: e => { vErr = e; }
+    });
+    vEnc.configure(vCfg);
+    dec = new VideoDecoder({
+      output: (vf) => {
+        const idx = frameIdx++;
+        if (baseUs === null) baseUs = vf.timestamp;
+        if (idx % keepEvery) { vf.close(); return; }
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(rot * Math.PI / 180);
+        ctx.drawImage(vf, -sw / 2, -sh / 2, sw, sh);
+        ctx.restore();
+        const tUs = Math.max(0, vf.timestamp - baseUs);
+        const isKey = (tUs - lastKeyUs) >= 2_000_000;
+        const out = new VideoFrame(ofc, { timestamp: tUs });
+        vEnc.encode(out, { keyFrame: isKey });
+        if (isKey) lastKeyUs = tUs;
+        out.close();
+        vf.close();
+      },
+      error: e => { vErr = e; }
+    });
+    dec.configure(dCfg);
+  };
+
+  // Called by the streamer for each extracted sample, in decode order.
+  const onSample = async (s) => {
+    if (vErr) throw vErr;
+    // Backpressure: wait for the pipeline to drain — never drop a frame.
+    while (dec.decodeQueueSize > 12 || vEnc.encodeQueueSize > 12) {
+      if (vErr) throw vErr;
+      await new Promise(r => setTimeout(r, 2));
+    }
+    dec.decode(new EncodedVideoChunk({
+      type: s.is_sync ? 'key' : 'delta',
+      timestamp: Math.round(s.cts / s.timescale * 1_000_000),
+      duration: Math.round(s.duration / s.timescale * 1_000_000),
+      data: s.data,
+    }));
+    fed++;
+    if (total) onProgress?.(fed / total);
+  };
 
   try {
-    vEnc.configure(vCfg);
-    dec.configure(dCfg);
-
-    const total = dmx.samples.length;
-    for (let i = 0; i < total; i++) {
-      if (vErr) throw vErr;
-      // Backpressure: wait for the pipeline to drain — never drop a frame.
-      while (dec.decodeQueueSize > 12 || vEnc.encodeQueueSize > 12) {
-        if (vErr) throw vErr;
-        await new Promise(r => setTimeout(r, 2));
-      }
-      const s = dmx.samples[i];
-      dec.decode(new EncodedVideoChunk({
-        type: s.is_sync ? 'key' : 'delta',
-        timestamp: Math.round(s.cts / s.timescale * 1_000_000),
-        duration: Math.round(s.duration / s.timescale * 1_000_000),
-        data: s.data,
-      }));
-      dmx.samples[i] = null; // release source bytes as the pipeline consumes them
-      onProgress?.((i + 1) / total);
-    }
+    await _streamVideoSamples(file, onTrackReady, onSample);
+    if (!fed) throw new Error('no video samples');
     await dec.flush();
     await vEnc.flush();
     if (vErr) throw vErr;
   } finally {
-    try { dec.close(); } catch(_) {}
-    try { vEnc.close(); } catch(_) {}
+    try { dec && dec.close(); } catch(_) {}
+    try { vEnc && vEnc.close(); } catch(_) {}
   }
   if (!avccConfig) throw new Error('encoder produced no decoder config');
   if (!videoFrames.length) throw new Error('encoder produced no frames');
@@ -1512,6 +1525,97 @@ async function _validateCompressedMp4(file) {
   }
   if (err) throw new Error('self-check: output not decodable: ' + (err.message || err));
   if (!decoded) throw new Error('self-check: output decoded 0 frames');
+}
+
+// Walk the file's top-level boxes cheaply (16-byte header reads via slice)
+// so the streamer can append moov before mdat regardless of where the camera
+// put it (iPhone MOV keeps moov at the END of the file).
+async function _scanTopBoxes(file) {
+  const boxes = [];
+  let off = 0;
+  while (off + 8 <= file.size) {
+    const hdr = new DataView(await file.slice(off, Math.min(off + 16, file.size)).arrayBuffer());
+    let size = hdr.getUint32(0);
+    const type = String.fromCharCode(hdr.getUint8(4), hdr.getUint8(5), hdr.getUint8(6), hdr.getUint8(7));
+    if (size === 1) {                      // 64-bit largesize
+      if (hdr.byteLength < 16) break;
+      size = hdr.getUint32(8) * 4294967296 + hdr.getUint32(12);
+    } else if (size === 0) {               // box extends to end of file
+      size = file.size - off;
+    }
+    if (size < 8) throw new Error('malformed box at offset ' + off);
+    boxes.push({ type, start: off, size });
+    off += size;
+  }
+  return boxes;
+}
+
+// Streamed MP4 video-sample reader with BOUNDED memory: appends header boxes
+// (ftyp/moov/moof — moov may sit at the end of camera files) to MP4Box first,
+// then the mdat payload in chunks, calling `onSample` for each extracted
+// sample as its bytes arrive and releasing consumed data. Replaces holding
+// the whole file plus every sample copy in RAM, which iOS killed on ~4-min
+// clips. `onTrackReady(vt, description)` runs once moov is parsed, before any
+// samples flow; both callbacks may be async and are awaited.
+async function _streamVideoSamples(file, onTrackReady, onSample) {
+  if (typeof MP4Box === 'undefined') throw new Error('MP4Box unavailable');
+  const boxes = await _scanTopBoxes(file);
+  if (!boxes.some(b => b.type === 'moov')) throw new Error('no moov box');
+
+  const mp4 = MP4Box.createFile();
+  const pending = [];
+  let vt = null, demuxErr = null, readyRes, readyRej;
+  const ready = new Promise((res, rej) => { readyRes = res; readyRej = rej; });
+  ready.catch(() => {});   // settled via race below; avoid unhandled-rejection noise
+  mp4.onError = e => { demuxErr = new Error('mp4box: ' + e); readyRej(demuxErr); };
+  mp4.onReady = info => {
+    vt = info.videoTracks && info.videoTracks[0];
+    if (!vt) { readyRej(new Error('no video track')); return; }
+    const description = _videoDecoderDescription(mp4, vt.id);
+    if (!description) { readyRej(new Error('no avcC/hvcC decoder config')); return; }
+    mp4.onSamples = (id, user, arr) => { for (const s of arr) pending.push(s); };
+    mp4.setExtractionOptions(vt.id, null, { nbSamples: 100 });
+    mp4.start();
+    readyRes({ vt, description });
+  };
+
+  const CHUNK = 16 * 1024 * 1024;
+  let released = 0;
+  const drain = async () => {
+    while (pending.length) {
+      if (demuxErr) throw demuxErr;
+      const s = pending.shift();
+      await onSample(s);
+      released = s.number;
+    }
+    // Free sample data (and the buffers backing it) the pipeline is done with.
+    if (released && vt) { try { mp4.releaseUsedSamples(vt.id, released); } catch(_) {} }
+  };
+  const append = async (start, end, doDrain) => {
+    for (let off = start; off < end; off += CHUNK) {
+      if (demuxErr) throw demuxErr;
+      const ab = await file.slice(off, Math.min(off + CHUNK, end)).arrayBuffer();
+      ab.fileStart = off;
+      mp4.appendBuffer(ab);
+      if (doDrain) await drain();
+    }
+  };
+
+  // Header boxes first — MP4Box assembles them by fileStart, so skipping the
+  // mdat payload here is fine. onReady fires synchronously during these
+  // appends once moov is complete.
+  for (const b of boxes) if (b.type !== 'mdat') await append(b.start, b.start + b.size, false);
+  const track = await Promise.race([
+    ready,
+    Promise.resolve().then(() => { throw demuxErr || new Error('moov present but not parsed'); }),
+  ]);
+  await onTrackReady(track.vt, track.description);
+
+  // Now the sample data, decode-as-we-go.
+  for (const b of boxes) if (b.type === 'mdat') await append(b.start, b.start + b.size, true);
+  mp4.flush();
+  await drain();
+  if (demuxErr) throw demuxErr;
 }
 
 // Demux the source's video track with MP4Box and return its encoded samples
@@ -1658,10 +1762,12 @@ async function _compressWebCodecs(file, onProgress, audioP = null) {
 
           if (typeof AudioEncoder === 'undefined') return;
 
-          // Decode from shared WAV (transcription extraction) or original file
+          // Decode from shared WAV (lazily started decode-based extraction)
+          // or the original file. audioP is a thunk since v1.46 — the WAV
+          // extraction only runs if this branch actually needs it.
           let decoded;
           if (audioP) {
-            const wav = await audioP;
+            const wav = await audioP();
             if (!wav) return;
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             decoded = await ctx.decodeAudioData(await wav.arrayBuffer());
@@ -2247,7 +2353,7 @@ function startBackgroundCompression(entry) {
   entry.compressPromise = compressVideoFast(entry.file, p => {
     entry.compressProgress = p;
     setLbl(`⚙ ${Math.round(p * 100)}%`);
-  }, entry._audioP || null).then(compressed => {
+  }, entry._audioP || null, entry._groqAudioP || null).then(compressed => {
     entry.compressed = compressed;
     releaseWakeLock();
     const sizeMB = compressed.size / 1024 / 1024;
@@ -2333,12 +2439,14 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   }
   if (!files.length) return;
 
-  // Build entries. _audioP is the decode-based WAV extraction (still shared
-  // with the compressor's audio track on non-H264 output); _groqAudioP is the
-  // demux-based ADTS audio used for transcription — see extractGroqAudio.
+  // Build entries. _audioP is a LAZY thunk for the decode-based WAV extraction
+  // (only runs if the playback fallback's non-H264 audio branch needs it —
+  // running it eagerly held a whole-file ArrayBuffer at select time, part of
+  // the iOS memory kill on long clips); _groqAudioP is the demux-based audio
+  // used for transcription AND reused by the fast compression path.
   files.forEach(f => {
     const entry = { type: 'video', file: f, compressed: null, compressProgress: 0, compressInterrupted: false, uid: Math.random().toString(36).slice(2) };
-    entry._audioP = extractAudioFromVideo(f).catch(() => null);
+    entry._audioP = () => (entry._audioWavP || (entry._audioWavP = extractAudioFromVideo(f).catch(() => null)));
     entry._groqAudioP = extractGroqAudio(f).catch(() => null);
     mediaFiles.push(entry);
     startBackgroundCompression(entry);
