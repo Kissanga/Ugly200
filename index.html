@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.47';
+  const CURRENT_VERSION = '1.48';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -541,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.47</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.48</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -2714,8 +2714,109 @@ function renderTabFields(tab) {
   });
 }
 
+// ─── DRAFT PERSISTENCE ───────────────────────────────────────
+// The text of an in-progress note lived only in the DOM, so an iOS PWA eviction
+// (or any reload) lost the transcript and everything typed with it — the worst
+// case being a note taken in the field with no signal to send it. Text fields,
+// the note's start time and the active tab are now mirrored to localStorage on
+// every change and restored on load. Attachments are NOT saved: they are File
+// handles, often hundreds of MB, and this app already fights iOS memory limits
+// — the restore toast says so when the lost draft had any.
+const DRAFT_KEY = 'ugly200_draft';
+const DRAFT_FIELDS = ['noteTitle','transcriptText','summaryText','noteText','videoTranscriptText','videoSummaryText'];
+let _draftTimer = null;
+let _restoringDraft = false;
+
+function writeDraft() {
+  _draftTimer = null;
+  if (_restoringDraft) return;
+  try {
+    const fields = {};
+    let hasText = false;
+    DRAFT_FIELDS.forEach(id => {
+      const v = document.getElementById(id)?.value || '';
+      fields[id] = v;
+      if (v.trim()) hasText = true;
+    });
+    // Nothing worth keeping — drop the draft rather than leaving a stale one.
+    if (!hasText) { localStorage.removeItem(DRAFT_KEY); return; }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      fields,
+      tab: activeTab,
+      startedAt: noteStartTime.toISOString(),
+      mediaCount: mediaFiles.length,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch(e) {
+    // Quota exceeded / private mode — a failed draft save must never block the note.
+    console.warn('Draft save failed:', e.message);
+  }
+}
+
+// Debounced on keystrokes; flushed synchronously when the app is backgrounded.
+function saveDraft() {
+  if (_draftTimer) clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(writeDraft, 400);
+}
+function flushDraft() {
+  if (_draftTimer) { clearTimeout(_draftTimer); writeDraft(); }
+}
+
+function clearDraft() {
+  if (_draftTimer) { clearTimeout(_draftTimer); _draftTimer = null; }
+  try { localStorage.removeItem(DRAFT_KEY); } catch(e) {}
+}
+
+function restoreDraft() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch(e) {}
+  if (!d || !d.fields) return;
+
+  _restoringDraft = true;
+  try {
+    DRAFT_FIELDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && typeof d.fields[id] === 'string') el.value = d.fields[id];
+    });
+    // Restore the tab too — a Daily draft restored under Ugly200 would submit to
+    // the wrong database.
+    if (d.tab && TAB_DB[d.tab]) {
+      activeTab = d.tab;
+      localStorage.setItem('brain_activeTab', d.tab);
+    }
+    // Keep the original start time: it is what gets sent to Notion as the date.
+    const started = d.startedAt ? new Date(d.startedAt) : null;
+    if (started && !isNaN(started)) noteStartTime = started;
+  } finally {
+    _restoringDraft = false;
+  }
+
+  // Tell the user what came back — and what didn't. Drafts are never expired
+  // automatically (that would re-introduce the data loss this fixes), so an old
+  // one is flagged by age instead.
+  const ageMs = d.savedAt ? Date.now() - new Date(d.savedAt).getTime() : 0;
+  const days = Math.floor(ageMs / 86400000);
+  const bits = ['Draft restored'];
+  if (days >= 1) bits.push(`from ${days} day${days === 1 ? '' : 's'} ago`);
+  if (d.mediaCount) bits.push(`— re-attach ${d.mediaCount} file${d.mediaCount === 1 ? '' : 's'}`);
+  setTimeout(() => showToast(bits.join(' '), 'info'), 600);
+}
+
+// Any programmatic write (transcription, AI summary) lands here too, since every
+// one of those paths already calls updateSubmitBtn.
+DRAFT_FIELDS.forEach(id =>
+  document.getElementById(id)?.addEventListener('input', saveDraft)
+);
+// iOS kills backgrounded PWAs without warning — a pending debounce would be lost,
+// so commit synchronously the moment the app goes away.
+window.addEventListener('pagehide', flushDraft);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushDraft();
+});
+
 // ─── SUBMIT BUTTON STATE ─────────────────────────────────────
 function updateSubmitBtn() {
+  saveDraft();
   const persistKeys = (TAB_SCHEMAS[activeTab] || []).filter(f => f.persist).map(f => f.key);
   const tabHasValues = Object.entries(tabValues[activeTab] || {}).some(([k, v]) =>
     !persistKeys.includes(k) && (Array.isArray(v) ? v.length > 0 : (typeof v === 'object' ? Object.values(v).some(x => x) : !!v))
@@ -3109,6 +3210,7 @@ function resetForm() {
   renderTabFields(activeTab);
   recordedBlob = null;
   noteStartTime = new Date(); // fresh timestamp for the next note
+  clearDraft();               // note is safely in Notion — drop the local copy
   renderNoteStamp();
   updateSubmitBtn();
 }
@@ -3287,6 +3389,9 @@ document.getElementById('testNotionBtn').addEventListener('click', async () => {
 });
 
 // ─── INIT ─────────────────────────────────────────────────────
+// Before the renders below — restoreDraft sets activeTab and noteStartTime,
+// which renderNoteStamp/updateSubmitBtn/setActiveTab all read.
+restoreDraft();
 loadConfig();
 syncAuthorBtn();
 renderNoteStamp();
