@@ -322,7 +322,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.46';
+  const CURRENT_VERSION = '1.47';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -541,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.46</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.47</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1065,6 +1065,12 @@ let audioChunks = [];
 let timerInterval = null;
 let recordingSeconds = 0;
 let recordedBlob = null;
+// Per-recording stop state. `stopHandled` gates handleRecordingStop so the iOS
+// fallback below and a real (possibly late) onstop can't both transcribe; it is
+// reset for every recording, unlike recordedBlob, which persists until the note
+// is submitted and so could not be used as the guard.
+let stopHandled = false;
+let stopFallbackTimer = null;
 
 const recordBtn  = document.getElementById('recordBtn');
 const micIcon    = document.getElementById('micIcon');
@@ -1088,6 +1094,11 @@ async function startRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
+    // Reset per-recording state, or the fallback in stopRecording() stays armed
+    // against the previous take and silently does nothing from take 2 onward.
+    recordedBlob = null;
+    stopHandled = false;
+    clearTimeout(stopFallbackTimer);
     // Use explicit MIME type so iOS records a complete, well-formed container
     const mime = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
                 : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
@@ -1122,12 +1133,15 @@ function stopRecording() {
 
     // iOS safety net: if onstop never fires within 8 s, trigger it manually.
     const mr = mediaRecorder;
-    setTimeout(() => {
-      if (!recordedBlob && audioChunks.length > 0) {
+    clearTimeout(stopFallbackTimer);
+    stopFallbackTimer = setTimeout(() => {
+      if (stopHandled) return;               // onstop already ran — nothing to do
+      if (audioChunks.length > 0) {
         mr.stream?.getTracks().forEach(t => t.stop());
         handleRecordingStop();
-      } else if (!recordedBlob) {
+      } else {
         // Nothing was captured — bail out gracefully
+        stopHandled = true;
         mr.stream?.getTracks().forEach(t => t.stop());
         recStatus.textContent = 'Tap to record voice note';
         showToast('Recording failed — try again', 'error');
@@ -1144,6 +1158,12 @@ function stopRecording() {
 }
 
 async function handleRecordingStop() {
+  // Runs once per recording — whether it arrives via onstop or the iOS fallback.
+  // Without this guard a late onstop after the 8 s fallback would transcribe twice.
+  if (stopHandled) return;
+  stopHandled = true;
+  clearTimeout(stopFallbackTimer);
+
   // Stop the mic stream only now — data has arrived
   mediaRecorder?.stream?.getTracks().forEach(t => t.stop());
   const mimeType = mediaRecorder?.mimeType || 'audio/webm';
@@ -3151,13 +3171,15 @@ function tagColor(name) {
   return NOTION_COLORS[Math.abs(h) % NOTION_COLORS.length];
 }
 
+// The Notion token lives in the Cloudflare Worker (env.NOTION_TOKEN), not in the
+// page — cfFetch adds the app password and the Worker injects the token. The old
+// #notionToken input was removed with that move; reading it here threw a
+// TypeError on the handler's first line and killed this button silently.
 document.getElementById('createDbBtn').addEventListener('click', async () => {
-  const token    = document.getElementById('notionToken').value.trim();
   const parentId = document.getElementById('notionParentId').value.trim().replace(/-/g, '');
   const btn      = document.getElementById('createDbBtn');
   const result   = document.getElementById('createDbResult');
 
-  if (!token)    { showToast('Enter your Notion token first', 'error'); return; }
   if (!parentId) { showToast('Enter a Parent Page ID', 'error'); return; }
   if (parentId.length !== 32) { showToast(`Page ID should be 32 chars — got ${parentId.length}`, 'error'); return; }
 
@@ -3233,19 +3255,35 @@ document.getElementById('createDbBtn').addEventListener('click', async () => {
 });
 
 // ─── TEST CONNECTION ──────────────────────────────────────────
+// Uses cfFetch (not bare fetch) so the request carries X-App-Password — without
+// it the Worker answers 401 and this always reported a failed connection.
 document.getElementById('testNotionBtn').addEventListener('click', async () => {
-  const token  = document.getElementById('notionToken').value.trim();
   const dbId   = document.getElementById(TAB_DB[activeTab]).value.trim();
   const result = document.getElementById('notionTestResult');
   result.style.display = 'flex';
+  if (!dbId) {
+    result.textContent = `✗ No database ID set for ${TAB_LABELS[activeTab]}`;
+    result.className = 'test-err';
+    return;
+  }
   result.textContent = '…';
+  result.className = '';
   try {
-    const res = await fetch(`https://notion-proxy.francesco-955.workers.dev/v1/databases/${dbId}`, {
+    const res = await cfFetch(`${PROXY}/v1/databases/${dbId}`, {
       headers: { 'Notion-Version': '2022-06-28' }
     });
-    if (res.ok) { result.textContent = '✓ Connected'; result.className = 'test-ok'; }
-    else { result.textContent = `✗ ${res.status}`; result.className = 'test-err'; }
-  } catch(e) { result.textContent = '✗ Network error'; result.className = 'test-err'; }
+    if (res.ok) {
+      result.textContent = '✓ Connected';
+      result.className = 'test-ok';
+    } else {
+      const err = await res.json().catch(() => ({}));
+      result.textContent = `✗ ${err.message || res.status}`;
+      result.className = 'test-err';
+    }
+  } catch(e) {
+    result.textContent = `✗ ${e.message || 'Network error'}`;
+    result.className = 'test-err';
+  }
 });
 
 // ─── INIT ─────────────────────────────────────────────────────
