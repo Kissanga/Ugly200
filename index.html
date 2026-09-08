@@ -327,7 +327,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.50';
+  const CURRENT_VERSION = '1.51';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -566,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.50</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.51</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1273,7 +1273,20 @@ STRICT RULES:
 - No preamble, no commentary, no extra text — bullets only`;
 }
 
-// ─── AI SUMMARY (GROQ LLAMA) ─────────────────────────────────
+// ─── AI SUMMARY (GROQ) ───────────────────────────────────────
+// Groq retires models on a schedule and the old id then hard-fails: summaries
+// broke on 2026-08-16 when llama-3.1-8b-instant was shut down, while
+// transcription kept working because Whisper is a separate model. Keep the id
+// in one place so the next retirement is a one-line change, and check
+// https://console.groq.com/docs/deprecations when summaries start failing.
+const SUMMARY_MODEL = 'openai/gpt-oss-20b';   // replaces llama-3.1-8b-instant
+// gpt-oss is a reasoning model: reasoning tokens are billed against the
+// completion budget even though they come back in a separate field, so the
+// old 300/400 caps could leave nothing for the answer. 'low' effort suits
+// bullet-point summarising and keeps latency down.
+const SUMMARY_REASONING_EFFORT = 'low';
+const SUMMARY_MAX_TOKENS = 1024;
+
 document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
   const transcript = document.getElementById('transcriptText').value.trim();
   const note       = document.getElementById('noteText').value.trim();
@@ -1289,18 +1302,24 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: SUMMARY_MODEL,
         temperature: 0,
+        reasoning_effort: SUMMARY_REASONING_EFFORT,
         messages: [
           { role: 'system', content: bulletPrompt(text) },
           { role: 'user', content: text }
         ],
-        max_tokens: 300
+        max_completion_tokens: SUMMARY_MAX_TOKENS
       })
     });
     if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
-    document.getElementById('summaryText').value = data.choices?.[0]?.message?.content?.trim() || '';
+    const summary = data.choices?.[0]?.message?.content?.trim() || '';
+    // An empty completion is a failure, not a summary — say so instead of
+    // reporting success over a blank box (a reasoning model that spends its
+    // whole budget thinking returns exactly this).
+    if (!summary) throw new Error('model returned an empty summary — try again');
+    document.getElementById('summaryText').value = summary;
     updateSubmitBtn();
     showToast('Summary generated ✓', 'success');
   } catch(e) {
@@ -1340,18 +1359,21 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: SUMMARY_MODEL,
         temperature: 0,
+        reasoning_effort: SUMMARY_REASONING_EFFORT,
         messages: [
           { role: 'system', content: bulletPrompt(transcript) },
           { role: 'user', content: transcript }
         ],
-        max_tokens: 400
+        max_completion_tokens: SUMMARY_MAX_TOKENS
       })
     });
     if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
-    document.getElementById('videoSummaryText').value = data.choices?.[0]?.message?.content?.trim() || '';
+    const videoSummary = data.choices?.[0]?.message?.content?.trim() || '';
+    if (!videoSummary) throw new Error('model returned an empty summary — try again');
+    document.getElementById('videoSummaryText').value = videoSummary;
     updateSubmitBtn();
     showToast('Video summary generated ✓', 'success');
   } catch(e) {
