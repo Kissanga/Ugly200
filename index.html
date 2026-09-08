@@ -327,7 +327,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.51';
+  const CURRENT_VERSION = '1.52';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -566,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.51</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.52</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -2498,9 +2498,37 @@ document.addEventListener('visibilitychange', async () => {
 document.getElementById('videoSummaryPhotoBtn').addEventListener('click', () => document.getElementById('videoSummaryPhotoInput').click());
 document.getElementById('videoSummaryVideoBtn').addEventListener('click', () => document.getElementById('videoSummaryVideoInput').click());
 
-document.getElementById('videoSummaryPhotoInput').addEventListener('change', e => {
-  [...e.target.files].forEach(f => mediaFiles.push({ type: 'image', file: f }));
+// ─── iCLOUD-OFFLOADED MEDIA ──────────────────────────────────
+// With Settings → Photos → "Optimize iPhone Storage", the full-size asset lives
+// in iCloud and only a proxy sits on the device. The picker still hands over a
+// File, but reading it fails until iOS has fetched the original — so an
+// un-downloaded video used to stall getVideoDuration for its full 10 s timeout,
+// get waved through ("duration unknown"), and then fail somewhere deep in
+// compression with a message that never mentioned iCloud. Catch it at the door.
+async function isFileReadable(file) {
+  if (!file || file.size === 0) return false;
+  try {
+    // Touching the first bytes is enough: iOS throws here for an asset it
+    // hasn't materialised, rather than returning short data.
+    const head = await file.slice(0, 64 * 1024).arrayBuffer();
+    return head.byteLength > 0;
+  } catch(e) {
+    console.warn('File not readable (likely still in iCloud):', file.name, e);
+    return false;
+  }
+}
+
+function iCloudToast(file) {
+  showToast(`"${file.name}" hasn't downloaded from iCloud yet — open it once in Photos, then try again.`, 'error');
+}
+
+document.getElementById('videoSummaryPhotoInput').addEventListener('change', async e => {
+  const picked = [...e.target.files];
   e.target.value = '';
+  for (const f of picked) {
+    if (!(await isFileReadable(f))) { iCloudToast(f); continue; }
+    mediaFiles.push({ type: 'image', file: f });
+  }
   renderMediaPreviews();
   updateSubmitBtn();
 });
@@ -2534,6 +2562,9 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   // limits still apply.
   const files = [];
   for (const f of rawFiles) {
+    // Before the duration probe: an iCloud-only asset would otherwise burn the
+    // full 10 s timeout here and then fail unhelpfully further down.
+    if (!(await isFileReadable(f))) { iCloudToast(f); continue; }
     const dur = await getVideoDuration(f);
     if (dur !== null && dur > MAX_VIDEO_SECONDS) {
       showToast(`"${f.name}" is ${formatTime(Math.round(dur))} — videos must be 8 minutes or under. Please trim it and try again.`, 'error');
