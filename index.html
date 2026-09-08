@@ -252,7 +252,12 @@
     .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
     /* TOAST */
-    .toast { position: fixed; bottom: calc(var(--space-16) + var(--space-10)); left: 50%; transform: translateX(-50%) translateY(20px); max-width: 90vw; padding: var(--space-3) var(--space-5); border-radius: var(--radius-full); font-size: var(--text-sm); font-weight: 500; box-shadow: var(--shadow-lg); z-index: 200; opacity: 0; transition: opacity 0.3s, transform 0.3s; pointer-events: none; white-space: nowrap; }
+    /* Wraps rather than clipping: error toasts now carry a real reason (rate
+       limit, unreachable server, Groq's own message) instead of one short line. */
+    /* width:max-content is load-bearing — with only `left:50%` set, a wrapping
+       box shrink-fits to the space from the midpoint to the right edge (half the
+       screen). max-content lets it size to the text, capped by max-width. */
+    .toast { position: fixed; bottom: calc(var(--space-16) + var(--space-10)); left: 50%; transform: translateX(-50%) translateY(20px); width: max-content; max-width: min(90vw, 30rem); padding: var(--space-3) var(--space-5); border-radius: var(--radius-xl); font-size: var(--text-sm); font-weight: 500; box-shadow: var(--shadow-lg); z-index: 200; opacity: 0; transition: opacity 0.3s, transform 0.3s; pointer-events: none; white-space: normal; text-align: center; overflow-wrap: anywhere; }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     .toast.success { background: var(--success-bg); color: var(--success); }
     .toast.error { background: var(--error-bg); color: var(--error); }
@@ -322,7 +327,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.49';
+  const CURRENT_VERSION = '1.50';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -561,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
       onmousedown="this.style.transform='scale(0.96)'" onmouseup="this.style.transform=''">
       Enter Author
     </button>
-    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.49</span>
+    <span id="versionDisplay" style="font-size:var(--text-xs);color:var(--text-faint);font-weight:500;letter-spacing:0.04em;align-self:center">v 1.50</span>
     <button class="btn-icon" id="themeToggle" aria-label="Toggle dark mode">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -1194,6 +1199,40 @@ async function handleRecordingStop() {
   await transcribeAudio(recordedBlob);
 }
 
+// ─── API ERROR REPORTING ─────────────────────────────────────
+// The AI handlers used to answer every failure with "check Groq key" and throw
+// the real error away, so a rate limit, an expired app password, a too-large
+// file and a dead connection were indistinguishable from the toast — which is
+// exactly the guesswork this app gets debugged with. These turn a failure into
+// something short and true; the original always goes to the console.
+
+// Failed response → a short reason. Groq/Notion send {"error":{"message":…}}.
+async function apiErrorMessage(res) {
+  let detail = '';
+  try {
+    const body = await res.text();
+    try { detail = JSON.parse(body)?.error?.message || ''; }
+    catch(_) { detail = body.trim(); }
+  } catch(_) {}
+
+  // 429 is the one worth naming outright: the workspace is on Groq's free tier,
+  // so a daily/rate cap is a routine failure that looks nothing like a bad key.
+  // Groq's own text here is long and full of org ids — that goes to the console.
+  if (res.status === 429) return 'Groq rate limit reached — wait and retry';
+  const base = detail || `HTTP ${res.status}`;
+  return base.length > 110 ? base.slice(0, 107) + '…' : base;
+}
+
+// Thrown value → a short reason. Covers the cases a bare e.message describes badly.
+function failureReason(e) {
+  if (e?.name === 'AbortError') return 'timed out — connection too slow';
+  // fetch() rejects with a TypeError when the request never reached the server:
+  // offline, DNS failure, or a network blocking the proxy domain.
+  if (e instanceof TypeError) return 'cannot reach the server — check your connection';
+  const msg = e?.message || 'unknown error';
+  return msg.length > 110 ? msg.slice(0, 107) + '…' : msg;
+}
+
 // ─── TRANSCRIPTION (GROQ WHISPER) ────────────────────────────
 async function transcribeAudio(blob) {
   const bar = document.getElementById('transcribingBar');
@@ -1209,13 +1248,14 @@ async function transcribeAudio(blob) {
       method: 'POST',
       body: fd
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
     document.getElementById('transcriptText').value = data.text || '';
     updateSubmitBtn();
     showToast('Transcription complete ✓', 'success');
   } catch(e) {
-    showToast('Transcription failed — check Groq key', 'error');
+    console.warn('Transcription failed:', e);
+    showToast(`Transcription failed — ${failureReason(e)}`, 'error');
   } finally {
     bar.style.display = 'none';
   }
@@ -1258,13 +1298,14 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
         max_tokens: 300
       })
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
     document.getElementById('summaryText').value = data.choices?.[0]?.message?.content?.trim() || '';
     updateSubmitBtn();
     showToast('Summary generated ✓', 'success');
   } catch(e) {
-    showToast('Summary failed — check Groq key', 'error');
+    console.warn('Summary failed:', e);
+    showToast(`Summary failed — ${failureReason(e)}`, 'error');
   } finally {
     gen.style.display = 'none';
     btn.disabled = false;
@@ -1308,13 +1349,14 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
         max_tokens: 400
       })
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
     document.getElementById('videoSummaryText').value = data.choices?.[0]?.message?.content?.trim() || '';
     updateSubmitBtn();
     showToast('Video summary generated ✓', 'success');
   } catch(e) {
-    showToast('Video summary failed — check Groq key', 'error');
+    console.warn('Video summary failed:', e);
+    showToast(`Video summary failed — ${failureReason(e)}`, 'error');
   } finally {
     gen.style.display = 'none';
     btn.disabled = false;
@@ -2536,13 +2578,14 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
       const res = await cfFetch(PROXY + '/groq/openai/v1/audio/transcriptions', {
         method: 'POST', body: fd
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
       document.getElementById('videoTranscriptText').value = data.text || '';
       updateSubmitBtn();
       showToast('Video transcribed ✓', 'success');
     } catch(err) {
-      showToast('Auto-transcription failed — ' + (err.message || 'unknown error'), 'error');
+      console.warn('Auto-transcription failed:', err);
+      showToast(`Auto-transcription failed — ${failureReason(err)}`, 'error');
     } finally {
       bar.style.display = 'none';
     }
