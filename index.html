@@ -411,6 +411,21 @@
     .toast { z-index: 600; }
     /* Update popup: keep the -50% centring during the slide-in (slideUp overrode it). */
     @keyframes nbPopIn { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+    /* APP TABS: Tasks / SoP / Capture */
+    .app-tabs { display: flex; gap: 4px; margin: var(--space-2) var(--space-4) 0; padding: 4px; background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-full); box-shadow: var(--shadow-sm); }
+    .app-tab { flex: 1; min-height: 44px; border-radius: var(--radius-full); font-weight: 700; font-size: var(--text-sm); color: var(--text-muted); }
+    .app-tab.active { background: var(--primary); color: var(--text-inverse); }
+    .app-view { display: none; }
+    body.mode-tasks #viewTasks { display: block; max-width: 640px; margin: 0 auto; padding: var(--space-4) var(--space-4) var(--space-8); }
+    body.mode-sop #viewSop { display: block; position: fixed; left: 0; right: 0; bottom: 0; top: var(--sop-top, 120px); z-index: 10; }
+    body.mode-sop { overflow: hidden; }
+    #sopFrame { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
+    body:not(.mode-capture) .tab-bar, body:not(.mode-capture) #main-content, body:not(.mode-capture) .submit-area { display: none; }
+    .wip-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); padding: var(--space-8) var(--space-5); text-align: center; }
+    .wip-icon { font-size: 3.5rem; line-height: 1; margin-bottom: var(--space-3); }
+    .wip-title { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
+    .wip-text { color: var(--text-muted); margin-top: var(--space-2); }
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -429,14 +444,14 @@
   <!-- MP4Box: demuxes the source AAC track so the compressor can remux audio into the output MP4 (iOS fix). Bundled for offline use. -->
   <script src="mp4box.all.min.js"></script>
 </head>
-<body>
+<body class="mode-tasks">
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.8.2';
+  const CURRENT_VERSION = '0.9';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -681,6 +696,31 @@ document.addEventListener('DOMContentLoaded', () => {
     </button>
   </div>
 </header>
+
+<!-- APP TABS: Tasks / SoP / Capture (the app always opens on Tasks) -->
+<nav class="app-tabs" id="appTabs" role="tablist" aria-label="Sections">
+  <button class="app-tab" role="tab" data-mode="tasks">Tasks</button>
+  <button class="app-tab" role="tab" data-mode="sop">SoP</button>
+  <button class="app-tab" role="tab" data-mode="capture">Capture</button>
+</nav>
+
+<!-- TASKS: work in progress -->
+<section class="app-view" id="viewTasks" aria-label="Tasks">
+  <div class="hero">
+    <h1>Tasks</h1>
+    <p>Your farm work for the day.</p>
+  </div>
+  <div class="wip-card">
+    <div class="wip-icon" aria-hidden="true">🚧</div>
+    <div class="wip-title">Work in progress</div>
+    <div class="wip-text">Tasks are coming soon: daily farm work assigned to you, each with its SOP checklist.</div>
+  </div>
+</section>
+
+<!-- SOP: the FarmBox SOP app (sop/), loaded the first time the tab opens -->
+<section class="app-view" id="viewSop" aria-label="SOP">
+  <iframe id="sopFrame" title="FarmBox SOP"></iframe>
+</section>
 
 <!-- TAB BAR -->
 <nav class="tab-bar" role="tablist" aria-label="Notion database">
@@ -1229,6 +1269,35 @@ function setActiveTab(tab) {
 document.querySelectorAll('.tab-btn').forEach(btn =>
   btn.addEventListener('click', () => setActiveTab(btn.dataset.tab))
 );
+
+// ─── APP SECTIONS: Tasks / SoP / Capture ─────────────────────
+// Always opens on Tasks; the home-screen "New Voice Note" shortcut
+// (?action=record) opens Capture. SoP hosts the FarmBox SOP app from sop/
+// in a same-origin iframe, loaded the first time the tab is opened — it
+// shares this app's login (brainplus_pw) and theme (ugly200_theme).
+function sizeSopFrame() {
+  const tabs = document.getElementById('appTabs');
+  document.documentElement.style.setProperty('--sop-top', Math.round(tabs.getBoundingClientRect().bottom + 8) + 'px');
+}
+function setAppMode(mode) {
+  document.body.classList.remove('mode-tasks', 'mode-sop', 'mode-capture');
+  document.body.classList.add('mode-' + mode);
+  document.querySelectorAll('.app-tab').forEach(btn => {
+    const on = btn.dataset.mode === mode;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', String(on));
+  });
+  window.scrollTo(0, 0);
+  if (mode === 'sop') {
+    sizeSopFrame();
+    const frame = document.getElementById('sopFrame');
+    if (!frame.getAttribute('src')) frame.setAttribute('src', 'sop/?embed=1');
+  }
+}
+document.querySelectorAll('.app-tab').forEach(btn =>
+  btn.addEventListener('click', () => setAppMode(btn.dataset.mode)));
+window.addEventListener('resize', () => { if (document.body.classList.contains('mode-sop')) sizeSopFrame(); });
+setAppMode(new URLSearchParams(location.search).get('action') === 'record' ? 'capture' : 'tasks');
 
 
 // ─── TOAST ───────────────────────────────────────────────────
