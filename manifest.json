@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Brain+",
-  "short_name": "Brain+",
+  "name": "Naked Brain",
+  "short_name": "Naked Brain",
   "description": "Record voice notes and send them directly to Notion",
   "lang": "en",
   "dir": "ltr",
@@ -10,7 +10,7 @@
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait",
-  "theme_color": "#01696f",
+  "theme_color": "#1bbfa8",
   "background_color": "#171614",
   "categories": ["productivity", "utilities"],
   "icons": [

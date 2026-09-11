@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#01696f">
+  <meta name="theme-color" content="#1bbfa8">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Brain+">
-  <title>Brain+ – Voice to Notion</title>
+  <meta name="apple-mobile-web-app-title" content="Naked Brain">
+  <title>Naked Brain – Voice to Notion</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&display=swap" rel="stylesheet">
@@ -29,56 +29,48 @@
       --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
+    /* ═══ NAKED FARM UI v1 — shared design tokens ═══════════════════════════
+       Same token block lives in the FarmBox SOP app (SOP-App/index.html). Keep in sync.
+       Soft gradient ground, white rounded cards, black pill actions,
+       aqua = done/active, coral = recording/urgent, ink card = the one focus item. */
     :root, [data-theme="light"] {
-      --bg: #f7f6f2; --surface: #f9f8f5; --surface-2: #fbfbf9;
-      --surface-offset: #f0eeea; --surface-dynamic: #e6e4df;
-      --border: oklch(0.28 0.01 80 / 0.12); --divider: #dcd9d5;
-      --text: #28251d; --text-muted: #7a7974; --text-faint: #bab9b4;
-      --text-inverse: #f9f8f4;
-      --primary: #01696f; --primary-hover: #0c4e54; --primary-active: #0f3638;
-      --primary-highlight: #cedcd8;
-      --success: #437a22; --success-bg: #d4dfcc;
-      --error: #a12c7b; --error-bg: #e0ced7;
-      --warning: #964219; --warning-bg: #ddcfc6;
-      --shadow-sm: 0 1px 2px oklch(0.2 0.01 80 / 0.06);
-      --shadow-md: 0 4px 12px oklch(0.2 0.01 80 / 0.1);
-      --shadow-lg: 0 12px 32px oklch(0.2 0.01 80 / 0.14);
-      --rec-pulse: rgba(1,105,111,0.25);
+      --radius-sm: 0.5rem; --radius-md: 0.75rem; --radius-lg: 1.125rem; --radius-xl: 1.5rem;
+      --bg: #efebe6; --bg-end: #cfd8f6;
+      --bg-grad: linear-gradient(180deg, #f6eddb 0%, #efebef 42%, #cfd8f6 100%);
+      --surface: #ffffff; --surface-2: #fbfaf8; --surface-raised: #ffffff; --surface-offset: #f4f2ee; --surface-dynamic: #ebe9e4; --glass: rgba(255,255,255,0.72);
+      --border: rgba(18,18,18,0.08); --divider: rgba(18,18,18,0.08);
+      --text: #121212; --text-primary: #121212; --text-muted: #55534f; --text-faint: #8f8d88; --text-inverse: #ffffff;
+      --primary: #121212; --primary-hover: #2e2e2e; --primary-active: #000000; --primary-highlight: #d3f3ee;
+      --accent: #1bbfa8; --accent-soft: #d3f3ee; --coral: #ef6461; --coral-soft: #fde3e1; --lavender-soft: #e8eafb;
+      --ink: #1b1b1d; --ink-text: #f5f5f3; --ink-muted: rgba(245,245,243,0.62);
+      --success: #0b7566; --success-bg: #d3f3ee; --error: #c4373a; --error-bg: #fde3e1; --warning: #8a5a00; --warning-bg: #fbefcc;
+      --shadow-sm: 0 1px 2px rgba(18,18,18,0.05); --shadow-md: 0 6px 20px rgba(18,18,18,0.07); --shadow-lg: 0 16px 40px rgba(18,18,18,0.16);
+      --rec-pulse: rgba(239,100,97,0.35);
     }
-
     [data-theme="dark"] {
-      --bg: #171614; --surface: #1c1b19; --surface-2: #201f1d;
-      --surface-offset: #1d1c1a; --surface-dynamic: #2d2c2a;
-      --border: oklch(0.85 0.005 80 / 0.12); --divider: #262523;
-      --text: #cdccca; --text-muted: #797876; --text-faint: #5a5957;
-      --text-inverse: #2b2a28;
-      --primary: #4f98a3; --primary-hover: #227f8b; --primary-active: #1a626b;
-      --primary-highlight: #313b3b;
-      --success: #6daa45; --success-bg: #3a4435;
-      --error: #d163a7; --error-bg: #4c3d46;
-      --warning: #bb653b; --warning-bg: #564942;
-      --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
-      --shadow-md: 0 4px 12px oklch(0 0 0 / 0.35);
-      --shadow-lg: 0 12px 32px oklch(0 0 0 / 0.45);
-      --rec-pulse: rgba(79,152,163,0.25);
+      --bg: #131315; --bg-end: #1b2036;
+      --bg-grad: linear-gradient(180deg, #1d1c19 0%, #161619 45%, #1b2036 100%);
+      --surface: #212124; --surface-2: #252528; --surface-raised: #252528; --surface-offset: #1b1b1e; --surface-dynamic: #2d2d31; --glass: rgba(42,42,46,0.72);
+      --border: rgba(255,255,255,0.09); --divider: rgba(255,255,255,0.09);
+      --text: #f2f2f0; --text-primary: #f2f2f0; --text-muted: #aaa9a4; --text-faint: #72716c; --text-inverse: #121212;
+      --primary: #1bbfa8; --primary-hover: #55d8c5; --primary-active: #17a894; --primary-highlight: #133b36;
+      --accent: #1bbfa8; --accent-soft: #133b36; --coral: #ef6461; --coral-soft: #4a2826; --lavender-soft: #262a44;
+      --ink: #2b2b30; --ink-text: #f5f5f3; --ink-muted: rgba(245,245,243,0.62);
+      --success: #5fdcc9; --success-bg: #133b36; --error: #ff8a86; --error-bg: #4a2826; --warning: #f0c060; --warning-bg: #40341a;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 6px 20px rgba(0,0,0,0.35); --shadow-lg: 0 16px 40px rgba(0,0,0,0.5);
+      --rec-pulse: rgba(239,100,97,0.35);
     }
-
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme]) {
-        --bg: #171614; --surface: #1c1b19; --surface-2: #201f1d;
-        --surface-offset: #1d1c1a; --surface-dynamic: #2d2c2a;
-        --border: oklch(0.85 0.005 80 / 0.12); --divider: #262523;
-        --text: #cdccca; --text-muted: #797876; --text-faint: #5a5957;
-        --text-inverse: #2b2a28;
-        --primary: #4f98a3; --primary-hover: #227f8b; --primary-active: #1a626b;
-        --primary-highlight: #313b3b;
-        --success: #6daa45; --success-bg: #3a4435;
-        --error: #d163a7; --error-bg: #4c3d46;
-        --warning: #bb653b; --warning-bg: #564942;
-        --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
-        --shadow-md: 0 4px 12px oklch(0 0 0 / 0.35);
-        --shadow-lg: 0 12px 32px oklch(0 0 0 / 0.45);
-        --rec-pulse: rgba(79,152,163,0.25);
+        --bg: #131315; --bg-end: #1b2036;
+        --bg-grad: linear-gradient(180deg, #1d1c19 0%, #161619 45%, #1b2036 100%);
+        --surface: #212124; --surface-2: #252528; --surface-raised: #252528; --surface-offset: #1b1b1e; --surface-dynamic: #2d2d31; --glass: rgba(42,42,46,0.72);
+        --border: rgba(255,255,255,0.09); --divider: rgba(255,255,255,0.09);
+        --text: #f2f2f0; --text-primary: #f2f2f0; --text-muted: #aaa9a4; --text-faint: #72716c; --text-inverse: #121212;
+        --primary: #1bbfa8; --primary-hover: #55d8c5; --primary-active: #17a894; --primary-highlight: #133b36;
+        --accent-soft: #133b36; --coral-soft: #4a2826; --lavender-soft: #262a44; --ink: #2b2b30;
+        --success: #5fdcc9; --success-bg: #133b36; --error: #ff8a86; --error-bg: #4a2826; --warning: #f0c060; --warning-bg: #40341a;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 6px 20px rgba(0,0,0,0.35); --shadow-lg: 0 16px 40px rgba(0,0,0,0.5);
       }
     }
 
@@ -174,7 +166,7 @@
     .video-duration { position: absolute; bottom: 3px; right: 5px; font-size: 9px; color: #fff; background: rgba(0,0,0,0.55); padding: 1px 4px; border-radius: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
     .video-link-thumb { display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--text-faint); text-align: center; padding: 4px; word-break: break-all; height: 100%; background: var(--surface-offset); }
     .compress-label { position: absolute; top: 3px; left: 3px; font-size: 9px; font-weight: 700; color: #fff; background: rgba(0,0,0,0.65); padding: 1px 4px; border-radius: 3px; pointer-events: none; letter-spacing: 0.02em; }
-    .compress-label.done { background: rgba(16,120,80,0.82); }
+    .compress-label.done { background: rgba(11,117,102,0.85); }
     .ct-web { background: var(--primary); color: var(--text-inverse); }
     .ct-web.inactive { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
     .ct-orig { background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.4); }
@@ -314,6 +306,88 @@
     }
     .pw-unlock-btn:hover { background: var(--primary-hover); }
     .pw-unlock-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* ═══ NAKED FARM UI v1 — component skin (overrides the rules above) ═════ */
+    body { background: var(--bg); line-height: 1.5; }
+    body::before { content: ''; position: fixed; inset: 0; z-index: -1; background: var(--bg-grad); }
+    header { border-bottom: none; box-shadow: none; padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2);
+      background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+    .logo-icon { color: var(--text); }
+    .logo-text { font-size: var(--text-base); font-weight: 700; }
+    .logo-text span { color: var(--text); font-weight: 800; }
+    .btn-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--glass); border: 1px solid var(--border); color: var(--text); box-shadow: var(--shadow-sm); }
+    .btn-icon:hover { background: var(--surface); color: var(--text); }
+    #authorBtn { border-radius: var(--radius-full) !important; min-height: 36px; padding: 0 var(--space-4) !important; }
+
+    /* Tabs → pill chips: which Notion database this capture goes to */
+    .tab-bar { background: transparent; border-bottom: none; padding: var(--space-2) var(--space-4); gap: var(--space-2); }
+    .tab-btn { flex: 0 0 auto; min-width: 0; min-height: 40px; padding: 0 var(--space-4); border-radius: var(--radius-full); border: 1px solid var(--border);
+      background: var(--glass); color: var(--text); font-weight: 650; box-shadow: var(--shadow-sm); }
+    .tab-btn:hover { background: var(--surface); color: var(--text); }
+    .tab-btn.active { background: var(--primary); color: var(--text-inverse); border-color: transparent; }
+
+    main { padding-top: var(--space-2); }
+    .hero { margin: var(--space-2) 0 var(--space-5); }
+    .hero h1 { font-size: clamp(1.9rem, 1.4rem + 2.2vw, 2.5rem); font-weight: 750; letter-spacing: -0.035em; line-height: 1.08; }
+    .hero p { color: var(--text-muted); margin-top: var(--space-2); font-size: var(--text-base); }
+    .section-label { font-size: var(--text-sm); font-weight: 650; text-transform: none; letter-spacing: -0.01em; color: var(--text); }
+
+    /* Cards */
+    .recorder-card, .entry-card, .config-panel { border-radius: var(--radius-xl); border: 1px solid var(--border); box-shadow: var(--shadow-md); background: var(--surface); }
+    .record-btn { background: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-lg); }
+    .record-btn:hover { background: var(--primary-hover); }
+    .record-btn:active { background: var(--primary-active); }
+    .record-btn.recording { background: var(--coral); color: #fff; }
+    .recorder-timer { color: var(--text); font-size: 2.25rem; }
+    .recorder-status { font-size: var(--text-sm); }
+
+    /* Text boxes: bigger, calmer, easier to read outdoors */
+    .editable-textarea, textarea { border-radius: var(--radius-lg); background: var(--surface); font-size: var(--text-base); line-height: 1.55; box-shadow: var(--shadow-sm); }
+    .editable-textarea.transcript-ta { font-family: var(--font-body); font-size: var(--text-sm); background: var(--surface); }
+    .editable-textarea:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
+    #noteTitle { min-height: 48px; border-radius: var(--radius-md) !important; background: var(--surface) !important; font-size: var(--text-base) !important; }
+
+    /* Pills */
+    .btn-copy, .btn-generate, .btn-attach, .btn-sm, .tag-chip { border-radius: var(--radius-full); min-height: 36px; padding: 0 var(--space-4); font-weight: 600; }
+    .btn-copy { background: var(--surface); color: var(--text); }
+    .btn-generate { background: var(--accent); color: #121212; border: none; }
+    .btn-generate:hover { background: var(--primary); color: var(--text-inverse); }
+    .transcribing-bar { background: var(--lavender-soft); color: var(--text); border: none; border-radius: var(--radius-full); }
+    .groq-badge { color: var(--text-muted); }
+    .tag-chip { display: inline-flex; align-items: center; background: var(--glass); color: var(--text); font-size: var(--text-sm); }
+    .tag-chip:hover { background: var(--surface); border-color: var(--border); color: var(--text); }
+    .tag-chip.selected { background: var(--primary); color: var(--text-inverse); border-color: transparent; }
+    .selected-tag { background: var(--accent); color: #121212; border: none; border-radius: var(--radius-full); padding: var(--space-1) var(--space-3); }
+    .priority-tag { background: var(--ink); color: var(--ink-text); border-radius: var(--radius-full); }
+    .tab-field-text, .tag-custom-row input, .video-link-row input { border-radius: var(--radius-md); min-height: 44px; font-size: var(--text-base); }
+
+    /* Config */
+    .config-toggle { border-radius: var(--radius-full); background: var(--glass); color: var(--text); min-height: 48px; box-shadow: var(--shadow-sm); }
+    .config-toggle:hover { background: var(--surface); color: var(--text); }
+
+    /* Log of sent notes */
+    .entry-tag { background: var(--lavender-soft); color: var(--text); }
+    .entry-status { display: inline-block; padding: 2px 10px; border-radius: var(--radius-full); }
+    .entry-status.sent { background: var(--success-bg); color: var(--success); }
+    .entry-status.pending { background: var(--warning-bg); color: var(--warning); }
+    .entry-status.failed { background: var(--coral); color: #fff; }
+
+    /* Send */
+    .submit-area { background: linear-gradient(to top, var(--bg-end) 55%, transparent); padding-bottom: calc(env(safe-area-inset-bottom) + var(--space-3)); }
+    .btn-submit { border-radius: var(--radius-full); min-height: 58px; background: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-lg); font-weight: 650; }
+    .btn-submit:hover { background: var(--primary-hover); }
+
+    /* Toast */
+    .toast { border-radius: var(--radius-full); background: var(--ink); color: var(--ink-text); font-weight: 600; }
+    .toast.success { background: var(--accent); color: #121212; }
+    .toast.error { background: var(--coral); color: #fff; }
+    .toast.info { background: var(--ink); color: var(--ink-text); }
+
+    /* Password gate */
+    #passwordGate { background: var(--bg-grad); }
+    .pw-card { border-radius: 28px; border: none; }
+    .pw-input-wrap input { border-radius: var(--radius-md); min-height: 48px; background: var(--surface-offset); }
+    .pw-unlock-btn { border-radius: var(--radius-full); min-height: 52px; }
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -327,7 +401,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.52';
+  const CURRENT_VERSION = '1.53';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -372,7 +446,7 @@
       <span style="font-size:1.3rem">✨</span>
       <div style="flex:1">
         <div style="font-weight:700;margin-bottom:2px">v ${newVersion} available</div>
-        <div style="font-size:var(--text-xs);color:var(--text-muted)">A new version of Brain+ is ready</div>
+        <div style="font-size:var(--text-xs);color:var(--text-muted)">A new version of Naked Brain is ready</div>
       </div>
       <button id="updateNowBtn" style="
         background:var(--primary);
@@ -530,8 +604,8 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="passwordGate" class="hidden" role="dialog" aria-modal="true" aria-label="App login">
   <div class="pw-card">
     <div style="text-align:center">
-      <div style="font-size:2rem">🔐</div>
-      <div style="font-size:var(--text-lg);font-weight:700;margin-top:var(--space-2)">FarmBox Brain+</div>
+      <img src="icon-192.png" alt="" style="width:64px;height:64px;border-radius:22.5%;border:2px solid var(--text);box-sizing:border-box;margin:0 auto;display:block">
+      <div style="font-size:var(--text-lg);font-weight:700;margin-top:var(--space-2)">Naked Brain</div>
       <div style="font-size:var(--text-sm);color:var(--text-muted);margin-top:var(--space-1)">Enter your team password to continue</div>
     </div>
     <div class="pw-input-wrap">
@@ -549,15 +623,8 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- HEADER -->
 <header>
   <div class="logo">
-    <svg class="logo-icon" aria-label="Ugly 200 logo" width="28" height="28" viewBox="0 0 28 28" fill="none">
-      <rect x="2" y="2" width="24" height="24" rx="7" fill="currentColor" opacity="0.12"/>
-      <rect x="2" y="2" width="24" height="24" rx="7" stroke="currentColor" stroke-width="1.5"/>
-      <rect x="12" y="6" width="4" height="10" rx="2" fill="currentColor"/>
-      <path d="M8 13c0 3.314 2.686 6 6 6s6-2.686 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="14" y1="19" x2="14" y2="22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="11" y1="22" x2="17" y2="22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-    </svg>
-    <span class="logo-text">FarmBox Brain<span>+</span></span>
+    <svg class="logo-icon" aria-hidden="true" width="30" height="30" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
+    <span class="logo-text">Naked <span>Brain</span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -587,6 +654,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- MAIN -->
 <main id="main-content">
+
+  <div class="hero">
+    <h1 id="heroTitle">Log an issue</h1>
+    <p id="heroSub">Record what you see — it goes to the Ugly200 list.</p>
+  </div>
 
   <!-- TITLE FIELD -->
   <div id="noteTitleWrap" class="editable-box-wrap" style="margin-bottom:var(--space-3)">
@@ -1052,6 +1124,14 @@ themeToggle.addEventListener('click', () => {
 });
 
 // ─── TABS ─────────────────────────────────────────────────────
+// Big task-focused title per tab: says what you're doing, not which database.
+const TAB_HERO = {
+  ugly200: ['Log an issue', 'Record what you see — it goes to the Ugly200 list.'],
+  sop:     ['Capture a procedure', 'Talk or film the steps — it is saved to the SoP database.'],
+  ideas:   ['Capture an idea', 'Say it now, sort it later.'],
+  daily:   ['Daily update', 'What got done, and what needs deciding.'],
+  fb1log:  ['FB1 build log', 'Record progress on the FarmBox 1 build.'],
+};
 function setActiveTab(tab) {
   activeTab = tab;
   localStorage.setItem('brain_activeTab', tab);
@@ -1062,6 +1142,11 @@ function setActiveTab(tab) {
   });
   const label = document.getElementById('submitTabLabel');
   if (label) label.textContent = TAB_LABELS[tab] || 'Notion';
+  const hero = TAB_HERO[tab];
+  if (hero) {
+    document.getElementById('heroTitle').textContent = hero[0];
+    document.getElementById('heroSub').textContent = hero[1];
+  }
   const noteWrap = document.getElementById('noteWrap');
   if (noteWrap) noteWrap.style.display = tab === 'daily' ? 'none' : '';
   const noteTitleWrap = document.getElementById('noteTitleWrap');

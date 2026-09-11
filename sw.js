@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v63';
+const CACHE_NAME = 'ugly200-v64';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -12,10 +12,13 @@ const STATIC_ASSETS = [
 ];
 
 // Install: cache all static assets
+// Precache with cache:'reload' so install always takes fresh files from the
+// server — a plain addAll() may copy stale icons/HTML out of the HTTP cache
+// into the new cache (seen with the v1.53 icon change).
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS.map(u => new Request(u, { cache: 'reload' }))))
   );
 });
 
