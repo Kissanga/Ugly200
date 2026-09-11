@@ -390,7 +390,8 @@
     .pw-unlock-btn { border-radius: var(--radius-full); min-height: 52px; }
 
     /* SETTINGS PAGE */
-    .logo-version { font-size: var(--text-xs); color: var(--text-faint); font-weight: 600; letter-spacing: 0.02em; align-self: center; margin-left: 2px; white-space: nowrap; }
+    .logo-mark { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1; }
+    .logo-version { font-family: var(--font-body); font-size: 9px; font-weight: 700; color: var(--text); letter-spacing: 0.02em; line-height: 1; white-space: nowrap; }
     #settingsPage { position: fixed; inset: 0; z-index: 500; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg-grad); }
     #settingsPage.hidden { display: none; }
     .settings-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--space-3); padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2);
@@ -420,7 +421,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '1.54';
+  const CURRENT_VERSION = '0.8';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -510,7 +511,7 @@
   // Keep the header version label in sync with CURRENT_VERSION (was hardcoded before).
   function updateVersionDisplay() {
     const el = document.getElementById('versionDisplay');
-    if (el) el.textContent = 'v ' + CURRENT_VERSION;
+    if (el) el.textContent = CURRENT_VERSION;
   }
 
   // Check for updates on page load
@@ -642,9 +643,8 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- HEADER -->
 <header>
   <div class="logo">
-    <svg class="logo-icon" aria-hidden="true" width="30" height="30" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
+    <span class="logo-mark"><svg class="logo-icon" aria-hidden="true" width="30" height="30" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg><span id="versionDisplay" class="logo-version">0.8</span></span>
     <span class="logo-text">Naked <span>Brain</span></span>
-    <span id="versionDisplay" class="logo-version">v 1.54</span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1155,7 +1155,7 @@ document.querySelectorAll('[data-theme-choice]').forEach(btn =>
 const settingsPage = document.getElementById('settingsPage');
 function openSettings() {
   setConfigLocked(true);
-  document.getElementById('settingsVersion').textContent = 'v ' + CURRENT_VERSION;
+  document.getElementById('settingsVersion').textContent = CURRENT_VERSION;
   settingsPage.classList.remove('hidden');
   settingsPage.scrollTop = 0;
   document.body.style.overflow = 'hidden';
