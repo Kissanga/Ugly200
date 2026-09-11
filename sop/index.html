@@ -308,6 +308,11 @@ const NOTION_SINGLE_PART_LIMIT = 20 * 1024 * 1024;
 // Naked Brain's login and follows its light/dark setting (default light).
 const EMBED = window.self !== window.top || new URLSearchParams(location.search).has('embed');
 const PW_KEY = EMBED ? 'brainplus_pw' : 'sopapp_pw', OPERATOR_KEY = 'sopapp_operator', RUN_KEY = 'sopapp_run';
+// Naked Brain's author name (Settings / header button), same origin storage.
+function authorName() {
+  try { return (JSON.parse(localStorage.getItem('ugly200_config') || '{}').authorName || '').trim(); }
+  catch (_) { return ''; }
+}
 function applyTheme() {
   const choice = localStorage.getItem('ugly200_theme') || 'light';
   if (choice === 'light' || choice === 'dark') document.documentElement.setAttribute('data-theme', choice);
@@ -756,7 +761,7 @@ async function showList({ force = false } = {}) {
   draw();
 
   const run = lsGet(RUN_KEY);
-  const first = (lsGet(OPERATOR_KEY, '') || '').trim().split(/\s+/)[0];
+  const first = (authorName() || lsGet(OPERATOR_KEY, '') || '').trim().split(/\s+/)[0];
   const h = new Date().getHours();
   const greet = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   view(
@@ -887,8 +892,8 @@ async function showRun(id) {
 
   if (!st) {
     const items = extractSteps(data.blocks);
-    const name = await askOperator();
-    if (name == null) { history.back(); return; }
+    const name = authorName() || await askOperator();   // prompt only as a last resort
+    if (!name) { history.back(); return; }
     st = { runId: uid(), sopId: id, sopTitle: sop.title, operator: name, startedAt: new Date().toISOString(),
       items, state: {}, notes: '' };
     saveRun(st);

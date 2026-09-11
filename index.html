@@ -426,6 +426,11 @@
     .wip-icon { font-size: 3.5rem; line-height: 1; margin-bottom: var(--space-3); }
     .wip-title { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
     .wip-text { color: var(--text-muted); margin-top: var(--space-2); }
+
+    /* AUTHOR DIALOG */
+    #authorGate { position: fixed; inset: 0; z-index: 10001; background: var(--bg-grad); display: flex; align-items: center; justify-content: center; padding: var(--space-6); }
+    #authorGate.hidden, #authorGateCancel.hidden { display: none; }
+    #authorGateCancel { min-height: 44px; border-radius: var(--radius-full); font-weight: 600; color: var(--text-muted); }
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -451,7 +456,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9';
+  const CURRENT_VERSION = '0.9.1';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -599,6 +604,7 @@ async function tryUnlockApp() {
     if (res.ok) {
       setAppPassword(pw);
       hidePasswordGate();
+      if (typeof ensureAuthor === 'function') ensureAuthor();
     } else {
       err.textContent = 'Wrong password — try again.';
       err.style.display = 'block';
@@ -673,6 +679,23 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div id="appPasswordError" class="pw-error" style="display:none"></div>
     <button class="pw-unlock-btn" id="unlockBtn" onclick="tryUnlockApp()">Unlock</button>
+  </div>
+</div>
+
+<!-- AUTHOR NAME: mandatory; asked after the first login and whenever it is missing -->
+<div id="authorGate" class="hidden" role="dialog" aria-modal="true" aria-labelledby="authorGateTitle">
+  <div class="pw-card">
+    <div style="text-align:center">
+      <img src="icon-192.png" alt="" style="width:56px;height:56px;border-radius:22.5%;margin:0 auto var(--space-2);display:block">
+      <div id="authorGateTitle" style="font-size:var(--text-lg);font-weight:700">What's your name?</div>
+      <div style="font-size:var(--text-sm);color:var(--text-muted);margin-top:var(--space-1)">It goes on every note you send and every checklist you complete.</div>
+    </div>
+    <div class="pw-input-wrap">
+      <input id="authorGateInput" type="text" placeholder="Your name" autocomplete="name" autocapitalize="words" spellcheck="false" aria-label="Your name">
+    </div>
+    <div id="authorGateError" class="pw-error" style="display:none">Please enter your name to continue.</div>
+    <button class="pw-unlock-btn" id="authorGateSave">Continue</button>
+    <button id="authorGateCancel" class="hidden">Cancel</button>
   </div>
 </div>
 
@@ -1182,15 +1205,43 @@ function syncAuthorBtn() {
   btn.textContent = val || 'Enter Author';
 }
 
-document.getElementById('authorBtn').addEventListener('click', () => {
-  const current = document.getElementById('authorName').value.trim();
-  const name = prompt('Author name:', current);
-  if (name === null) return; // cancelled
-  document.getElementById('authorName').value = name.trim();
+// The author name is mandatory: asked right after the first login and whenever
+// it is missing (e.g. cleared in Settings). It is also the name the SoP tab puts
+// on completed checklists. The header button reopens the dialog to change it;
+// an empty name is never accepted.
+function getAuthor() { return document.getElementById('authorName').value.trim(); }
+function setAuthor(name) {
+  document.getElementById('authorName').value = name;
   syncAuthorBtn();
   renderNoteStamp();
   saveConfig();
-});
+}
+function openAuthorGate(canCancel) {
+  const input = document.getElementById('authorGateInput');
+  input.value = getAuthor();
+  document.getElementById('authorGateError').style.display = 'none';
+  document.getElementById('authorGateCancel').classList.toggle('hidden', !canCancel);
+  document.getElementById('authorGate').classList.remove('hidden');
+  setTimeout(() => input.focus(), 50);
+}
+function saveAuthorGate() {
+  const name = document.getElementById('authorGateInput').value.trim().replace(/\s+/g, ' ');
+  if (!name) {
+    document.getElementById('authorGateError').style.display = 'block';
+    document.getElementById('authorGateInput').focus();
+    return;
+  }
+  setAuthor(name);
+  document.getElementById('authorGate').classList.add('hidden');
+}
+function ensureAuthor() {
+  if (getAppPassword() && !getAuthor()) openAuthorGate(false);
+}
+document.getElementById('authorBtn').addEventListener('click', () => openAuthorGate(true));
+document.getElementById('authorGateSave').addEventListener('click', saveAuthorGate);
+document.getElementById('authorGateInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveAuthorGate(); });
+document.getElementById('authorGateCancel').addEventListener('click', () =>
+  document.getElementById('authorGate').classList.add('hidden'));
 
 // Sync on load (after loadConfig runs)
 document.addEventListener('DOMContentLoaded', syncAuthorBtn);
@@ -1228,6 +1279,7 @@ function closeSettings() {
   settingsPage.classList.add('hidden');
   document.body.style.overflow = '';
   setConfigLocked(true);
+  ensureAuthor();
 }
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('settingsBack').addEventListener('click', () =>
@@ -3769,6 +3821,7 @@ renderNoteStamp();
 renderEntries();
 updateSubmitBtn();
 setActiveTab(activeTab);
+ensureAuthor();
 </script>
 </body>
 </html>
