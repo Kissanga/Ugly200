@@ -417,13 +417,8 @@
     .app-tab { flex: 1; min-height: 44px; border-radius: var(--radius-full); font-weight: 700; font-size: var(--text-sm); color: var(--text-muted); }
     .app-tab.active { background: var(--primary); color: var(--text-inverse); }
     .app-view { display: none; }
-    body.mode-tasks #viewTasks { display: block; max-width: 640px; margin: 0 auto; padding: var(--space-4) var(--space-4) var(--space-8); }
     body.mode-sop #viewSop { display: block; }
     body:not(.mode-capture) .tab-bar, body:not(.mode-capture) #main-content, body:not(.mode-capture) .submit-area { display: none; }
-    .wip-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); padding: var(--space-8) var(--space-5); text-align: center; }
-    .wip-icon { font-size: 3.5rem; line-height: 1; margin-bottom: var(--space-3); }
-    .wip-title { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em; }
-    .wip-text { color: var(--text-muted); margin-top: var(--space-2); }
 
     /* AUTHOR DIALOG */
     #authorGate { position: fixed; inset: 0; z-index: 10001; background: var(--bg-grad); display: flex; align-items: center; justify-content: center; padding: var(--space-6); }
@@ -614,14 +609,14 @@
   <!-- MP4Box: demuxes the source AAC track so the compressor can remux audio into the output MP4 (iOS fix). Bundled for offline use. -->
   <script src="mp4box.all.min.js"></script>
 </head>
-<body class="mode-tasks">
+<body class="mode-sop">
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.4';
+  const CURRENT_VERSION = '0.9.5';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -770,6 +765,7 @@ async function tryUnlockApp() {
       setAppPassword(pw);
       hidePasswordGate();
       if (typeof ensureAuthor === 'function') ensureAuthor();
+      if (window.sopOpen && document.body.classList.contains('mode-sop')) window.sopOpen();
     } else {
       err.textContent = 'Wrong password — try again.';
       err.style.display = 'block';
@@ -870,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.4</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.5</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -885,31 +881,17 @@ document.addEventListener('DOMContentLoaded', () => {
   </div>
 </header>
 
-<!-- APP TABS: Tasks / SoP / Capture (the app always opens on Tasks) -->
+<!-- APP TABS: Tasks (procedures & checklists) and Capture; the app opens on Tasks -->
 <nav class="app-tabs" id="appTabs" role="tablist" aria-label="Sections">
-  <button class="app-tab" role="tab" data-mode="tasks">Tasks</button>
-  <button class="app-tab" role="tab" data-mode="sop">SoP</button>
+  <button class="app-tab" role="tab" data-mode="sop">Tasks</button>
   <button class="app-tab" role="tab" data-mode="capture">Capture</button>
 </nav>
 
-<!-- TASKS: work in progress -->
-<section class="app-view" id="viewTasks" aria-label="Tasks">
-  <div class="hero">
-    <h1>Tasks</h1>
-    <p>Your farm work for the day.</p>
-  </div>
-  <div class="wip-card">
-    <div class="wip-icon" aria-hidden="true">🚧</div>
-    <div class="wip-title">Work in progress</div>
-    <div class="wip-text">Tasks are coming soon: daily farm work assigned to you, each with its SOP checklist.</div>
-  </div>
-</section>
-
 <!-- SOP: procedures, checklists, editor and import (SoP module script at the end) -->
-<section class="app-view" id="viewSop" aria-label="SOP">
+<section class="app-view" id="viewSop" aria-label="Tasks">
   <div class="sop-bar">
     <button id="sop-backBtn" class="btn-icon hidden" aria-label="Back">←</button>
-    <div id="sop-hdrTitle" class="hdr-title">Procedures</div>
+    <div id="sop-hdrTitle" class="hdr-title"></div>
     <span id="sop-netPill" class="net-pill hidden">Offline</span>
     <button id="sop-syncBtn" class="btn-icon hidden" aria-label="Upload pending runs" title="Upload pending runs">⇪</button>
     <button id="sop-menuBtn" class="btn-icon" aria-label="SoP menu">⋯</button>
@@ -1494,12 +1476,12 @@ document.querySelectorAll('.tab-btn').forEach(btn =>
   btn.addEventListener('click', () => setActiveTab(btn.dataset.tab))
 );
 
-// ─── APP SECTIONS: Tasks / SoP / Capture ─────────────────────
-// Always opens on Tasks; the home-screen "New Voice Note" shortcut
-// (?action=record) opens Capture. SoP is the SoP module (script at the end of
-// the page); it starts the first time its tab is opened.
+// ─── APP SECTIONS: Tasks / Capture ───────────────────────────
+// Opens on Tasks (mode 'sop': the SoP module — procedures and checklists,
+// script at the end of the page); the home-screen "New Voice Note" shortcut
+// (?action=record) opens Capture.
 function setAppMode(mode) {
-  document.body.classList.remove('mode-tasks', 'mode-sop', 'mode-capture');
+  document.body.classList.remove('mode-sop', 'mode-capture');
   document.body.classList.add('mode-' + mode);
   document.querySelectorAll('.app-tab').forEach(btn => {
     const on = btn.dataset.mode === mode;
@@ -1514,7 +1496,7 @@ document.querySelectorAll('.app-tab').forEach(btn =>
 // The SoP part used to run from sop/ with its own service worker: remove it.
 navigator.serviceWorker?.getRegistrations().then(regs =>
   regs.filter(r => /\/sop\/$/.test(r.scope)).forEach(r => r.unregister())).catch(() => {});
-setAppMode(new URLSearchParams(location.search).get('action') === 'record' ? 'capture' : 'tasks');
+setAppMode(new URLSearchParams(location.search).get('action') === 'record' ? 'capture' : 'sop');
 
 
 // ─── TOAST ───────────────────────────────────────────────────
@@ -4308,7 +4290,7 @@ function go(hash) { location.hash = hash; }
 function setHeader(title, back) {
   const t = $('hdrTitle');
   t.textContent = '';
-  if (title) t.textContent = title; else t.textContent = 'Procedures';
+  if (title) t.textContent = title; else t.textContent = '';
   $('backBtn').classList.toggle('hidden', !back);
 }
 function view(...nodes) { const v = $('view'); v.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); window.scrollTo(0, 0); return v; }
@@ -4400,7 +4382,7 @@ async function showList({ force = false } = {}) {
   view(
     data.offline ? el('div', { class: 'banner warn' }, `Offline copy from ${fmtDate(data.at)} ${fmtTime(data.at)}`) : null,
     el('div', { class: 'hero' }, el('h1', null, `${greet}${first ? ', ' + first : ''}!`),
-      el('p', null, run ? 'You have a checklist in progress.' : 'Pick a procedure and follow it step by step.')),
+      el('p', null, run ? 'You have a checklist in progress.' : 'Your farm work for the day.')),
     run ? resumeCard(run) : null,
     el('div', { class: 'sec-head' }, el('h2', null, 'Procedures'), el('span', { class: 'badge', text: String(data.list.length) })),
     el('div', { class: 'search-wrap' }, search, chips),
@@ -5377,6 +5359,7 @@ function sopOpen() {
   route();
 }
 window.sopOpen = sopOpen;
+if (document.body.classList.contains('mode-sop')) sopOpen();   // the app opens on this tab
 })();
 </script>
 </body>
