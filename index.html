@@ -671,7 +671,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.14';
+  const CURRENT_VERSION = '0.9.15';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -962,7 +962,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.14</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.15</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1092,7 +1092,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="editable-box-header">
       <div class="section-label" style="margin-bottom:0">Voice summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="generateSummaryBtn" aria-label="Generate the voice summary" title="Write the voice summary with AI">
+        <button class="btn-generate" id="generateSummaryBtn" aria-label="Write the voice summary with AI" title="Write the voice summary with AI">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         AI
       </button>
@@ -1110,7 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="dot-spin"></div>
       <span>Writing the summary…</span>
     </div>
-    <textarea class="editable-textarea summary-ta" id="summaryText" placeholder="Tap Generate to write the summary… or type your own." rows="3"></textarea>
+    <textarea class="editable-textarea summary-ta" id="summaryText" placeholder="Tap AI to write the summary… or type your own." rows="3"></textarea>
   </div>
 
   <!-- VIDEO TRANSCRIPTION -->
@@ -1141,7 +1141,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="editable-box-header">
       <div class="section-label" style="margin-bottom:0">Video summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate the video summary" title="Write the video summary with AI">
+        <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Write the video summary with AI" title="Write the video summary with AI">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         AI
       </button>
@@ -1159,7 +1159,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="dot-spin"></div>
       <span>Writing the video summary…</span>
     </div>
-    <textarea class="editable-textarea summary-ta" id="videoSummaryText" placeholder="Tap Generate to write the video summary… or type your own." rows="3"></textarea>
+    <textarea class="editable-textarea summary-ta" id="videoSummaryText" placeholder="Tap AI to write the video summary… or type your own." rows="3"></textarea>
   </div>
 
   <!-- TEXT NOTE (hidden on Daily tab — Daily has its own Note field) -->
@@ -1495,6 +1495,7 @@ function setAuthor(name) {
   syncAuthorBtn();
   renderNoteStamp();
   saveConfig();
+  syncDailyTitle(activeTab);
 }
 function openAuthorGate(canCancel) {
   const input = document.getElementById('authorGateInput');
@@ -1576,6 +1577,26 @@ const TAB_HERO = {
   daily:   ['Daily update', 'What got done, and what needs deciding.'],
   fb1log:  ['FB1 build log', 'Record progress on the FarmBox 1 build.'],
 };
+// Daily: the Title box shows the author's name automatically (still editable).
+// The box is shared by all Capture tabs, so an untouched automatic name is
+// cleared again when you leave Daily — it never becomes an Ugly200/SoP title.
+function syncDailyTitle(tab) {
+  const input = document.getElementById('noteTitle');
+  if (!input) return;
+  const author = document.getElementById('authorName')?.value.trim() || '';
+  const current = input.value.trim();
+  if (tab === 'daily') {
+    if (!current || input.dataset.auto === '1' || current === author) {
+      input.value = author;
+      input.dataset.auto = '1';
+    }
+  } else if (input.dataset.auto === '1') {
+    if (current === author) input.value = '';
+    delete input.dataset.auto;
+  }
+}
+document.getElementById('noteTitle').addEventListener('input', e => { delete e.target.dataset.auto; });
+
 function setActiveTab(tab) {
   activeTab = tab;
   localStorage.setItem('brain_activeTab', tab);
@@ -1594,7 +1615,8 @@ function setActiveTab(tab) {
   const noteWrap = document.getElementById('noteWrap');
   if (noteWrap) noteWrap.style.display = tab === 'daily' ? 'none' : '';
   const noteTitleWrap = document.getElementById('noteTitleWrap');
-  if (noteTitleWrap) noteTitleWrap.style.display = tab === 'daily' ? 'none' : '';
+  if (noteTitleWrap) noteTitleWrap.style.display = '';   // Title on every tab (Daily too, 0.9.15)
+  syncDailyTitle(tab);
   renderTabFields(tab);
   updateSubmitBtn();
 }
@@ -3752,7 +3774,7 @@ async function submitToNotion() {
   const note        = document.getElementById('noteText').value.trim();
   const titleInput  = document.getElementById('noteTitle').value.trim();
   const title       = activeTab === 'daily'
-    ? (authorName || 'Daily')
+    ? (titleInput || authorName || 'Daily')
     : titleInput || summary || transcript.slice(0, 80) || note.slice(0, 80) || 'Voice Note';
 
   const btn = document.getElementById('submitBtn');
@@ -3901,6 +3923,7 @@ async function submitToNotion() {
 
 function resetForm() {
   document.getElementById('noteTitle').value = '';
+  syncDailyTitle(activeTab);   // Daily: the author name comes back for the next note
   document.getElementById('transcriptText').value = '';
   document.getElementById('summaryText').value = '';
   document.getElementById('noteText').value = '';
