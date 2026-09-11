@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v66';
+const CACHE_NAME = 'ugly200-v68';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -45,6 +45,8 @@ self.addEventListener('fetch', e => {
   // Let external API calls (Groq, Notion proxy) go straight to network
   if (!url.origin.startsWith(self.location.origin)) return;
   if (request.method !== 'GET') return;
+  // version.json is the update signal: always straight to the network, never cached.
+  if (url.pathname.endsWith('/version.json')) return;
 
   const isHTML = request.mode === 'navigate' ||
     request.destination === 'document' ||
