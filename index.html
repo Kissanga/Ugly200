@@ -621,7 +621,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.3';
+  const CURRENT_VERSION = '0.9.4';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -712,7 +712,7 @@
   // Keep the header version label in sync with CURRENT_VERSION (was hardcoded before).
   function updateVersionDisplay() {
     const el = document.getElementById('versionDisplay');
-    if (el) el.textContent = 'v ' + CURRENT_VERSION;
+    if (el) el.textContent = CURRENT_VERSION;
   }
 
   // Check for updates on page load
@@ -870,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta</span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.4</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
