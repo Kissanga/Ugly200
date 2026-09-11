@@ -651,7 +651,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.9';
+  const CURRENT_VERSION = '0.9.10';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -942,7 +942,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.9</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.10</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1308,10 +1308,11 @@ const TAB_SCHEMAS = {
     { key: 'Effort',   type: 'select',       options: ['XS','S','M','L','XL'] },
   ],
   daily: [
+    // Same order as the columns in the Notion Daily database
+    { key: 'FarmBox1', aliases: ['Done today'], type: 'text', multiline: true },
+    { key: 'FarmLab', aliases: ['FarmLab Update'], type: 'text', multiline: true },
+    { key: 'Tech Plan', aliases: ['TechPlan', 'Key milestone'], type: 'text', multiline: true },
     { key: 'Decisions needed', type: 'text', multiline: true },
-    { key: 'FarmBox1',               type: 'text', multiline: true },
-    { key: 'FarmLab Update',  type: 'text', multiline: true },
-    { key: 'TechPlan',        type: 'text', multiline: true },
   ],
   fb1log: [
     { key: 'Phase', type: 'select', options: ['Ground','Foundations','Frame','Plastic','Growing','Hydroponics','Irrigation','Electrical','Automation','Finishing'] },
@@ -3668,6 +3669,7 @@ async function submitToNotion() {
     return;
   }
 
+  delete _dbPropsCache[dbId];   // re-read the columns on every send: they can be renamed in Notion
   const dbProps     = await getDbProps(dbId);
   const titleProp   = Object.entries(dbProps).find(([, v]) => v.type === 'title')?.[0] || 'Title';
   const voiceTranscript = document.getElementById('transcriptText').value.trim();
@@ -3769,21 +3771,28 @@ async function submitToNotion() {
     }
   }
 
-  // Schema-based fields (all tabs, including Daily).
+  // Schema-based fields (all tabs, including Daily). Each field goes to the
+  // column that exists in the live Notion database — its key, or an older name
+  // listed in `aliases` — so a column renamed in Notion never makes Notion reject
+  // the whole note. A field with no matching column is left out and reported.
   const schema = TAB_SCHEMAS[activeTab] || [];
+  const knownCols = Object.keys(dbProps).length > 0;
+  const missingCols = [];
   schema.forEach(field => {
     const val = getTabValue(activeTab, field.key);
     if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
+    const col = knownCols ? [field.key, ...(field.aliases || [])].find(n => n in dbProps) : field.key;
+    if (field.type !== 'priorities' && !col) { missingCols.push(field.label || field.key); return; }
     if (field.type === 'multi_select') {
-      properties[field.key] = { multi_select: val.map(name => ({ name })) };
+      properties[col] = { multi_select: val.map(name => ({ name })) };
     } else if (field.type === 'select') {
-      properties[field.key] = { select: { name: val } };
+      properties[col] = { select: { name: val } };
     } else if (field.type === 'priorities') {
       (field.props || ['P1','P2','P3']).forEach(p => {
         if (val[p]?.trim()) properties[p] = { rich_text: [{ text: { content: val[p].trim().slice(0, 2000) } }] };
       });
     } else if (field.type === 'text') {
-      properties[field.key] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
+      properties[col] = { rich_text: [{ text: { content: String(val).slice(0, 2000) } }] };
     }
   });
 
@@ -3802,7 +3811,9 @@ async function submitToNotion() {
       const err = await res.json();
       throw new Error(err.message || 'Notion error');
     }
-    showToast(`Sent to ${TAB_LABELS[activeTab]} ✓`, 'success');
+    showToast(`Sent to ${TAB_LABELS[activeTab]} ✓` +
+      (missingCols.length ? ` — not in Notion, left out: ${missingCols.join(', ')}` : ''),
+      missingCols.length ? 'info' : 'success');
     saveEntry({ title, transcript, note, tab: activeTab, fields: { ...(tabValues[activeTab] || {}) }, status: 'sent' });
     resetForm();
   } catch(e) {
