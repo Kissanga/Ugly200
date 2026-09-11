@@ -644,7 +644,7 @@
     .editable-box-actions { gap: 4px; flex-wrap: nowrap; justify-content: flex-end; flex-shrink: 0; }
     .editable-box-actions .btn-copy, .editable-box-actions .btn-generate { min-height: 32px; padding: 0 8px; font-size: 12px; gap: 3px; white-space: nowrap; }
     .editable-box-actions svg { width: 11px; height: 11px; }
-    @media (max-width: 350px) { .editable-box-header { flex-wrap: wrap; } }   /* tiny screens: let the buttons drop below */
+    @media (max-width: 320px) { .editable-box-header { flex-wrap: wrap; } }   /* tiny screens: let the buttons drop below */
     .editable-textarea { min-height: 72px; }
   </style>
   <link rel="manifest" href="manifest.json">
@@ -671,7 +671,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.13';
+  const CURRENT_VERSION = '0.9.14';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -962,7 +962,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.13</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.14</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1092,10 +1092,10 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="editable-box-header">
       <div class="section-label" style="margin-bottom:0">Voice summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="generateSummaryBtn" aria-label="Generate the voice summary">
+        <button class="btn-generate" id="generateSummaryBtn" aria-label="Generate the voice summary" title="Write the voice summary with AI">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-      Generate
-    </button>
+        AI
+      </button>
         <button class="btn-copy" id="copySummaryBtn" aria-label="Copy summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
@@ -1141,10 +1141,10 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="editable-box-header">
       <div class="section-label" style="margin-bottom:0">Video summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate the video summary">
+        <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate the video summary" title="Write the video summary with AI">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-      Generate
-    </button>
+        AI
+      </button>
         <button class="btn-copy" id="copyVideoSummaryBtn" aria-label="Copy video summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
