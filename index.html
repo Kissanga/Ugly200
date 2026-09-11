@@ -651,7 +651,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.10';
+  const CURRENT_VERSION = '0.9.11';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -942,7 +942,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.10</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.11</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1291,6 +1291,12 @@ const TAB_LABELS = { ugly200: 'Ugly200', sop: 'SoP', ideas: 'Ideas', daily: 'Dai
 const TAB_DB     = { ugly200: 'notionDbId_ugly200', sop: 'notionDbId_sop', ideas: 'notionDbId_ideas', daily: 'notionDbId_daily', fb1log: 'notionDbId_fb1log' };
 let activeTab = localStorage.getItem('brain_activeTab') || 'ugly200';
 
+// Local calendar date as YYYY-MM-DD. toISOString() gives the UTC date, which
+// is still yesterday in the early morning in South Africa.
+function localDateISO(d = new Date()) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 const TAB_SCHEMAS = {
   ugly200: [
     { key: 'Tags',     type: 'multi_select', options: ['FarmBox','Field Visit','Urgent','Greenhouse','Energy','Robotics'] },
@@ -1308,7 +1314,8 @@ const TAB_SCHEMAS = {
     { key: 'Effort',   type: 'select',       options: ['XS','S','M','L','XL'] },
   ],
   daily: [
-    // Same order as the columns in the Notion Daily database
+    // Same order as the columns in the Notion Daily database, with the date first
+    { key: 'Date', type: 'date' },
     { key: 'FarmBox1', aliases: ['Done today'], type: 'text', multiline: true },
     { key: 'FarmLab', aliases: ['FarmLab Update'], type: 'text', multiline: true },
     { key: 'Tech Plan', aliases: ['TechPlan', 'Key milestone'], type: 'text', multiline: true },
@@ -3301,6 +3308,19 @@ function renderTabFields(tab) {
         updateSubmitBtn();
       });
       wrap.appendChild(input);
+    } else if (field.type === 'date') {
+      // Date only (no time). Shows today until changed; today is not stored,
+      // so an untouched date never counts as content on its own.
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.className = 'tab-field-text';
+      input.value = getTabValue(tab, field.key) || localDateISO();
+      input.setAttribute('aria-label', field.label || field.key);
+      input.addEventListener('change', () => {
+        setTabValue(tab, field.key, input.value && input.value !== localDateISO() ? input.value : null);
+        updateSubmitBtn();
+      });
+      wrap.appendChild(input);
     } else if (field.type === 'priorities') {
       const stored = getTabValue(tab, field.key) || {};
       (field.props || ['P1','P2','P3']).forEach(p => {
@@ -3434,7 +3454,8 @@ document.addEventListener('visibilitychange', () => {
 // ─── SUBMIT BUTTON STATE ─────────────────────────────────────
 function updateSubmitBtn() {
   saveDraft();
-  const persistKeys = (TAB_SCHEMAS[activeTab] || []).filter(f => f.persist).map(f => f.key);
+  // Weekly priorities (persistent) and the date don't count as content on their own
+  const persistKeys = (TAB_SCHEMAS[activeTab] || []).filter(f => f.persist || f.type === 'date').map(f => f.key);
   const tabHasValues = Object.entries(tabValues[activeTab] || {}).some(([k, v]) =>
     !persistKeys.includes(k) && (Array.isArray(v) ? v.length > 0 : (typeof v === 'object' ? Object.values(v).some(x => x) : !!v))
   );
@@ -3759,10 +3780,10 @@ async function submitToNotion() {
   }
 
   if (activeTab === 'daily') {
-    // Daily: date → detected date property.
+    // Daily: the date chosen in the form, date only (no time); today if unchanged.
     const dateEntry = Object.entries(dbProps).find(([, v]) => v.type === 'date');
     if (dateEntry) {
-      properties[dateEntry[0]] = { date: { start: noteStartTime.toISOString() } };
+      properties[dateEntry[0]] = { date: { start: getTabValue('daily', 'Date') || localDateISO(noteStartTime) } };
     }
   } else {
     properties['Date'] = { date: { start: noteStartTime.toISOString() } };
