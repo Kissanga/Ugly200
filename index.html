@@ -591,6 +591,41 @@
     #viewSop .preview-box { max-height: 40dvh; overflow-y: auto; white-space: pre-wrap; font-size: var(--text-xs); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); }
     #viewSop .sop-bar { position: static; padding: var(--space-2) var(--space-4) 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; max-width: 46rem; margin: 0 auto; }
     #viewSop .sop-main { padding-top: var(--space-1); }
+
+    /* Tasks dashboard: checklists per family */
+    #viewSop .dash { margin-bottom: var(--space-2); }
+    #viewSop .dash-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+    #viewSop .dash-period { min-height: 44px; padding: 0 var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: var(--text-sm); }
+    #viewSop .dash-range { font-size: var(--text-sm); color: var(--text-muted); }
+    #viewSop .dash-panel { background: var(--accent-soft); border-radius: var(--radius-xl); padding: var(--space-4); }
+    #viewSop .dash-intro { font-size: var(--text-sm); color: var(--text); margin-bottom: var(--space-3); }
+    #viewSop .dash-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); }
+    #viewSop .dash-card { position: relative; background: var(--surface); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-3) var(--space-3); text-align: center; box-shadow: var(--shadow-sm); }
+    #viewSop .dash-go { position: absolute; top: 4px; right: 4px; width: 36px; height: 36px; border-radius: 50%; color: var(--text-faint); font-size: 1rem; }
+    #viewSop .dash-go:hover { color: var(--text); background: var(--surface-offset); }
+    #viewSop .dash-nums { display: flex; justify-content: center; align-items: center; gap: var(--space-3); font-size: 2.2rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    #viewSop .dash-nums .n-ok { color: var(--text); }
+    #viewSop .dash-nums .n-open { color: var(--text-muted); }
+    #viewSop .dash-sep { width: 1.5px; height: 1.8rem; background: var(--border); }
+    #viewSop .dash-bar { height: 8px; border-radius: var(--radius-full); background: var(--surface-dynamic); margin: var(--space-2) var(--space-1) 0; overflow: hidden; }
+    #viewSop .dash-fill { height: 100%; border-radius: var(--radius-full); background: var(--accent); transition: width 300ms; }
+    #viewSop .dash-title { font-weight: 700; margin-top: var(--space-2); }
+    #viewSop .dash-sub { display: flex; justify-content: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+    #viewSop .dash-note { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-3); }
+    #viewSop .dash-note:empty { display: none; }
+    #viewSop .dash-legend { display: none; justify-content: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-2); }
+    @media (max-width: 440px) {
+      #viewSop .dash-panel { padding: var(--space-3); }
+      #viewSop .dash-cards { grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+      #viewSop .dash-card { padding: 1.9rem var(--space-1) var(--space-3); }
+      #viewSop .dash-go { width: 28px; height: 28px; top: 2px; right: 2px; font-size: 0.85rem; }
+      #viewSop .dash-nums { font-size: 1.6rem; gap: var(--space-2); }
+      #viewSop .dash-sep { height: 1.3rem; }
+      #viewSop .dash-bar { height: 6px; }
+      #viewSop .dash-title { font-size: 0.8rem; line-height: 1.25; }
+      #viewSop .dash-sub { display: none; }
+      #viewSop .dash-legend { display: flex; }
+    }
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -616,7 +651,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.5';
+  const CURRENT_VERSION = '0.9.6';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -866,7 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.5</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.6</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -3984,6 +4019,10 @@ const NOTION_VERSION = '2022-06-28';                    // the Worker forces thi
 const SOP_DB = '3581301d4ab8819693a1e1d1f958e6d6';      // Naked Farm / Brain+ / 📋 SoP
 const RUNS_DB = '2bb3587c362a490882496c3967dda7db';     // Naked Farm / Brain+ / SOP Runs
 const CATEGORIES = ['Field Ops', 'Safety', 'Hardware', 'Software'];
+// Families = the SOP's "Family" field in Notion; the Tasks dashboard groups by them.
+const FAMILIES = [['Agriculture', '🌱'], ['Maintenance', '🔧'], ['Office', '🗂️']];
+const FAMILY_ICON = Object.fromEntries(FAMILIES);
+const DASH_KEY = 'sopapp_dash_period';
 const STATUSES = ['Draft', 'In Review', 'Approved', 'Archived'];
 // Groq retires models and the old id then hard-fails — check
 // https://console.groq.com/docs/deprecations first if AI import breaks.
@@ -4104,6 +4143,7 @@ function sopProps(page) {
     note: plain(p.Summary?.rich_text) || plain(p.Note?.rich_text),
     date: p['Effective Date']?.date?.start || p.Date?.date?.start || '',
     docType: p['Document Type']?.select?.name || '',
+    family: p.Family?.select?.name || '',
     icon: page.icon?.type === 'emoji' ? page.icon.emoji : '',
     url: page.url,
     edited: page.last_edited_time,
@@ -4350,7 +4390,7 @@ function confirmSheet(title, text, okLabel, danger = false) {
 }
 
 // ─── LIST VIEW ───────────────────────────────────────────────
-let listFilter = { q: '', cat: '' };
+let listFilter = { q: '', cat: '', fam: '' };
 async function showList({ force = false } = {}) {
   setHeader(null, false);
   const cached = await idbGet('sops');
@@ -4364,11 +4404,14 @@ async function showList({ force = false } = {}) {
   const results = el('div');
   const draw = () => {
     const q = listFilter.q.toLowerCase();
-    const shown = data.list.filter(s => (!listFilter.cat || s.category === listFilter.cat) &&
+    const shown = data.list.filter(s => (!listFilter.cat || s.category === listFilter.cat) && (!listFilter.fam || s.family === listFilter.fam) &&
       (!q || (s.title + ' ' + s.note + ' ' + s.category).toLowerCase().includes(q)));
     results.replaceChildren(...(shown.length ? shown.map(sopCard) :
       [el('div', { class: 'empty', text: data.list.length ? 'No SOP matches.' : 'No SOPs yet — create or import one.' })]));
-    chips.replaceChildren(...['', ...CATEGORIES].map(c => el('button', {
+    chips.replaceChildren(
+      ...(listFilter.fam ? [el('button', { class: 'chip active', 'aria-label': 'Clear family filter',
+        onclick: () => { listFilter.fam = ''; draw(); } }, `${FAMILY_ICON[listFilter.fam] || ''} ${listFilter.fam} ✕`)] : []),
+      ...['', ...CATEGORIES].map(c => el('button', {
       class: 'chip' + (listFilter.cat === c ? ' active' : ''), 'aria-pressed': String(listFilter.cat === c),
       onclick: () => { listFilter.cat = c; draw(); } }, c || 'All')));
   };
@@ -4384,6 +4427,7 @@ async function showList({ force = false } = {}) {
     el('div', { class: 'hero' }, el('h1', null, `${greet}${first ? ', ' + first : ''}!`),
       el('p', null, run ? 'You have a checklist in progress.' : 'Your farm work for the day.')),
     run ? resumeCard(run) : null,
+    dashboard(data.list, fam => { listFilter.fam = fam; draw(); results.scrollIntoView({ behavior: 'smooth', block: 'start' }); }),
     el('div', { class: 'sec-head' }, el('h2', null, 'Procedures'), el('span', { class: 'badge', text: String(data.list.length) })),
     el('div', { class: 'search-wrap' }, search, chips),
     results,
@@ -4403,8 +4447,113 @@ function sopCard(s) {
       el('div', { class: 'meta' },
         s.status ? el('span', { class: 'badge ' + s.status.replace(/\s/g, ''), text: s.status }) : null,
         s.docType ? el('span', { class: 'badge', text: s.docType }) : null,
+        s.family ? el('span', { text: `${FAMILY_ICON[s.family] || ''} ${s.family}` }) : null,
         s.category ? el('span', { text: s.category }) : null)),
     el('span', { class: 'round', 'aria-hidden': 'true' }, '↗'));
+}
+
+// ─── DASHBOARD: checklists per family, Complete | Incomplete ──
+// Complete = runs saved as Completed. Incomplete = Partial or Aborted runs,
+// plus a checklist started on this phone and not finished. A run belongs to the
+// family of its SOP (SOP relation → the SOP's Family field).
+function periodRange(p) {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  if (p === 'week') start.setDate(start.getDate() - (start.getDay() + 6) % 7);   // weeks start on Monday
+  if (p === 'month') start.setDate(1);
+  const end = new Date(start);
+  if (p === 'today') end.setDate(end.getDate() + 1);
+  else if (p === 'week') end.setDate(end.getDate() + 7);
+  else end.setMonth(end.getMonth() + 1);
+  return { start, end };
+}
+function periodLabel(p, { start, end }) {
+  const d = x => x.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  if (p === 'today') return 'Today: ' + d(start);
+  if (p === 'week') { const last = new Date(end); last.setDate(last.getDate() - 1); return `This week: ${d(start)} – ${d(last)}`; }
+  return 'This month: ' + start.toLocaleDateString([], { month: 'long', year: 'numeric' });
+}
+async function loadRunStats(p) {
+  const range = periodRange(p);
+  const key = 'dash:' + p + ':' + range.start.toISOString().slice(0, 10);
+  let rows, offline = false;
+  try {
+    rows = [];
+    let cursor;
+    do {
+      const r = await notion(`databases/${RUNS_DB}/query`, 'POST', { page_size: 100, start_cursor: cursor,
+        filter: { and: [{ property: 'Started', date: { on_or_after: range.start.toISOString() } },
+                        { property: 'Started', date: { before: range.end.toISOString() } }] } });
+      rows.push(...r.results.map(pg => ({ sopId: (pg.properties.SOP?.relation?.[0]?.id || '').replace(/-/g, ''),
+        status: pg.properties.Status?.select?.name || '' })));
+      cursor = r.has_more ? r.next_cursor : undefined;
+    } while (cursor);
+    await idbSet(key, rows);
+  } catch (e) {
+    const cached = await idbGet(key);
+    if (!cached || !isNetworkError(e)) throw e;
+    rows = cached; offline = true;
+  }
+  // Runs saved on this phone but not uploaded yet, and one still in progress
+  const inRange = iso => { const x = new Date(iso); return x >= range.start && x < range.end; };
+  rows = rows.slice();
+  for (const rec of (await idbGet('outbox')) || []) if (inRange(rec.startedAt)) rows.push({ sopId: rec.sopId, status: rec.status });
+  const cur = lsGet(RUN_KEY);
+  if (cur && inRange(cur.startedAt)) rows.push({ sopId: cur.sopId, status: 'In progress' });
+  return { rows, offline };
+}
+function dashboard(list, onFamily) {
+  const famOf = new Map(list.map(s => [s.id, s.family]));
+  let period = lsGet(DASH_KEY, 'week');
+  const pick = el('select', { class: 'dash-period', 'aria-label': 'Period' },
+    [['today', 'Today'], ['week', 'This week'], ['month', 'This month']].map(([v, l]) =>
+      el('option', { value: v, selected: v === period ? true : null }, l)));
+  const range = el('div', { class: 'dash-range' });
+  const intro = el('p', { class: 'dash-intro' });
+  const cards = el('div', { class: 'dash-cards' });
+  const note = el('div', { class: 'dash-note' });
+  const card = (name, icon, ok, open) => {
+    const total = (ok || 0) + (open || 0);
+    return el('div', { class: 'dash-card' },
+      el('button', { class: 'dash-go', 'aria-label': `Show ${name} procedures`, title: `Show ${name} procedures`, onclick: () => onFamily(name) }, '↗'),
+      el('div', { class: 'dash-nums' },
+        el('span', { class: 'n-ok', text: ok == null ? '–' : String(ok) }),
+        el('span', { class: 'dash-sep', 'aria-hidden': 'true' }),
+        el('span', { class: 'n-open', text: open == null ? '–' : String(open) })),
+      el('div', { class: 'dash-bar' }, el('div', { class: 'dash-fill', style: `width:${total ? Math.round(100 * ok / total) : 0}%` })),
+      el('div', { class: 'dash-title', text: `${icon} ${name}` }),
+      el('div', { class: 'dash-sub' }, el('span', null, 'Complete'), el('span', { 'aria-hidden': 'true' }, '|'), el('span', null, 'Incomplete')));
+  };
+  const fill = async () => {
+    const r = periodRange(period);
+    range.textContent = periodLabel(period, r);
+    const word = period === 'today' ? 'today' : period === 'week' ? 'this week' : 'this month';
+    intro.textContent = `Here's a quick peek at your checklists ${word}! Below is your overview.`;
+    cards.replaceChildren(...FAMILIES.map(([n, i]) => card(n, i, null, null)));
+    const noFam = list.filter(s => !s.family).length;
+    const hint = noFam ? `${noFam} procedure${noFam === 1 ? ' has' : 's have'} no family yet — set it with ✎ Edit.` : '';
+    note.textContent = hint;
+    try {
+      const { rows, offline } = await loadRunStats(period);
+      const tally = Object.fromEntries(FAMILIES.map(([n]) => [n, { ok: 0, open: 0 }]));
+      for (const row of rows) {
+        const c = tally[famOf.get(row.sopId)];
+        if (!c) continue;
+        if (row.status === 'Completed') c.ok++; else c.open++;
+      }
+      cards.replaceChildren(...FAMILIES.map(([n, i]) => card(n, i, tally[n].ok, tally[n].open)));
+      note.textContent = (offline ? 'Offline — showing the last saved numbers. ' : '') + hint;
+    } catch (e) {
+      console.warn('dashboard', e);
+      note.textContent = 'Could not load the numbers: ' + failureReason(e);
+    }
+  };
+  pick.addEventListener('change', () => { period = pick.value; lsSet(DASH_KEY, period); fill(); });
+  fill();
+  return el('section', { class: 'dash', 'aria-label': 'Overview' },
+    el('div', { class: 'dash-top' }, pick, range),
+    el('div', { class: 'dash-panel' }, intro, cards,
+      el('div', { class: 'dash-legend', 'aria-hidden': 'true' }, el('span', null, 'Complete'), el('span', null, '|'), el('span', null, 'Incomplete')),
+      note));
 }
 
 // The one thing to pick back up: an unfinished checklist on this phone.
@@ -4824,7 +4973,7 @@ const itemChanged = it => it.text !== it.origText || it.checked !== it.origCheck
 
 async function showEditor(id) {
   setHeader(id ? 'Edit SOP' : 'New SOP', true);
-  let props = { title: '', category: 'Field Ops', status: 'Draft', note: '', icon: '' };
+  let props = { title: '', category: 'Field Ops', status: 'Draft', note: '', icon: '', family: '' };
   let items = [];
   let origProps = null;
   if (id) {
@@ -4832,7 +4981,7 @@ async function showEditor(id) {
     const data = await loadSop(id, { force: true });   // edit the live version, never a stale copy
     if (data.offline) throw new Error('Editing needs a connection — you are offline.');
     const s = sopProps(data.page);
-    props = { title: s.title, category: s.category, status: s.status, note: s.note, icon: s.icon };
+    props = { title: s.title, category: s.category, status: s.status, note: s.note, icon: s.icon, family: s.family };
     items = data.blocks.map(blockToItem);
   } else if (importDraft) {
     props = { ...props, ...importDraft.props };
@@ -4859,6 +5008,9 @@ async function showEditor(id) {
   inIcon.oninput = () => props.icon = inIcon.value.trim();
   inCat.onchange = () => props.category = inCat.value;
   inStatus.onchange = () => props.status = inStatus.value;
+  const inFam = el('select', { class: 'input' }, el('option', { value: '' }, '— none —'),
+    FAMILIES.map(([n, i]) => el('option', { value: n, selected: n === props.family ? true : null }, `${i} ${n}`)));
+  inFam.onchange = () => props.family = inFam.value;
   inNote.oninput = () => props.note = inNote.value;
 
   const list = el('div');
@@ -4918,6 +5070,7 @@ async function showEditor(id) {
   view(
     el('div', { style: 'display:flex;gap:0.75rem' }, f('Icon', inIcon), el('div', { style: 'flex:1' }, f('Title', inTitle))),
     el('div', { style: 'display:flex;gap:0.75rem' }, el('div', { style: 'flex:1' }, f('Category', inCat)), el('div', { style: 'flex:1' }, f('Status', inStatus))),
+    f('Family', inFam),
     f('Summary', inNote),
     el('div', { class: 'lbl', style: 'margin-top:1rem' }, 'Content'),
     el('p', { class: 'hint', style: 'margin-bottom:0.5rem' }, 'Numbered steps and checkboxes become the checklist. Formatting: **bold**, *italic*, [link](https://…)'),
@@ -4954,6 +5107,7 @@ function propsPayload(p) {
     Category: p.category ? { select: { name: p.category } } : { select: null },
     Status: p.status ? { select: { name: p.status } } : { select: null },
     Summary: { rich_text: p.note.trim() ? rt(p.note.trim()) : [] },
+    Family: p.family ? { select: { name: p.family } } : { select: null },
   };
   return o;
 }
