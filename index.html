@@ -626,6 +626,18 @@
       #viewSop .dash-sub { display: none; }
       #viewSop .dash-legend { display: flex; }
     }
+
+    /* Capture box: voice, photo and video side by side */
+    .capture-card { gap: var(--space-3); }
+    .cap-row { display: flex; justify-content: center; align-items: flex-start; gap: var(--space-5); width: 100%; }
+    .cap-item { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
+    .record-btn.cap-btn { width: 68px; height: 68px; }
+    .record-btn.cap-btn svg { width: 28px; height: 28px; }
+    .cap-label { font-size: var(--text-xs); font-weight: 600; color: var(--text-muted); }
+    .capture-card .media-previews { width: 100%; }
+    .capture-card .media-previews:empty { display: none; }
+    .gen-row { display: flex; justify-content: center; margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+    .btn-generate.gen-btn { min-height: 44px; padding: 0 var(--space-6); font-size: var(--text-sm); gap: var(--space-2); }
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -651,7 +663,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.11';
+  const CURRENT_VERSION = '0.9.12';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -942,7 +954,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.11</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.12</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1000,14 +1012,16 @@ document.addEventListener('DOMContentLoaded', () => {
       onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
   </div>
 
-  <!-- VOICE RECORDER -->
-  <div class="recorder-card" role="region" aria-label="Voice recorder">
+  <!-- CAPTURE: one box — voice, photo, video. Transcription runs automatically
+       after a recording or a video is added; a summary is made with Generate. -->
+  <div class="recorder-card capture-card" role="region" aria-label="Capture">
     <div id="noteStamp" style="align-self:stretch;display:flex;align-items:center;justify-content:space-between;font-size:var(--text-xs);color:var(--text-faint);border-bottom:1px solid var(--border);padding-bottom:var(--space-3);margin-bottom:var(--space-1);letter-spacing:0.02em;">
       <span id="noteDate"></span>
       <span id="noteAuthorStamp"></span>
     </div>
-    <div class="recorder-btn-wrap">
-      <button class="record-btn" id="recordBtn" aria-label="Start recording" aria-pressed="false">
+    <div class="cap-row">
+      <div class="cap-item">
+        <button class="record-btn cap-btn" id="recordBtn" aria-label="Start recording" aria-pressed="false">
         <svg id="micIcon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="9" y="2" width="6" height="12" rx="3"/>
           <path d="M5 10c0 3.866 3.134 7 7 7s7-3.134 7-7"/>
@@ -1018,15 +1032,38 @@ document.addEventListener('DOMContentLoaded', () => {
           <rect x="6" y="6" width="12" height="12" rx="2"/>
         </svg>
       </button>
+        <div class="cap-label">Voice</div>
+      </div>
+      <div class="cap-item">
+        <button class="record-btn cap-btn" id="videoSummaryPhotoBtn" aria-label="Attach photo">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </button>
+        <div class="cap-label">Photo</div>
+      </div>
+      <div class="cap-item">
+        <button class="record-btn cap-btn" id="videoSummaryVideoBtn" aria-label="Attach video">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.888L15 14"/><rect x="1" y="6" width="14" height="12" rx="2"/>
+          </svg>
+        </button>
+        <div class="cap-label">Video</div>
+      </div>
     </div>
     <div class="recorder-timer" id="recTimer">0:00</div>
     <div class="recorder-status" id="recStatus">Tap to record voice note</div>
+    <input type="file" id="videoSummaryPhotoInput" accept="image/*" multiple style="display:none">
+    <input type="file" id="videoSummaryVideoInput" accept="video/*" style="display:none">
+    <div class="media-previews" id="mediaPreviews"></div>
   </div>
 
-  <!-- VOICE TRANSCRIPTION BOX -->
+  <!-- VOICE TRANSCRIPTION -->
   <div class="editable-box-wrap" id="transcriptWrap">
     <div class="editable-box-header">
-      <div class="section-label" style="margin-bottom:0">Voice Transcription</div>
+      <div class="section-label" style="margin-bottom:0">Voice transcription</div>
       <div class="editable-box-actions">
         <button class="btn-copy" id="copyTranscriptBtn" aria-label="Copy transcript">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -1040,21 +1077,23 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div id="transcribingBar" class="transcribing-bar" style="display:none">
       <div class="dot-spin"></div>
-      <span>Transcribing audio with Groq Whisper…</span>
-      <span class="groq-badge">🆓 free</span>
+      <span>Transcribing your voice note…</span>
     </div>
-    <textarea class="editable-textarea transcript-ta" id="transcriptText" placeholder="Transcript will appear here after recording… You can also type or paste text manually." rows="4"></textarea>
+    <textarea class="editable-textarea transcript-ta" id="transcriptText" placeholder="Appears automatically after you record… You can also type or paste text." rows="4"></textarea>
   </div>
 
-  <!-- AI SUMMARY BOX -->
+  <div class="gen-row">
+    <button class="btn-generate gen-btn" id="generateSummaryBtn" aria-label="Generate the voice summary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      Generate
+    </button>
+  </div>
+
+  <!-- VOICE SUMMARY -->
   <div class="editable-box-wrap">
     <div class="editable-box-header">
-      <div class="section-label" style="margin-bottom:0">AI Summary</div>
+      <div class="section-label" style="margin-bottom:0">Voice summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="generateSummaryBtn" aria-label="Generate AI summary">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          Generate
-        </button>
         <button class="btn-copy" id="copySummaryBtn" aria-label="Copy summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
@@ -1063,63 +1102,46 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div id="summaryGenerating" class="summary-generating" style="display:none">
       <div class="dot-spin"></div>
-      <span>Generating summary with AI…</span>
+      <span>Writing the summary…</span>
     </div>
-    <textarea class="editable-textarea summary-ta" id="summaryText" placeholder="AI-generated summary will appear here… or type your own summary manually." rows="4"></textarea>
+    <textarea class="editable-textarea summary-ta" id="summaryText" placeholder="Tap Generate to write the summary… or type your own." rows="4"></textarea>
   </div>
 
-  <!-- MEDIA CARD -->
-  <div class="recorder-card" role="region" aria-label="Media attachments" style="gap:var(--space-3)">
-    <div class="recorder-btn-wrap" style="display:flex;flex-direction:row;justify-content:center;align-items:flex-start;gap:var(--space-6);flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
-        <button class="record-btn" id="videoSummaryPhotoBtn" aria-label="Attach photo">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
-        </button>
-        <div class="recorder-status" style="font-size:var(--text-xs);margin:0">Photo</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:var(--space-2)">
-        <button class="record-btn" id="videoSummaryVideoBtn" aria-label="Attach video">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.888L15 14"/><rect x="1" y="6" width="14" height="12" rx="2"/>
-          </svg>
-        </button>
-        <div class="recorder-status" style="font-size:var(--text-xs);margin:0">Video</div>
-      </div>
-    </div>
-    <input type="file" id="videoSummaryPhotoInput" accept="image/*" multiple style="display:none">
-    <input type="file" id="videoSummaryVideoInput" accept="video/*" style="display:none">
-    <div class="media-previews" id="mediaPreviews"></div>
-  </div>
-
-  <!-- VIDEO AI SUMMARY BOX -->
+  <!-- VIDEO TRANSCRIPTION -->
   <div class="editable-box-wrap">
     <div class="editable-box-header">
-      <div class="section-label" style="margin-bottom:0">Video AI Summary</div>
+      <div class="section-label" style="margin-bottom:0">Video transcription</div>
+    </div>
+    <div id="videoTranscribingBar" class="transcribing-bar" style="display:none">
+      <div class="dot-spin"></div>
+      <span id="videoTranscribingStatus">Transcribing the video…</span>
+    </div>
+    <textarea class="editable-textarea" id="videoTranscriptText" placeholder="Appears automatically after you add a video… You can also paste a transcript." rows="3"></textarea>
+  </div>
+
+  <div class="gen-row">
+    <button class="btn-generate gen-btn" id="generateVideoSummaryBtn" aria-label="Generate the video summary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      Generate
+    </button>
+  </div>
+
+  <!-- VIDEO SUMMARY -->
+  <div class="editable-box-wrap">
+    <div class="editable-box-header">
+      <div class="section-label" style="margin-bottom:0">Video summary</div>
       <div class="editable-box-actions">
-        <button class="btn-generate" id="generateVideoSummaryBtn" aria-label="Generate video AI summary">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          Generate
-        </button>
         <button class="btn-copy" id="copyVideoSummaryBtn" aria-label="Copy video summary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
         </button>
       </div>
     </div>
-    <div id="videoTranscribingBar" class="transcribing-bar" style="display:none">
-      <div class="dot-spin"></div>
-      <span id="videoTranscribingStatus">Transcribing video with Groq Whisper…</span>
-    </div>
-    <textarea class="editable-textarea" id="videoTranscriptText" placeholder="Paste a YouTube/video transcript here… or click Transcribe to pick a local video file." rows="3" style="margin-bottom:var(--space-2)"></textarea>
     <div id="videoSummaryGenerating" class="summary-generating" style="display:none">
       <div class="dot-spin"></div>
-      <span>Generating video summary with AI…</span>
+      <span>Writing the video summary…</span>
     </div>
-    <textarea class="editable-textarea summary-ta" id="videoSummaryText" placeholder="AI-generated video summary will appear here…" rows="3"></textarea>
+    <textarea class="editable-textarea summary-ta" id="videoSummaryText" placeholder="Tap Generate to write the video summary… or type your own." rows="3"></textarea>
   </div>
 
   <!-- TEXT NOTE (hidden on Daily tab — Daily has its own Note field) -->
@@ -1795,11 +1817,12 @@ const SUMMARY_MODEL = 'openai/gpt-oss-20b';   // replaces llama-3.1-8b-instant
 const SUMMARY_REASONING_EFFORT = 'low';
 const SUMMARY_MAX_TOKENS = 1024;
 
-document.getElementById('generateSummaryBtn').addEventListener('click', async () => {
+// Voice summary — runs when its Generate button is tapped (transcription itself is automatic).
+async function runVoiceSummary() {
   const transcript = document.getElementById('transcriptText').value.trim();
   const note       = document.getElementById('noteText').value.trim();
   const text       = [transcript, note].filter(Boolean).join('\n\n');
-  if (!text) { showToast('Nothing to summarise — add transcript or note', 'error'); return; }
+  if (!text) { showToast('Nothing to summarise — record or type a transcription first', 'error'); return; }
 
   const gen = document.getElementById('summaryGenerating');
   const btn = document.getElementById('generateSummaryBtn');
@@ -1823,21 +1846,23 @@ document.getElementById('generateSummaryBtn').addEventListener('click', async ()
     if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
     const summary = data.choices?.[0]?.message?.content?.trim() || '';
-    // An empty completion is a failure, not a summary — say so instead of
-    // reporting success over a blank box (a reasoning model that spends its
-    // whole budget thinking returns exactly this).
-    if (!summary) throw new Error('model returned an empty summary — try again');
+    // An empty completion is a failure, not a summary (a reasoning model that
+    // spends its whole budget thinking returns exactly this).
+    if (!summary) throw new Error('model returned an empty summary');
     document.getElementById('summaryText').value = summary;
     updateSubmitBtn();
-    showToast('Summary generated ✓', 'success');
+    showToast('Voice summary written ✓', 'success');
   } catch(e) {
     console.warn('Summary failed:', e);
-    showToast(`Summary failed — ${failureReason(e)}`, 'error');
+    showToast(`Voice summary failed — ${failureReason(e)}`, 'error');
   } finally {
     gen.style.display = 'none';
     btn.disabled = false;
   }
-});
+}
+
+document.getElementById('generateSummaryBtn').addEventListener('click', runVoiceSummary);
+document.getElementById('generateVideoSummaryBtn').addEventListener('click', runVideoSummary);
 
 // ─── COPY BUTTONS ────────────────────────────────────────────
 document.getElementById('copyTranscriptBtn').addEventListener('click', () => {
@@ -1852,11 +1877,10 @@ document.getElementById('copySummaryBtn').addEventListener('click', () => {
 });
 
 // ─── VIDEO AI SUMMARY ─────────────────────────────────────────
-document.getElementById('generateVideoSummaryBtn').addEventListener('click', async () => {
-  const videoTranscript = document.getElementById('videoTranscriptText').value.trim();
-  const voiceTranscript = document.getElementById('transcriptText').value.trim();
-  const transcript = videoTranscript || voiceTranscript;
-  if (!transcript) { showToast('Add a video transcript or record a voice note first', 'error'); return; }
+// Video summary — runs when its Generate button is tapped (transcription itself is automatic).
+async function runVideoSummary() {
+  const transcript = document.getElementById('videoTranscriptText').value.trim();
+  if (!transcript) { showToast('Nothing to summarise — add a video or paste its transcription first', 'error'); return; }
 
   const gen = document.getElementById('videoSummaryGenerating');
   const btn = document.getElementById('generateVideoSummaryBtn');
@@ -1880,10 +1904,10 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
     if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
     const videoSummary = data.choices?.[0]?.message?.content?.trim() || '';
-    if (!videoSummary) throw new Error('model returned an empty summary — try again');
+    if (!videoSummary) throw new Error('model returned an empty summary');
     document.getElementById('videoSummaryText').value = videoSummary;
     updateSubmitBtn();
-    showToast('Video summary generated ✓', 'success');
+    showToast('Video summary written ✓', 'success');
   } catch(e) {
     console.warn('Video summary failed:', e);
     showToast(`Video summary failed — ${failureReason(e)}`, 'error');
@@ -1891,9 +1915,7 @@ document.getElementById('generateVideoSummaryBtn').addEventListener('click', asy
     gen.style.display = 'none';
     btn.disabled = false;
   }
-});
-
-
+}
 
 document.getElementById('copyVideoSummaryBtn').addEventListener('click', () => {
   const v = document.getElementById('videoSummaryText').value;
