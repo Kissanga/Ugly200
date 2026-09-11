@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v70';
+const CACHE_NAME = 'ugly200-v71';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -54,8 +54,11 @@ self.addEventListener('fetch', e => {
 
   if (isHTML) {
     // Network-first: fetch fresh HTML, fall back to cache only when offline.
+    // cache:'no-cache' forces revalidation — a plain fetch() may be answered
+    // from the HTTP cache (GitHub Pages: max-age=600) and hand out the previous
+    // release for up to 10 minutes (also for the SoP iframe page).
     e.respondWith(
-      fetch(request).then(response => {
+      fetch(new Request(request.url, { cache: 'no-cache', credentials: 'same-origin' })).then(response => {
         if (response && response.status === 200 && response.type !== 'opaque') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));

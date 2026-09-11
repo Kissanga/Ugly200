@@ -290,7 +290,7 @@
 <script>
 'use strict';
 // ─── CONFIG ──────────────────────────────────────────────────
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 // Same Cloudflare Worker as Brain+: it injects the Notion token and Groq key
 // and gates every call on X-App-Password. No secrets live in this file.
 const PROXY = 'https://notion-proxy.francesco-955.workers.dev';
@@ -892,7 +892,7 @@ async function showRun(id) {
 
   if (!st) {
     const items = extractSteps(data.blocks);
-    const name = authorName() || await askOperator();   // prompt only as a last resort
+    const name = authorName() || await requestAuthor();
     if (!name) { history.back(); return; }
     st = { runId: uid(), sopId: id, sopTitle: sop.title, operator: name, startedAt: new Date().toISOString(),
       items, state: {}, notes: '' };
@@ -900,6 +900,27 @@ async function showRun(id) {
   }
   setHeader(st.sopTitle, true);
   drawRun(st, byId);
+}
+
+// No name yet: inside Naked Brain, open ITS mandatory name dialog (same origin)
+// and continue once the name is saved; the checklist itself never asks.
+// Standalone (not embedded) falls back to the local prompt.
+function requestAuthor() {
+  const host = EMBED && window.parent !== window ? window.parent : null;
+  if (!host || typeof host.openAuthorGate !== 'function') return askOperator();
+  return new Promise(resolve => {
+    const done = () => {
+      const name = authorName();
+      if (!name) return;
+      window.removeEventListener('storage', onStorage);
+      clearInterval(poll);
+      resolve(name);
+    };
+    const onStorage = e => { if (e.key === 'ugly200_config') done(); };
+    window.addEventListener('storage', onStorage);
+    const poll = setInterval(done, 500);   // backup in case the storage event is missed
+    host.openAuthorGate(false);
+  });
 }
 
 function askOperator() {
