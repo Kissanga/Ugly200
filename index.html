@@ -432,14 +432,14 @@
     #viewSop input, #viewSop textarea, #viewSop select { font: inherit; color: inherit; }
     #viewSop :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     #viewSop .hidden { display: none !important; }
-    #viewSop .sop-bar { position: sticky; top: 0; z-index: 50; padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2); display: flex; align-items: center; gap: var(--space-2); background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
-    #viewSop .hdr-title { flex: 1; min-width: 0; font-weight: 700; font-size: var(--text-base); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #viewSop .sop-bar, #viewFarmbox .sop-bar { position: sticky; top: 0; z-index: 50; padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2); display: flex; align-items: center; gap: var(--space-2); background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+    #viewSop .hdr-title, #viewFarmbox .hdr-title { flex: 1; min-width: 0; font-weight: 700; font-size: var(--text-base); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #viewSop .hdr-title span { font-weight: 800; }
-    #viewSop .btn-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0 var(--space-3); border-radius: var(--radius-full); background: var(--glass); border: 1px solid var(--border); color: var(--text); font-size: 1.15rem; box-shadow: var(--shadow-sm); }
+    #viewSop .btn-icon, #viewFarmbox .btn-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0 var(--space-3); border-radius: var(--radius-full); background: var(--glass); border: 1px solid var(--border); color: var(--text); font-size: 1.15rem; box-shadow: var(--shadow-sm); }
     #viewSop .btn-icon:hover { background: var(--surface); }
     #viewSop .btn-icon:disabled { opacity: 0.35; cursor: not-allowed; }
     #viewSop .net-pill { font-size: var(--text-xs); font-weight: 650; padding: 4px 12px; border-radius: var(--radius-full); background: var(--coral); color: #fff; white-space: nowrap; }
-    #viewSop .sop-main { max-width: 46rem; margin: 0 auto; padding: var(--space-2) var(--space-4) calc(env(safe-area-inset-bottom) + 7rem); }
+    #viewSop .sop-main, #viewFarmbox .sop-main { max-width: 46rem; margin: 0 auto; padding: var(--space-2) var(--space-4) calc(env(safe-area-inset-bottom) + 7rem); }
     #viewSop .hero { margin: var(--space-3) 0 var(--space-5); }
     #viewSop .hero h1 { font-size: clamp(1.9rem, 1.4rem + 2.2vw, 2.5rem); font-weight: 750; letter-spacing: -0.035em; line-height: 1.08; }
     #viewSop .hero p { color: var(--text-muted); margin-top: var(--space-2); font-size: var(--text-base); }
@@ -447,17 +447,17 @@
     #viewSop .sec-head h2 { font-size: 1.3rem; font-weight: 650; letter-spacing: -0.02em; }
     #viewSop .lbl, #viewSop .field label { display: block; font-size: var(--text-sm); font-weight: 650; color: var(--text-muted); margin-bottom: var(--space-2); }
     #viewSop .hint { font-size: var(--text-sm); color: var(--text-muted); margin-top: var(--space-1); }
-    #viewSop .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: 48px; padding: var(--space-2) var(--space-5); border-radius: var(--radius-full); font-weight: 650; font-size: var(--text-sm); background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
-    #viewSop .btn:hover { background: var(--surface-2); }
-    #viewSop .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    #viewSop .btn-primary { background: var(--primary); color: var(--text-inverse); border-color: transparent; }
-    #viewSop .btn-primary:hover { background: var(--primary-hover); }
-    #viewSop .btn-danger { background: var(--coral-soft); color: var(--error); border-color: transparent; }
-    #viewSop .btn-block { width: 100%; }
-    #viewSop .btn-lg { min-height: 58px; font-size: var(--text-base); }
-    #viewSop .btn-sm { min-height: 38px; padding: var(--space-1) var(--space-4); font-size: var(--text-sm); }
-    #viewSop .btn-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-    #viewSop .btn-row > .btn { flex: 1; }
+    #viewSop .btn, #viewFarmbox .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: 48px; padding: var(--space-2) var(--space-5); border-radius: var(--radius-full); font-weight: 650; font-size: var(--text-sm); background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+    #viewSop .btn:hover, #viewFarmbox .btn:hover { background: var(--surface-2); }
+    #viewSop .btn:disabled, #viewFarmbox .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    #viewSop .btn-primary, #viewFarmbox .btn-primary { background: var(--primary); color: var(--text-inverse); border-color: transparent; }
+    #viewSop .btn-primary:hover, #viewFarmbox .btn-primary:hover { background: var(--primary-hover); }
+    #viewSop .btn-danger, #viewFarmbox .btn-danger { background: var(--coral-soft); color: var(--error); border-color: transparent; }
+    #viewSop .btn-block, #viewFarmbox .btn-block { width: 100%; }
+    #viewSop .btn-lg, #viewFarmbox .btn-lg { min-height: 58px; font-size: var(--text-base); }
+    #viewSop .btn-sm, #viewFarmbox .btn-sm { min-height: 38px; padding: var(--space-1) var(--space-4); font-size: var(--text-sm); }
+    #viewSop .btn-row, #viewFarmbox .btn-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+    #viewSop .btn-row > .btn, #viewFarmbox .btn-row > .btn { flex: 1; }
     #viewSop .round { width: 44px; height: 44px; min-width: 44px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 1.1rem; flex-shrink: 0; }
     #viewSop .round.light { background: #fff; color: #121212; border: none; width: 52px; height: 52px; }
     #viewSop .field { margin-bottom: var(--space-4); }
@@ -501,9 +501,9 @@
     #viewSop .sop-head h1 { font-size: clamp(1.75rem, 1.3rem + 2vw, 2.25rem); font-weight: 750; line-height: 1.12; letter-spacing: -0.03em; margin: var(--space-2) 0 var(--space-3); }
     #viewSop .sop-head .note { color: var(--text-muted); font-size: var(--text-base); margin-top: var(--space-3); }
     #viewSop #sop-view > .doc { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: var(--space-5) var(--space-5); box-shadow: var(--shadow-md); }
-    #viewSop .doc { margin-top: var(--space-4); overflow-wrap: anywhere; line-height: 1.6; }
-    #viewSop .doc > * + * { margin-top: var(--space-3); }
-    #viewSop .doc > :first-child { margin-top: 0; }
+    #viewSop .doc, #viewFarmbox .doc { margin-top: var(--space-4); overflow-wrap: anywhere; line-height: 1.6; }
+    #viewSop .doc > * + *, #viewFarmbox .doc > * + * { margin-top: var(--space-3); }
+    #viewSop .doc > :first-child, #viewFarmbox .doc > :first-child { margin-top: 0; }
     #viewSop .doc h2 { font-size: 1.35rem; margin-top: var(--space-6); line-height: 1.25; letter-spacing: -0.02em; }
     #viewSop .doc h3 { font-size: 1.15rem; margin-top: var(--space-5); }
     #viewSop .doc h4 { font-size: 1.02rem; margin-top: var(--space-4); }
@@ -590,8 +590,8 @@
     #viewSop .spinner { width: 18px; height: 18px; border: 2.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
     #viewSop .loading { display: flex; gap: var(--space-3); align-items: center; justify-content: center; color: var(--text-muted); padding: var(--space-8); }
     #viewSop .preview-box { max-height: 40dvh; overflow-y: auto; white-space: pre-wrap; font-size: var(--text-xs); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); }
-    #viewSop .sop-bar { position: static; padding: var(--space-2) var(--space-4) 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; max-width: 46rem; margin: 0 auto; }
-    #viewSop .sop-main { padding-top: var(--space-1); }
+    #viewSop .sop-bar, #viewFarmbox .sop-bar { position: static; padding: var(--space-2) var(--space-4) 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; max-width: 46rem; margin: 0 auto; }
+    #viewSop .sop-main, #viewFarmbox .sop-main { padding-top: var(--space-1); }
 
     /* Tasks dashboard: checklists per family */
     #viewSop .dash { margin-bottom: var(--space-2); }
@@ -647,6 +647,66 @@
     .editable-box-actions svg { width: 11px; height: 11px; }
     @media (max-width: 320px) { .editable-box-header { flex-wrap: wrap; } }   /* tiny screens: let the buttons drop below */
     .editable-textarea { min-height: 72px; }
+    /* ── FarmBox cloud Tasks ─────────────────────────────────────────────── */
+    #viewFarmbox .hidden { display: none !important; }
+    #viewFarmbox .net-pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: var(--radius-full);
+      background: var(--coral-soft); color: var(--coral); }
+    #viewFarmbox .spin { animation: fb-spin 1s linear infinite; }
+    @keyframes fb-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { #viewFarmbox .spin { animation: none; } }
+    body.mode-sop.src-cloud #viewSop { display: none; }
+    body.mode-sop.src-cloud #viewFarmbox { display: block; }
+    #viewFarmbox .field { margin-bottom: var(--space-3); }
+    #viewFarmbox .field label { display:block; font-size: var(--text-xs); font-weight:600; color: var(--text-muted); margin-bottom: 4px; }
+    #viewFarmbox .field input { width:100%; font:inherit; padding:10px 12px; border:1px solid var(--border);
+      border-radius: var(--radius-md); background: var(--surface-offset); color: var(--text); }
+    .fb-day { margin-top: var(--space-5); }
+    .fb-day h2 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing:.08em;
+      color: var(--text-muted); margin: 0 0 var(--space-2); font-weight: 700; }
+    .fb-card { display:flex; align-items:center; gap: var(--space-3); width:100%; text-align:left;
+      background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
+      padding: var(--space-3) var(--space-4); margin-bottom: var(--space-2); cursor:pointer;
+      font: inherit; color: var(--text); box-shadow: var(--shadow-sm); }
+    .fb-card:active { transform: scale(.995); }
+    .fb-card.done { opacity:.55; }
+    .fb-when { min-width: 46px; font-variant-numeric: tabular-nums; font-weight:700; font-size: var(--text-sm); }
+    .fb-body { flex:1; min-width:0; }
+    .fb-name { font-weight:600; line-height:1.3; }
+    .fb-meta { font-size: var(--text-xs); color: var(--text-muted); margin-top:2px; }
+    .fb-chip { font-size:11px; font-weight:700; padding:3px 8px; border-radius: var(--radius-full);
+      background: var(--surface-offset); color: var(--text-muted); white-space:nowrap; }
+    .fb-chip.ok { background: var(--success-bg); color: var(--success); }
+    .fb-chip.late { background: var(--coral-soft); color: var(--coral); }
+    .fb-ink { background: var(--ink); color: var(--ink-text); border-radius: var(--radius-xl);
+      padding: var(--space-4) var(--space-5); margin-bottom: var(--space-4); }
+    .fb-ink .fb-meta, .fb-ink small { color: var(--ink-muted); }
+    #viewFarmbox .fb-ink .btn-primary { background: var(--accent); color: #0d2b27; border-color: var(--accent); }
+    .fb-ink h3 { margin:.2rem 0 .4rem; font-size: var(--text-lg); line-height:1.2; }
+    .fb-step { background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
+      padding: var(--space-4); margin-bottom: var(--space-3); }
+    .fb-step.answered { border-color: var(--accent); }
+    .fb-step.bad { border-color: var(--coral); background: var(--coral-soft); }
+    .fb-sec { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color: var(--text-muted); }
+    .fb-step h4 { margin:4px 0 6px; font-size: var(--text-base); line-height:1.35; }
+    .fb-inst { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--space-3); }
+    .fb-actions { display:flex; gap: var(--space-2); flex-wrap:wrap; }
+    .fb-btn { font:inherit; font-size: var(--text-sm); font-weight:600; padding:8px 14px; min-height:40px;
+      border-radius: var(--radius-full); border:1px solid var(--border); background: var(--surface-offset);
+      color: var(--text); cursor:pointer; }
+    .fb-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color:#0d2b27; }
+    .fb-btn.no[aria-pressed="true"] { background: var(--coral); border-color: var(--coral); color:#fff; }
+    .fb-num { width: 120px; font:inherit; padding:8px 10px; border:1px solid var(--border);
+      border-radius: var(--radius-md); background: var(--surface-offset); color: var(--text); }
+    .fb-note { width:100%; font:inherit; font-size: var(--text-sm); padding:8px 10px; margin-top: var(--space-2);
+      border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-offset); color: var(--text); }
+    .fb-plan { margin-top: var(--space-3); padding: var(--space-3); border-left:3px solid var(--coral);
+      background: var(--surface-offset); border-radius: 0 var(--radius-md) var(--radius-md) 0; font-size: var(--text-sm); }
+    .fb-shot { display:flex; align-items:center; gap: var(--space-2); margin-top: var(--space-2); flex-wrap:wrap; }
+    .fb-shot img { width:56px; height:56px; object-fit:cover; border-radius: var(--radius-md); }
+    #viewFarmbox .set-row { align-items: baseline; padding: var(--space-2) 0; }
+    #viewFarmbox .set-row > span:first-child { flex: 0 0 auto; white-space: nowrap; color: var(--text-muted); }
+    #viewFarmbox .set-row > span:last-child { text-align: right; }
+
   </style>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -672,7 +732,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.16';
+  const CURRENT_VERSION = '0.10.0';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -916,9 +976,17 @@ async function cfFetch(url, options = {}) {
   }
 }
 
-// Show gate on load if no password stored
-document.addEventListener('DOMContentLoaded', () => {
+// Show the shared team password on load — unless the app is running on the
+// FarmBox cloud, where every person signs in with their own account. Capture
+// still goes through the Worker, so the gate appears when that tab is opened.
+function appPasswordNeeded() {
+  return !getAppPassword() && localStorage.getItem('fb_source') !== 'cloud';
+}
+function ensureAppPassword() {
   if (!getAppPassword()) showPasswordGate();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  if (appPasswordNeeded()) showPasswordGate();
 });
 </script>
 
@@ -963,7 +1031,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.16</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.10.0</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -983,6 +1051,52 @@ document.addEventListener('DOMContentLoaded', () => {
   <button class="app-tab" role="tab" data-mode="sop">Tasks</button>
   <button class="app-tab" role="tab" data-mode="capture">Capture</button>
 </nav>
+
+<!-- FARMBOX CLOUD: the same Tasks tab, served by Supabase instead of Notion.
+     Off by default; Settings → Data source turns it on. -->
+<section class="app-view" id="viewFarmbox" aria-label="Tasks">
+  <div class="sop-bar">
+    <button id="fb-back" class="btn-icon hidden" aria-label="Back">←</button>
+    <div id="fb-title" class="hdr-title">Tasks</div>
+    <span id="fb-net" class="net-pill hidden">Offline</span>
+    <button id="fb-sync" class="btn-icon" aria-label="Sync now" title="Sync now">⟳</button>
+  </div>
+
+  <main class="sop-main" id="fb-main">
+    <!-- sign in -->
+    <div id="fb-auth" class="doc hidden">
+      <div class="hero"><h1>Sign in</h1><p>Your FarmBox account. One account per person — no shared password.</p></div>
+      <form id="fb-authForm" class="set-group" autocomplete="on">
+        <div class="field"><label for="fb-email">E-mail</label>
+          <input id="fb-email" type="email" inputmode="email" autocomplete="username" required></div>
+        <div class="field"><label for="fb-pass">Password</label>
+          <input id="fb-pass" type="password" autocomplete="current-password" required></div>
+        <div id="fb-authErr" class="config-hint" style="color:var(--error)"></div>
+        <button class="btn btn-primary btn-lg btn-block" id="fb-signin" type="submit">Sign in</button>
+      </form>
+    </div>
+
+    <!-- my week -->
+    <div id="fb-week" class="doc hidden">
+      <div class="hero"><h1 id="fb-weekTitle">This week</h1><p id="fb-weekSub">Your farm work, day by day.</p></div>
+      <div id="fb-next"></div>
+      <div id="fb-days"></div>
+      <div id="fb-empty" class="config-hint hidden">Nothing planned yet. Pull ⟳ to sync.</div>
+      <div class="config-hint" id="fb-foot"></div>
+    </div>
+
+    <!-- one task -->
+    <div id="fb-task" class="doc hidden"></div>
+
+    <!-- a checklist run -->
+    <div id="fb-run" class="doc hidden">
+      <div id="fb-runHead" class="hero"></div>
+      <div id="fb-steps"></div>
+      <button class="btn btn-primary btn-lg btn-block" id="fb-finish" style="margin-top:var(--space-4)">Finish</button>
+      <div class="config-hint" id="fb-runHint"></div>
+    </div>
+  </main>
+</section>
 
 <!-- SOP: procedures, checklists, editor and import (SoP module script at the end) -->
 <section class="app-view" id="viewSop" aria-label="Tasks">
@@ -1212,6 +1326,19 @@ document.addEventListener('DOMContentLoaded', () => {
         <select id="skinSelect" class="set-select" aria-label="Skin"><option value="naked-farm">Naked Farm</option></select>
       </div>
       <div class="config-hint">A skin is a small design-token file (skins/*.json) with the colours, corner radius and font — the same values a Figma variables export gives. It never changes the layout.</div>
+    </div>
+
+    <div class="set-title">Data source</div>
+    <div class="set-group">
+      <div class="segmented" role="group" aria-label="Data source">
+        <button type="button" data-source="notion">Notion</button>
+        <button type="button" data-source="cloud">FarmBox cloud</button>
+      </div>
+      <div class="config-hint" id="fb-sourceHint">Notion is the current, proven path. FarmBox cloud is the new one: you sign in with your own account and the Tasks tab shows the week planned for your farm. Both can be switched at any time; nothing is lost either way.</div>
+      <div class="set-row" id="fb-accountRow" style="margin-top:var(--space-3);display:none">
+        <span id="fb-account" style="color:var(--text-muted)"></span>
+        <button type="button" class="btn-copy" id="fb-signout">Sign out</button>
+      </div>
     </div>
 
     <div class="set-title">App</div>
@@ -1714,7 +1841,11 @@ function setAppMode(mode) {
     btn.setAttribute('aria-selected', String(on));
   });
   window.scrollTo(0, 0);
-  if (mode === 'sop' && window.sopOpen) window.sopOpen();
+  if (mode === 'sop') {
+    if (document.body.classList.contains('src-cloud')) { if (window.fbOpen) window.fbOpen(); }
+    else if (window.sopOpen) window.sopOpen();
+  }
+  if (mode === 'capture') ensureAppPassword();   // Capture still runs on the Worker
 }
 document.querySelectorAll('.app-tab').forEach(btn =>
   btn.addEventListener('click', () => setAppMode(btn.dataset.mode)));
@@ -5736,8 +5867,508 @@ function sopOpen() {
   if (!sopStarted) { sopStarted = true; updateNet(); }
   route();
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// FARMBOX CLOUD — the Tasks tab served by Supabase (spec §6, phase 1)
+//
+// Sign in once, sync the farm's week into IndexedDB, work offline, post the
+// outbox when there is signal. The Notion path is untouched and stays the
+// default; Settings → Data source flips between them.
+// ═══════════════════════════════════════════════════════════════════════════
+(function () {
+  const URL_BASE = 'https://azfiajzhzewjcblbltmp.supabase.co';
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6ZmlhanpoemV3amNibGJsdG1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMDg5NzQsImV4cCI6MjEwNDc4NDk3NH0.0wakTe-gKANg4w6sfxyNfn8nhfgDGW2O7O60WvMI1mY';
+  const SESSION_KEY = 'fb_session', SOURCE_KEY = 'fb_source';
+
+  const $ = id => document.getElementById('fb-' + id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag);
+    if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+  // ── tiny IndexedDB wrapper (one store, keyed records) ───────────────────
+  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox'];
+  let dbp;
+  function db() {
+    return dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('farmbox', 1);
+      r.onupgradeneeded = () => STORES.forEach(s => {
+        if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' });
+      });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    }));
+  }
+  async function tx(store, mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const t = d.transaction(store, mode), s = t.objectStore(store);
+      const out = fn(s);
+      t.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
+      t.onerror = () => rej(t.error);
+    });
+  }
+  const putAll = (store, rows) => rows && rows.length
+    ? tx(store, 'readwrite', s => rows.forEach(r => s.put(r))) : Promise.resolve();
+  const all = store => tx(store, 'readonly', s => s.getAll());
+  const getKV = async k => (await tx('kv', 'readonly', s => s.get(k)))?.v;
+  const setKV = (k, v) => tx('kv', 'readwrite', s => s.put({ id: k, v }));
+  const del = (store, id) => tx(store, 'readwrite', s => s.delete(id));
+
+  // ── session ─────────────────────────────────────────────────────────────
+  let session = null;
+  try { session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) {}
+  const saveSession = s => {
+    session = s ? { ...s, expires_at: Date.now() + (s.expires_in || 3600) * 1000 - 60000 } : null;
+    session ? localStorage.setItem(SESSION_KEY, JSON.stringify(session)) : localStorage.removeItem(SESSION_KEY);
+    paintAccount();
+  };
+
+  async function signIn(email, password) {
+    const r = await fetch(`${URL_BASE}/auth/v1/token?grant_type=password`, {
+      method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error_description || d.msg || d.message || 'sign-in failed');
+    saveSession(d);
+    return d;
+  }
+  async function refresh() {
+    if (!session?.refresh_token) return false;
+    const r = await fetch(`${URL_BASE}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!r.ok) { saveSession(null); return false; }
+    saveSession(await r.json());
+    return true;
+  }
+  // Every call to Supabase goes through here: it refreshes an expired token once.
+  async function api(path, opts = {}, retry = true) {
+    if (!session) throw new Error('signed out');
+    if (session.expires_at && Date.now() > session.expires_at) await refresh();
+    const r = await fetch(URL_BASE + path, {
+      ...opts,
+      headers: { apikey: ANON, Authorization: 'Bearer ' + session.access_token,
+                 'Content-Type': 'application/json', ...(opts.headers || {}) }
+    });
+    if (r.status === 401 && retry && await refresh()) return api(path, opts, false);
+    if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
+    return r.status === 204 ? null : r.json();
+  }
+
+  // ── sync ────────────────────────────────────────────────────────────────
+  let farm = null, syncing = false;
+  async function pickFarm() {
+    farm = await getKV('farm');
+    if (farm) return farm;
+    const rows = await api('/rest/v1/farm?select=id,name,code,timezone&order=code');
+    if (!rows.length) throw new Error('your account is not a member of any farm yet');
+    farm = rows[0];                       // a franchisor sees several; the first for now
+    await setKV('farm', farm);
+    return farm;
+  }
+
+  async function sync(full) {
+    if (syncing || !session) return;
+    syncing = true; $('sync').classList.add('spin');
+    try {
+      await pickFarm();
+      const since = full ? null : await getKV('cursor');
+      const d = await api('/rest/v1/rpc/sync_since', {
+        method: 'POST',
+        body: JSON.stringify({ p_farm: farm.id, p_since: since || '-infinity' })
+      });
+      await putAll('tasks', d.tasks);
+      await putAll('sops', d.sops);
+      await putAll('versions', d.sop_versions);
+      await putAll('steps', d.sop_steps);
+      for (const x of (d.deleted || [])) {
+        const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps' }[x.table];
+        if (store) await del(store, x.id);
+      }
+      await setKV('cursor', d.cursor);
+      await setKV('synced_at', Date.now());
+      await flush();
+      showWeek();
+    } catch (e) {
+      console.warn('sync failed:', e);
+      showToast('Sync failed — ' + String(e.message || e).slice(0, 60), 'error');
+    } finally { syncing = false; $('sync').classList.remove('spin'); }
+  }
+
+  // ── the outbox: nothing a worker records is ever lost ───────────────────
+  async function queue(payload) {
+    await putAll('outbox', [{ id: payload.client_run_id, payload, tries: 0, at: Date.now() }]);
+    await flush();
+  }
+  async function flush() {
+    if (!session || !navigator.onLine) return;
+    for (const row of await all('outbox')) {
+      try {
+        if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
+          method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
+        });
+        else await api('/rest/v1/rpc/submit_run', { method: 'POST', body: JSON.stringify({ p: row.payload }) });
+        await del('outbox', row.id);
+      } catch (e) {
+        await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 120) }]);
+        break;                            // keep the order; try again next time
+      }
+    }
+    paintFoot();
+  }
+
+  // ── screens ─────────────────────────────────────────────────────────────
+  const views = ['auth', 'week', 'task', 'run'];
+  function show(name, title, back) {
+    views.forEach(v => $(v).classList.toggle('hidden', v !== name));
+    $('title').textContent = title;
+    $('back').classList.toggle('hidden', !back);
+    $('back').onclick = back || null;
+    window.scrollTo(0, 0);
+  }
+
+  const fmtDay = iso => {
+    const d = new Date(iso + 'T00:00:00'), t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    const diff = Math.round((d - t0) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    if (diff === -1) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
+  };
+  const hhmm = t => (t || '').slice(0, 5);
+  const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+  async function showWeek() {
+    const tasks = (await all('tasks'))
+      .filter(t => !['cancelled'].includes(t.status))
+      // plain comparison, not localeCompare: ICU collation sorts punctuation
+      // before digits, which put the untimed tasks at the top of the day
+      .sort((a, b) => {
+        const k = x => x.planned_date + (x.due_time || '99:99:99');
+        return k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : 0;
+      });
+    const today = todayISO(), horizon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const week = tasks.filter(t => t.planned_date <= horizon &&
+      (t.planned_date >= today || t.status !== 'done'));
+
+    show('week', 'Tasks', null);
+    $('weekSub').textContent = farm ? farm.name : 'Your farm work, day by day.';
+    $('empty').classList.toggle('hidden', week.length > 0);
+
+    // the one to do now: earliest open task today or overdue
+    const next = week.find(t => t.status !== 'done' && t.planned_date <= today);
+    const nx = $('next'); nx.textContent = '';
+    if (next) {
+      const card = el('div', 'fb-ink');
+      card.append(el('small', null, next.planned_date < today ? 'Overdue — do this first' : 'Now'));
+      card.append(el('h3', null, next.title));
+      card.append(el('div', 'fb-meta',
+        [hhmm(next.due_time), Math.round(next.estimated_minutes) + ' min', next.family].filter(Boolean).join(' · ')));
+      const go = el('button', 'btn btn-primary btn-sm', 'Open');
+      go.style.marginTop = 'var(--space-3)';
+      go.onclick = () => openTask(next.id);
+      card.append(go);
+      nx.append(card);
+    }
+
+    const days = $('days'); days.textContent = '';
+    const byDay = new Map();
+    week.forEach(t => { if (!byDay.has(t.planned_date)) byDay.set(t.planned_date, []); byDay.get(t.planned_date).push(t); });
+    for (const [date, list] of byDay) {
+      const sec = el('section', 'fb-day');
+      const open = list.filter(t => t.status !== 'done').length;
+      sec.append(el('h2', null, `${fmtDay(date)} · ${open} open of ${list.length}`));
+      list.forEach(t => sec.append(taskCard(t, date < today)));
+      days.append(sec);
+    }
+    paintFoot();
+  }
+
+  function taskCard(t, late) {
+    const b = el('button', 'fb-card' + (t.status === 'done' ? ' done' : ''));
+    b.append(el('span', 'fb-when', hhmm(t.due_time) || '—'));
+    const body = el('div', 'fb-body');
+    body.append(el('div', 'fb-name', t.title));
+    body.append(el('div', 'fb-meta', [Math.round(t.estimated_minutes) + ' min', t.family].join(' · ')));
+    b.append(body);
+    b.append(el('span', 'fb-chip' + (t.status === 'done' ? ' ok' : late ? ' late' : ''),
+      t.status === 'done' ? 'Done' : late ? 'Overdue' : 'Open'));
+    b.onclick = () => openTask(t.id);
+    return b;
+  }
+
+  async function openTask(id) {
+    const t = (await all('tasks')).find(x => x.id === id);
+    if (!t) return;
+    const sop = (await all('sops')).find(s => s.id === t.sop_id);
+    const box = $('task'); box.textContent = '';
+    const hero = el('div', 'hero');
+    hero.append(el('h1', null, t.title));
+    if (sop?.summary) hero.append(el('p', null, sop.summary));
+    box.append(hero);
+
+    const facts = el('div', 'set-group');
+    const row = (k, v) => { if (!v) return; const r = el('div', 'set-row');
+      r.append(el('span', null, k)); r.append(el('span', null, String(v))); facts.append(r); };
+    row('When', `${fmtDay(t.planned_date)}${t.due_time ? ' · ' + hhmm(t.due_time) : ''}`);
+    row('Takes', Math.round(t.estimated_minutes) + ' min');
+    row('Family', t.family);
+    if (sop?.safety_ppe) row('Safety', sop.safety_ppe);
+    if (sop?.tools) row('Tools', sop.tools);
+    box.append(facts);
+
+    if (t.status === 'done') {
+      box.append(el('div', 'config-hint', 'Done. Nothing more to do here.'));
+    } else if ((sop?.validation || 'checklist') === 'tick') {
+      const b = el('button', 'btn btn-primary btn-lg btn-block', 'Mark done');
+      b.onclick = async () => {
+        await markDone(t);
+      };
+      box.append(b);
+    } else {
+      const b = el('button', 'btn btn-primary btn-lg btn-block', 'Start checklist');
+      b.onclick = () => startRun(t, sop);
+      box.append(b);
+      box.append(el('div', 'config-hint',
+        (sop?.validation === 'checklist_evidence')
+          ? 'This one needs evidence: some steps ask for a photo or a reading.'
+          : 'Tick each step as you go. It works offline.'));
+    }
+    show('task', 'Task', showWeek);
+  }
+
+  async function markDone(t) {
+    t.status = 'done'; t.done_at = new Date().toISOString();
+    await putAll('tasks', [t]);
+    await queue({ __tick: true, client_run_id: 'tick-' + t.id, task_id: t.id, actual_minutes: null });
+    showToast('Done ✓', 'success');
+    showWeek();
+  }
+
+  // ── running a checklist ─────────────────────────────────────────────────
+  let run = null;
+  async function startRun(task, sop) {
+    const steps = (await all('steps'))
+      .filter(s => s.version_id === task.sop_version_id)
+      .sort((a, b) => a.seq - b.seq);
+    if (!steps.length) {
+      showToast('This procedure has no approved steps yet', 'error');
+      return;
+    }
+    run = { task, sop, steps, started: new Date().toISOString(),
+            answers: new Map(), media: new Map(),
+            clientId: 'run-' + task.id + '-' + Date.now() };
+
+    const head = $('runHead'); head.textContent = '';
+    head.append(el('h1', null, task.title));
+    head.append(el('p', null, `${steps.length} steps · about ${Math.round(task.estimated_minutes)} min`));
+
+    const box = $('steps'); box.textContent = '';
+    steps.forEach(s => box.append(stepCard(s)));
+    $('runHint').textContent = '';
+    show('run', 'Checklist', () => openTask(task.id));
+  }
+
+  function stepCard(s) {
+    const card = el('div', 'fb-step'); card.dataset.seq = s.seq;
+    card.append(el('div', 'fb-sec', s.section));
+    card.append(el('h4', null, s.title));
+    if (s.instruction) card.append(el('div', 'fb-inst', s.instruction));
+
+    const set = (result, extra) => {
+      run.answers.set(s.seq, { seq: s.seq, step_id: s.id, result,
+        min_value: s.min_value, max_value: s.max_value, ...extra });
+      card.classList.toggle('answered', result === 'ok');
+      card.classList.toggle('bad', result === 'nok');
+      plan.classList.toggle('hidden', result !== 'nok' || !s.action_plan);
+    };
+
+    const acts = el('div', 'fb-actions');
+    if (s.step_type === 'measure') {
+      const input = el('input', 'fb-num'); input.type = 'number'; input.step = 'any';
+      input.placeholder = s.value_unit || 'value';
+      input.setAttribute('aria-label', s.title);
+      const range = (s.min_value != null || s.max_value != null)
+        ? `${s.min_value ?? ''}–${s.max_value ?? ''} ${s.value_unit || ''}`.trim()
+        : (s.target_source !== 'fixed' ? 'target comes from the crop' : '');
+      input.oninput = () => {
+        const v = parseFloat(input.value);
+        if (isNaN(v)) { run.answers.delete(s.seq); card.classList.remove('answered', 'bad'); return; }
+        const bad = (s.min_value != null && v < s.min_value) || (s.max_value != null && v > s.max_value);
+        set(bad ? 'nok' : 'ok', { value_num: v });
+      };
+      acts.append(input);
+      if (range) acts.append(el('span', 'fb-chip', range));
+    } else if (s.step_type === 'record') {
+      const input = el('input', 'fb-num'); input.style.width = '100%'; input.type = 'text';
+      input.placeholder = s.expected_result || 'what you saw';
+      input.setAttribute('aria-label', s.title);
+      input.oninput = () => input.value.trim() ? set('ok', { value_text: input.value.trim() })
+                                               : run.answers.delete(s.seq);
+      acts.append(input);
+    } else {
+      const yes = el('button', 'fb-btn', s.step_type === 'check' ? 'OK' : 'Done');
+      const no  = el('button', 'fb-btn no', 'Not OK');
+      yes.setAttribute('aria-pressed', 'false'); no.setAttribute('aria-pressed', 'false');
+      yes.onclick = () => { yes.setAttribute('aria-pressed', 'true'); no.setAttribute('aria-pressed', 'false'); set('ok', {}); };
+      no.onclick  = () => { no.setAttribute('aria-pressed', 'true'); yes.setAttribute('aria-pressed', 'false'); set('nok', {}); };
+      acts.append(yes, no);
+      const na = el('button', 'fb-btn', 'n/a');
+      na.onclick = () => { yes.setAttribute('aria-pressed','false'); no.setAttribute('aria-pressed','false'); set('na', {}); };
+      acts.append(na);
+    }
+    card.append(acts);
+
+    // evidence
+    if (/photo|video/.test(s.evidence || '')) {
+      const shot = el('div', 'fb-shot');
+      const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*';
+      pick.capture = 'environment'; pick.style.display = 'none';
+      const btn = el('button', 'fb-btn', '📷 Photo');
+      btn.onclick = () => pick.click();
+      pick.onchange = () => {
+        const f = pick.files[0]; if (!f) return;
+        const list = run.media.get(s.seq) || [];
+        list.push(f); run.media.set(s.seq, list);
+        const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'evidence';
+        shot.insertBefore(img, btn);
+        shot.querySelector('.fb-chip')?.remove();
+      };
+      shot.append(btn, pick);
+      shot.append(el('span', 'fb-chip', 'required'));
+      card.append(shot);
+    }
+
+    const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional)';
+    note.setAttribute('aria-label', 'Note for ' + s.title);
+    note.oninput = () => { const a = run.answers.get(s.seq); if (a) a.note = note.value; };
+    card.append(note);
+
+    const plan = el('div', 'fb-plan hidden');
+    if (s.action_plan) plan.textContent = s.action_plan;
+    card.append(plan);
+    return card;
+  }
+
+  async function finishRun() {
+    const missing = run.steps.filter(s => !run.answers.has(s.seq));
+    const noPhoto = run.steps.filter(s => /photo|video/.test(s.evidence || '') && !(run.media.get(s.seq) || []).length);
+    if (missing.length || noPhoto.length) {
+      $('runHint').textContent = missing.length
+        ? `${missing.length} step${missing.length > 1 ? 's' : ''} still to answer.`
+        : `${noPhoto.length} step${noPhoto.length > 1 ? 's' : ''} still need a photo.`;
+      const first = (missing[0] || noPhoto[0]).seq;
+      document.querySelector(`.fb-step[data-seq="${first}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    $('finish').disabled = true;
+    $('runHint').textContent = 'Saving…';
+
+    // photos first; if there is no signal they wait with the run in the outbox
+    const steps = [];
+    for (const s of run.steps) {
+      const a = run.answers.get(s.seq);
+      const media = [];
+      for (const [i, file] of (run.media.get(s.seq) || []).entries()) {
+        const path = `${farm.id}/${run.clientId}/${s.seq}-${i}-${Date.now()}.jpg`;
+        try {
+          await api('/storage/v1/object/evidence/' + path, {
+            method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file
+          });
+          media.push({ path, kind: 'photo' });
+        } catch (e) { console.warn('photo not uploaded yet:', e); }
+      }
+      steps.push({ ...a, media, recorded_at: new Date().toISOString() });
+    }
+
+    const payload = {
+      farm_id: farm.id, task_id: run.task.id, sop_version_id: run.task.sop_version_id,
+      client_run_id: run.clientId, status: 'completed',
+      started_at: run.started, finished_at: new Date().toISOString(), steps
+    };
+    const failed = steps.filter(s => s.result === 'nok').length;
+    run.task.status = 'done';
+    await putAll('tasks', [run.task]);
+    await queue(payload);
+    $('finish').disabled = false;
+    showToast(failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
+              failed ? 'error' : 'success');
+    showWeek();
+  }
+
+  async function paintFoot() {
+    const pending = (await all('outbox')).length;
+    const at = await getKV('synced_at');
+    $('foot').textContent = [
+      at ? 'Synced ' + new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not synced yet',
+      pending ? `${pending} waiting to upload` : null
+    ].filter(Boolean).join(' · ');
+  }
+
+  function paintAccount() {
+    const row = document.getElementById('fb-accountRow');
+    if (!row) return;
+    row.style.display = session ? '' : 'none';
+    const who = document.getElementById('fb-account');
+    if (who) who.textContent = session?.user?.email || '';
+  }
+
+  // ── wiring ──────────────────────────────────────────────────────────────
+  $('authForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = $('signin'); btn.disabled = true; $('authErr').textContent = '';
+    try {
+      await signIn($('email').value.trim(), $('pass').value);
+      $('pass').value = '';
+      await sync(true);
+    } catch (err) {
+      $('authErr').textContent = String(err.message || err);
+    } finally { btn.disabled = false; }
+  });
+  $('sync').addEventListener('click', () => sync(false));
+  $('finish').addEventListener('click', finishRun);
+
+  document.querySelectorAll('[data-source]').forEach(btn => btn.addEventListener('click', () => {
+    setSource(btn.dataset.source);
+  }));
+  document.getElementById('fb-signout')?.addEventListener('click', async () => {
+    saveSession(null);
+    await setKV('farm', null); farm = null;
+    showToast('Signed out', 'success');
+    if (document.body.classList.contains('src-cloud')) fbOpen();
+  });
+
+  function setSource(src) {
+    localStorage.setItem(SOURCE_KEY, src);
+    document.body.classList.toggle('src-cloud', src === 'cloud');
+    document.querySelectorAll('[data-source]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.source === src)));
+    if (document.body.classList.contains('mode-sop')) {
+      if (src === 'cloud') fbOpen(); else if (window.sopOpen) window.sopOpen();
+    }
+  }
+
+  function fbOpen() {
+    paintAccount();
+    if (!session) { show('auth', 'Sign in', null); return; }
+    showWeek();
+    if (navigator.onLine) sync(false);
+  }
+
+  const netPill = () => $('net')?.classList.toggle('hidden', navigator.onLine);
+  addEventListener('online', () => { netPill(); flush(); });
+  addEventListener('offline', netPill);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && document.body.classList.contains('src-cloud')) { flush(); }
+  });
+
+  window.fbOpen = fbOpen;
+  setSource(localStorage.getItem(SOURCE_KEY) || 'notion');
+  netPill();
+})();
+
 window.sopOpen = sopOpen;
-if (document.body.classList.contains('mode-sop')) sopOpen();   // the app opens on this tab
+if (document.body.classList.contains('mode-sop') && !document.body.classList.contains('src-cloud')) sopOpen();
 })();
 </script>
 </body>
