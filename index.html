@@ -398,6 +398,7 @@
     .settings-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--space-3); padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2);
       background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
     .settings-body { max-width: 640px; margin: 0 auto; padding: var(--space-2) var(--space-4) calc(env(safe-area-inset-bottom) + var(--space-8)); }
+    .set-select { font: inherit; font-size: var(--text-sm); color: var(--text); background: var(--surface-offset); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 10px; max-width: 60%; }
     .set-title { display: flex; align-items: center; gap: var(--space-2); font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin: var(--space-5) 0 var(--space-2); }
     .set-group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-md); padding: var(--space-4); }
     .set-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; }
@@ -671,7 +672,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.9.15';
+  const CURRENT_VERSION = '0.9.16';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -962,7 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <header>
   <div class="logo">
     <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
-    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.15</span></span></span>
+    <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.9.16</span></span></span>
   </div>
   <div class="header-actions">
     <button id="authorBtn" aria-label="Set author name"
@@ -1206,6 +1207,11 @@ document.addEventListener('DOMContentLoaded', () => {
         <button type="button" data-theme-choice="system">Auto</button>
       </div>
       <div class="config-hint" style="margin-top:var(--space-2)">Auto follows the phone's own light/dark setting.</div>
+      <div class="set-row" style="margin-top:var(--space-3)">
+        <label for="skinSelect">Skin</label>
+        <select id="skinSelect" class="set-select" aria-label="Skin"><option value="naked-farm">Naked Farm</option></select>
+      </div>
+      <div class="config-hint">A skin is a small design-token file (skins/*.json) with the colours, corner radius and font — the same values a Figma variables export gives. It never changes the layout.</div>
     </div>
 
     <div class="set-title">App</div>
@@ -1543,6 +1549,77 @@ function applyTheme(choice) {
 applyTheme(localStorage.getItem('ugly200_theme') || 'light');
 document.querySelectorAll('[data-theme-choice]').forEach(btn =>
   btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice)));
+
+// ─── SKINS ───────────────────────────────────────────────────
+// A skin is skins/<id>.json: { id, name, fonts, radius, light: {token: value}, dark: {...} }.
+// Token names are the CSS variables of the design-token block above, without the
+// leading "--". Applying a skin only writes a <style> that redefines those
+// variables for light, dark and Auto; the layout, components and text never change.
+// The default skin "naked-farm" is the built-in block itself, so it writes nothing.
+const DEFAULT_SKIN = 'naked-farm';
+const SKIN_KEY = 'nb_skin';          // chosen skin id
+const SKIN_CACHE_KEY = 'nb_skin_json'; // last applied skin, for an instant start offline
+
+function skinCss(skin) {
+  const decl = obj => Object.entries(obj || {})
+    .filter(([k, v]) => /^[a-z0-9-]+$/i.test(k) && typeof v === 'string' && !/[;{}]/.test(v))
+    .map(([k, v]) => `--${k}: ${v};`).join(' ');
+  const base = decl({ ...(skin.radius ? Object.fromEntries(Object.entries(skin.radius).map(([k, v]) => ['radius-' + k, v])) : {}),
+                      ...(skin.fonts?.body ? { 'font-body': `'${skin.fonts.body.replace(/'/g, '')}', system-ui, sans-serif` } : {}) });
+  const light = decl(skin.light), dark = decl(skin.dark);
+  return `:root, [data-theme="light"] { ${base} ${light} }\n` +
+         `[data-theme="dark"] { ${dark} }\n` +
+         `@media (prefers-color-scheme: dark) { :root:not([data-theme]) { ${dark} } }`;
+}
+
+function applySkin(skin) {
+  let style = document.getElementById('skinStyle');
+  if (!skin || skin.id === DEFAULT_SKIN) { if (style) style.remove(); return; }
+  if (!style) { style = document.createElement('style'); style.id = 'skinStyle'; document.head.appendChild(style); }
+  style.textContent = skinCss(skin);
+  const font = skin.fonts?.body;
+  if (font && font !== 'Inter' && !document.getElementById('skinFont')) {
+    const link = document.createElement('link');
+    link.id = 'skinFont'; link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(font).replace(/%20/g, '+') + ':wght@400;500;600;700&display=swap';
+    document.head.appendChild(link);
+  }
+}
+
+async function loadSkin(id) {
+  id = (id || DEFAULT_SKIN).replace(/[^a-z0-9-]/gi, '');
+  localStorage.setItem(SKIN_KEY, id);
+  if (id === DEFAULT_SKIN) { localStorage.removeItem(SKIN_CACHE_KEY); applySkin(null); return; }
+  try {
+    const res = await fetch(`skins/${id}.json`, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(res.status);
+    const skin = await res.json();
+    localStorage.setItem(SKIN_CACHE_KEY, JSON.stringify(skin));
+    applySkin(skin);
+  } catch (e) {
+    console.warn('Skin not loaded:', e);
+  }
+}
+
+function initSkin() {
+  // Instant: the last applied skin from localStorage, before any network.
+  try { const cached = localStorage.getItem(SKIN_CACHE_KEY); if (cached) applySkin(JSON.parse(cached)); } catch (e) {}
+  const chosen = localStorage.getItem(SKIN_KEY) || DEFAULT_SKIN;
+  const select = document.getElementById('skinSelect');
+  if (select) {
+    select.value = chosen;
+    select.addEventListener('change', () => loadSkin(select.value));
+    fetch('skins/index.json').then(r => r.json()).then(list => {
+      select.innerHTML = '';
+      (list.skins || []).forEach(s => {
+        const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; select.appendChild(o);
+      });
+      select.value = chosen;
+    }).catch(() => {});
+  }
+  if (chosen !== DEFAULT_SKIN) loadSkin(chosen);   // refresh from the file when online
+}
+initSkin();
 
 // ─── SETTINGS PAGE ───────────────────────────────────────────
 // Opened from the gear. Pushes a history entry so the phone's back

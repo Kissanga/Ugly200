@@ -1,0 +1,34 @@
+{
+  "id": "ocean",
+  "name": "Ocean",
+  "version": 1,
+  "description": "Example franchisee skin — cool grey-blue ground, deep-blue actions, teal accent. Shows what a skin file changes; edit or replace it.",
+  "fonts": { "body": "Inter" },
+  "radius": { "sm": "0.5rem", "md": "0.75rem", "lg": "1rem", "xl": "1.25rem" },
+  "light": {
+    "bg": "#e9eef3", "bg-end": "#d5dfea",
+    "bg-grad": "linear-gradient(180deg, #f2f5f8 0%, #e6ecf2 45%, #d5dfea 100%)",
+    "surface": "#ffffff", "surface-2": "#f8fafc", "surface-raised": "#ffffff", "surface-offset": "#eef2f6", "surface-dynamic": "#e3e9ef", "glass": "rgba(255,255,255,0.72)",
+    "border": "rgba(16,32,48,0.10)", "divider": "rgba(16,32,48,0.10)",
+    "text": "#0f1c2b", "text-primary": "#0f1c2b", "text-muted": "#4f5f70", "text-faint": "#8797a8", "text-inverse": "#ffffff",
+    "primary": "#123c6b", "primary-hover": "#1b4f8a", "primary-active": "#0c2a4b", "primary-highlight": "#d6ecf5",
+    "accent": "#1f9cc4", "accent-soft": "#d6ecf5", "coral": "#ff6b57", "coral-soft": "#ffe3de", "lavender-soft": "#e6e9fb",
+    "ink": "#0f1c2b", "ink-text": "#f2f6fa", "ink-muted": "rgba(242,246,250,0.62)",
+    "success": "#0e7c8f", "success-bg": "#d6ecf5", "error": "#c43a2f", "error-bg": "#ffe3de", "warning": "#8a5a00", "warning-bg": "#fbefcc",
+    "shadow-sm": "0 1px 2px rgba(15,28,43,0.06)", "shadow-md": "0 6px 20px rgba(15,28,43,0.08)", "shadow-lg": "0 16px 40px rgba(15,28,43,0.18)",
+    "rec-pulse": "rgba(255,107,87,0.35)"
+  },
+  "dark": {
+    "bg": "#0e1520", "bg-end": "#16233a",
+    "bg-grad": "linear-gradient(180deg, #111a27 0%, #131f30 45%, #16233a 100%)",
+    "surface": "#1a2434", "surface-2": "#1f2a3b", "surface-raised": "#1f2a3b", "surface-offset": "#141d2b", "surface-dynamic": "#26324a", "glass": "rgba(26,36,52,0.72)",
+    "border": "rgba(255,255,255,0.09)", "divider": "rgba(255,255,255,0.09)",
+    "text": "#eef3f8", "text-primary": "#eef3f8", "text-muted": "#a4b1c0", "text-faint": "#6f7d8d", "text-inverse": "#0f1c2b",
+    "primary": "#3fb6dd", "primary-hover": "#6fcbea", "primary-active": "#2a9ec5", "primary-highlight": "#10384a",
+    "accent": "#3fb6dd", "accent-soft": "#10384a", "coral": "#ff7a68", "coral-soft": "#4a2622", "lavender-soft": "#262a44",
+    "ink": "#25324a", "ink-text": "#f2f6fa", "ink-muted": "rgba(242,246,250,0.62)",
+    "success": "#6fd8ea", "success-bg": "#10384a", "error": "#ff9086", "error-bg": "#4a2622", "warning": "#f0c060", "warning-bg": "#40341a",
+    "shadow-sm": "0 1px 2px rgba(0,0,0,0.3)", "shadow-md": "0 6px 20px rgba(0,0,0,0.35)", "shadow-lg": "0 16px 40px rgba(0,0,0,0.5)",
+    "rec-pulse": "rgba(255,107,87,0.35)"
+  }
+}

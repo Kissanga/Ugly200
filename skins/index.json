@@ -1,0 +1,6 @@
+{
+  "skins": [
+    { "id": "naked-farm", "name": "Naked Farm" },
+    { "id": "ocean", "name": "Ocean (example)" }
+  ]
+}

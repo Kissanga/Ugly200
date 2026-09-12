@@ -1,0 +1,34 @@
+{
+  "id": "naked-farm",
+  "name": "Naked Farm",
+  "version": 1,
+  "description": "Naked Farm UI v1 — cream-to-ochre ground, white cards, aqua accent, coral alerts. The built-in default.",
+  "fonts": { "body": "Inter" },
+  "radius": { "sm": "0.5rem", "md": "0.75rem", "lg": "1.125rem", "xl": "1.5rem" },
+  "light": {
+    "bg": "#f1e7d3", "bg-end": "#e6d3ad",
+    "bg-grad": "linear-gradient(180deg, #f7efdf 0%, #efe3c9 45%, #e6d3ad 100%)",
+    "surface": "#ffffff", "surface-2": "#fbfaf8", "surface-raised": "#ffffff", "surface-offset": "#f4f2ee", "surface-dynamic": "#ebe9e4", "glass": "rgba(255,255,255,0.72)",
+    "border": "rgba(18,18,18,0.08)", "divider": "rgba(18,18,18,0.08)",
+    "text": "#121212", "text-primary": "#121212", "text-muted": "#55534f", "text-faint": "#8f8d88", "text-inverse": "#ffffff",
+    "primary": "#121212", "primary-hover": "#2e2e2e", "primary-active": "#000000", "primary-highlight": "#d3f3ee",
+    "accent": "#1bbfa8", "accent-soft": "#d3f3ee", "coral": "#ef6461", "coral-soft": "#fde3e1", "lavender-soft": "#e8eafb",
+    "ink": "#1b1b1d", "ink-text": "#f5f5f3", "ink-muted": "rgba(245,245,243,0.62)",
+    "success": "#0b7566", "success-bg": "#d3f3ee", "error": "#c4373a", "error-bg": "#fde3e1", "warning": "#8a5a00", "warning-bg": "#fbefcc",
+    "shadow-sm": "0 1px 2px rgba(18,18,18,0.05)", "shadow-md": "0 6px 20px rgba(18,18,18,0.07)", "shadow-lg": "0 16px 40px rgba(18,18,18,0.16)",
+    "rec-pulse": "rgba(239,100,97,0.35)"
+  },
+  "dark": {
+    "bg": "#131315", "bg-end": "#2b2418",
+    "bg-grad": "linear-gradient(180deg, #1d1c19 0%, #1f1c17 45%, #2b2418 100%)",
+    "surface": "#212124", "surface-2": "#252528", "surface-raised": "#252528", "surface-offset": "#1b1b1e", "surface-dynamic": "#2d2d31", "glass": "rgba(42,42,46,0.72)",
+    "border": "rgba(255,255,255,0.09)", "divider": "rgba(255,255,255,0.09)",
+    "text": "#f2f2f0", "text-primary": "#f2f2f0", "text-muted": "#aaa9a4", "text-faint": "#72716c", "text-inverse": "#121212",
+    "primary": "#1bbfa8", "primary-hover": "#55d8c5", "primary-active": "#17a894", "primary-highlight": "#133b36",
+    "accent": "#1bbfa8", "accent-soft": "#133b36", "coral": "#ef6461", "coral-soft": "#4a2826", "lavender-soft": "#262a44",
+    "ink": "#2b2b30", "ink-text": "#f5f5f3", "ink-muted": "rgba(245,245,243,0.62)",
+    "success": "#5fdcc9", "success-bg": "#133b36", "error": "#ff8a86", "error-bg": "#4a2826", "warning": "#f0c060", "warning-bg": "#40341a",
+    "shadow-sm": "0 1px 2px rgba(0,0,0,0.3)", "shadow-md": "0 6px 20px rgba(0,0,0,0.35)", "shadow-lg": "0 16px 40px rgba(0,0,0,0.5)",
+    "rec-pulse": "rgba(239,100,97,0.35)"
+  }
+}
