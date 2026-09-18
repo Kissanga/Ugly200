@@ -754,7 +754,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.0';
+  const CURRENT_VERSION = '0.11.1';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -4090,9 +4090,18 @@ async function submitToNotion() {
       properties[dateEntry[0]] = { date: { start: getTabValue('daily', 'Date') || localDateISO(noteStartTime) } };
     }
   } else {
-    properties['Date'] = { date: { start: noteStartTime.toISOString() } };
-    if (note && noteProp) {
-      properties[noteProp] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
+    // Date and note go to whichever column the live DB has (SoP renamed
+    // Date → Effective Date and Note → Summary); left out if none exists,
+    // since Notion rejects the whole page for an unknown column.
+    const knownProps = Object.keys(dbProps).length > 0;
+    const pickCol = (names, type) => !knownProps ? names[0]
+      : names.find(n => dbProps[n]?.type === type)
+        || Object.keys(dbProps).find(n => dbProps[n].type === type && names.some(x => n.toLowerCase().includes(x.toLowerCase())));
+    const dateCol = pickCol(['Date', 'Effective Date'], 'date');
+    if (dateCol) properties[dateCol] = { date: { start: dateCol === 'Date' ? noteStartTime.toISOString() : localDateISO(noteStartTime) } };
+    const noteCol = pickCol([noteProp, 'Summary'], 'rich_text');
+    if (note && noteCol) {
+      properties[noteCol] = { rich_text: [{ text: { content: note.slice(0, 2000) } }] };
     }
   }
 
