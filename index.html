@@ -131,8 +131,19 @@
     .recorder-timer { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); letter-spacing: -0.02em; display: none; }
     .recorder-timer.visible { display: block; }
     .recorder-status { font-size: var(--text-sm); color: var(--text-muted); text-align: center; min-height: 1.5em; }
-    .gps-stamp { display: block; font-size: var(--text-xs); color: var(--text-muted); text-align: center; text-decoration: none; margin-top: 2px; }
-    .gps-stamp[hidden] { display: none; }
+    .gps-box { display: flex; flex-direction: column; align-items: center; margin-top: var(--space-2); }
+    .gps-box [hidden] { display: none !important; }
+    .gps-live { width: 100%; max-width: 360px; text-align: center; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); }
+    .gps-acc { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+    .gps-acc.ok { color: var(--success); } .gps-acc.near { color: var(--warning); } .gps-acc.far { color: var(--error); }
+    .gps-coords { font-size: var(--text-xs); color: var(--text-muted); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+    .gps-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+    .gps-target { font-size: var(--text-xs); color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+    .gps-target select { font: inherit; padding: 2px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+    #gpsSaveBtn:disabled { opacity: .45; }
+    .gps-saved { display: flex; align-items: center; gap: var(--space-2); }
+    .gps-stamp { font-size: var(--text-xs); color: var(--text-muted); text-decoration: none; }
+    .gps-remove { min-height: 28px !important; padding: 0 var(--space-3) !important; }
 
     /* EDITABLE BOX */
     .editable-box-wrap { margin-bottom: var(--space-4); }
@@ -756,7 +767,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.3';
+  const CURRENT_VERSION = '0.11.4';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1198,7 +1209,27 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div class="recorder-timer" id="recTimer">0:00</div>
     <div class="recorder-status" id="recStatus">Tap to record voice note</div>
-    <a class="gps-stamp" id="gpsStamp" target="_blank" rel="noopener" hidden></a>
+    <!-- LOCATION: added on demand; live precision until the user saves it -->
+    <div class="gps-box">
+      <button class="btn-copy gps-add" id="gpsAddBtn" aria-label="Add GPS location">📍 Add location</button>
+      <div class="gps-live" id="gpsLive" hidden>
+        <div class="gps-acc" id="gpsAcc" aria-live="polite">Searching GPS…</div>
+        <div class="gps-coords" id="gpsCoords"></div>
+        <div class="gps-actions">
+          <label class="gps-target">Target ±
+            <select id="gpsTarget" aria-label="Target precision in metres">
+              <option>3</option><option>5</option><option selected>10</option><option>20</option><option>50</option>
+            </select> m
+          </label>
+          <button class="btn-copy" id="gpsSaveBtn" disabled>Save location</button>
+          <button class="btn-copy" id="gpsCancelBtn">Cancel</button>
+        </div>
+      </div>
+      <div class="gps-saved" id="gpsSaved" hidden>
+        <a class="gps-stamp" id="gpsStamp" target="_blank" rel="noopener"></a>
+        <button class="btn-copy gps-remove" id="gpsRemoveBtn" aria-label="Remove location">×</button>
+      </div>
+    </div>
     <input type="file" id="videoSummaryPhotoInput" accept="image/*" multiple style="display:none">
     <input type="file" id="videoSummaryVideoInput" accept="video/*" style="display:none">
     <div class="media-previews" id="mediaPreviews"></div>
@@ -1634,60 +1665,100 @@ function renderNoteStamp() {
 }
 
 // ─── GPS LOCATION ────────────────────────────────────────────
-// Taken when a capture starts (voice, photo or video) and sent with the note:
-// a 📍 line with a map link in the page, plus a Location/GPS column if the DB
-// has one. Never blocks: no permission or no fix just means no location.
-let captureLocation = null;   // { lat, lon, acc, at }
-let _gpsPending = null;
+// Added on demand with "📍 Add location" (never automatic): the live precision
+// is shown while the GPS settles, and the user saves the fix once it is close
+// enough to their target. Sent with the note as a 📍 line with a map link in
+// the page, plus Location / Precision columns when the DB has them.
+let captureLocation = null;   // the saved fix: { lat, lon, acc, at }
+let _gpsLive = null;          // latest live fix, not saved yet
+let _gpsWatch = null;
+const GPS_TARGET_KEY = 'nb_gps_target';
 
 function mapsUrl(loc) { return `https://www.google.com/maps?q=${loc.lat.toFixed(6)},${loc.lon.toFixed(6)}`; }
 function locationText(loc) { return `${loc.lat.toFixed(6)}, ${loc.lon.toFixed(6)} (±${Math.round(loc.acc)} m)`; }
+function gpsTarget() { return Number(document.getElementById('gpsTarget').value) || 10; }
 
+// Idle: the Add button. Live: the precision panel. Saved: the stamp with ×.
 function renderGpsStamp() {
-  const el = document.getElementById('gpsStamp');
-  if (!el) return;
-  el.hidden = !captureLocation;
-  if (captureLocation) { el.textContent = '📍 ' + locationText(captureLocation); el.href = mapsUrl(captureLocation); }
+  const live = _gpsWatch !== null;
+  document.getElementById('gpsAddBtn').hidden = live || !!captureLocation;
+  document.getElementById('gpsLive').hidden = !live;
+  document.getElementById('gpsSaved').hidden = live || !captureLocation;
+  if (captureLocation) {
+    const el = document.getElementById('gpsStamp');
+    el.textContent = '📍 ' + locationText(captureLocation);
+    el.href = mapsUrl(captureLocation);
+  }
 }
 
-// The first fix is often coarse (cell/Wi-Fi, ±50-100 m) while the GPS warms
-// up, so the app keeps listening and keeps the most precise fix, stopping once
-// it is within GPS_GOOD_M or after GPS_WATCH_MS.
-const GPS_GOOD_M = 10;
-const GPS_WATCH_MS = 30000;
-let _gpsWatch = null, _gpsWatchTimer = null;
+function renderGpsLive(msg) {
+  const acc = document.getElementById('gpsAcc');
+  const coords = document.getElementById('gpsCoords');
+  const save = document.getElementById('gpsSaveBtn');
+  if (!_gpsLive) {
+    acc.textContent = msg || 'Searching GPS…';
+    acc.className = 'gps-acc';
+    coords.textContent = '';
+    save.disabled = true;
+    return;
+  }
+  const m = Math.round(_gpsLive.acc), target = gpsTarget();
+  acc.textContent = `±${m} m`;
+  acc.className = 'gps-acc ' + (m <= target ? 'ok' : m <= target * 3 ? 'near' : 'far');
+  coords.textContent = `${_gpsLive.lat.toFixed(6)}, ${_gpsLive.lon.toFixed(6)}` + (m <= target ? ' · target reached' : '');
+  save.disabled = false;
+}
 
 function stopGpsWatch() {
   if (_gpsWatch !== null) navigator.geolocation.clearWatch(_gpsWatch);
-  clearTimeout(_gpsWatchTimer);
   _gpsWatch = null;
+  _gpsLive = null;
 }
 
-// Must run inside the tap handler so iOS shows the permission prompt.
-// Resolves on the first fix (or failure); refining carries on in the background.
-function grabLocation() {
-  if (!('geolocation' in navigator)) return Promise.resolve(null);
-  if (_gpsPending) return _gpsPending;
-  if (_gpsWatch !== null) return Promise.resolve(captureLocation);
-  _gpsPending = new Promise(resolve => {
-    _gpsWatch = navigator.geolocation.watchPosition(pos => {
-      const c = pos.coords;
-      if (!captureLocation || c.accuracy <= captureLocation.acc) {
-        captureLocation = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, at: new Date(pos.timestamp).toISOString() };
-        renderGpsStamp();
-        if (typeof saveDraft === 'function') saveDraft();
-      }
-      if (c.accuracy <= GPS_GOOD_M) stopGpsWatch();
-      resolve(captureLocation);
-    }, err => {
-      console.warn('GPS unavailable:', err.message);
-      stopGpsWatch();
-      resolve(captureLocation);
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-    _gpsWatchTimer = setTimeout(() => { stopGpsWatch(); resolve(captureLocation); }, GPS_WATCH_MS);
-  }).finally(() => { _gpsPending = null; });
-  return _gpsPending;
+function startGpsLive() {
+  if (!('geolocation' in navigator)) { showToast('Location is not available on this device', 'error'); return; }
+  stopGpsWatch();
+  _gpsWatch = navigator.geolocation.watchPosition(pos => {
+    const c = pos.coords;
+    _gpsLive = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, at: new Date(pos.timestamp).toISOString() };
+    renderGpsLive();
+  }, err => {
+    console.warn('GPS:', err.message);
+    if (err.code === err.PERMISSION_DENIED) {
+      stopGpsWatch(); renderGpsStamp();
+      showToast('Location permission denied — allow it in the phone settings', 'error');
+    } else if (!_gpsLive) {
+      renderGpsLive('No GPS signal yet…');   // keeps watching; timeouts are retried
+    }
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+  renderGpsLive();
+  renderGpsStamp();
 }
+
+function saveGpsLive() {
+  if (!_gpsLive) return;
+  captureLocation = _gpsLive;
+  stopGpsWatch();
+  renderGpsStamp();
+  saveDraft();
+}
+
+function clearLocation() {
+  stopGpsWatch();
+  captureLocation = null;
+  renderGpsStamp();
+  saveDraft();
+}
+
+(() => {
+  const sel = document.getElementById('gpsTarget');
+  try { const t = localStorage.getItem(GPS_TARGET_KEY); if (t && [...sel.options].some(o => o.value === t)) sel.value = t; } catch(e) {}
+  sel.addEventListener('change', () => { try { localStorage.setItem(GPS_TARGET_KEY, sel.value); } catch(e) {} renderGpsLive(); });
+  document.getElementById('gpsAddBtn').addEventListener('click', startGpsLive);
+  document.getElementById('gpsSaveBtn').addEventListener('click', saveGpsLive);
+  document.getElementById('gpsCancelBtn').addEventListener('click', () => { stopGpsWatch(); renderGpsStamp(); });
+  document.getElementById('gpsRemoveBtn').addEventListener('click', clearLocation);
+})();
 
 // Re-render stamp if author name changes live
 document.getElementById('authorName').addEventListener('input', renderNoteStamp);
@@ -1978,7 +2049,6 @@ recordBtn.addEventListener('click', async () => {
 });
 
 async function startRecording() {
-  grabLocation();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
@@ -3367,8 +3437,8 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
-document.getElementById('videoSummaryPhotoBtn').addEventListener('click', () => { grabLocation(); document.getElementById('videoSummaryPhotoInput').click(); });
-document.getElementById('videoSummaryVideoBtn').addEventListener('click', () => { grabLocation(); document.getElementById('videoSummaryVideoInput').click(); });
+document.getElementById('videoSummaryPhotoBtn').addEventListener('click', () => document.getElementById('videoSummaryPhotoInput').click());
+document.getElementById('videoSummaryVideoBtn').addEventListener('click', () => document.getElementById('videoSummaryVideoInput').click());
 
 // ─── iCLOUD-OFFLOADED MEDIA ──────────────────────────────────
 // With Settings → Photos → "Optimize iPhone Storage", the full-size asset lives
@@ -4130,8 +4200,7 @@ async function submitToNotion() {
     pushTextBlocks(note);
   }
 
-  // A fix still on its way gets a few more seconds; the note never waits longer.
-  if (_gpsPending && !captureLocation) await Promise.race([_gpsPending, new Promise(r => setTimeout(r, 5000))]);
+  // Only a location the user saved is sent.
   const loc = captureLocation;
   if (loc) {
     children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[
