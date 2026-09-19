@@ -756,7 +756,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.2';
+  const CURRENT_VERSION = '0.11.3';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1650,24 +1650,41 @@ function renderGpsStamp() {
   if (captureLocation) { el.textContent = '📍 ' + locationText(captureLocation); el.href = mapsUrl(captureLocation); }
 }
 
+// The first fix is often coarse (cell/Wi-Fi, ±50-100 m) while the GPS warms
+// up, so the app keeps listening and keeps the most precise fix, stopping once
+// it is within GPS_GOOD_M or after GPS_WATCH_MS.
+const GPS_GOOD_M = 10;
+const GPS_WATCH_MS = 30000;
+let _gpsWatch = null, _gpsWatchTimer = null;
+
+function stopGpsWatch() {
+  if (_gpsWatch !== null) navigator.geolocation.clearWatch(_gpsWatch);
+  clearTimeout(_gpsWatchTimer);
+  _gpsWatch = null;
+}
+
 // Must run inside the tap handler so iOS shows the permission prompt.
+// Resolves on the first fix (or failure); refining carries on in the background.
 function grabLocation() {
   if (!('geolocation' in navigator)) return Promise.resolve(null);
   if (_gpsPending) return _gpsPending;
+  if (_gpsWatch !== null) return Promise.resolve(captureLocation);
   _gpsPending = new Promise(resolve => {
-    navigator.geolocation.getCurrentPosition(pos => {
+    _gpsWatch = navigator.geolocation.watchPosition(pos => {
       const c = pos.coords;
-      // Keep the most accurate fix of this note.
       if (!captureLocation || c.accuracy <= captureLocation.acc) {
         captureLocation = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, at: new Date(pos.timestamp).toISOString() };
         renderGpsStamp();
         if (typeof saveDraft === 'function') saveDraft();
       }
+      if (c.accuracy <= GPS_GOOD_M) stopGpsWatch();
       resolve(captureLocation);
     }, err => {
       console.warn('GPS unavailable:', err.message);
+      stopGpsWatch();
       resolve(captureLocation);
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    _gpsWatchTimer = setTimeout(() => { stopGpsWatch(); resolve(captureLocation); }, GPS_WATCH_MS);
   }).finally(() => { _gpsPending = null; });
   return _gpsPending;
 }
@@ -4135,6 +4152,14 @@ async function submitToNotion() {
       ? { url: mapsUrl(loc) }
       : { rich_text: [{ text: { content: locationText(loc), link: { url: mapsUrl(loc) } } }] };
   }
+  // Precision column in metres (number, or text "±12 m"), if the DB has one.
+  const accEntry = loc && Object.entries(dbProps).find(([k, v]) =>
+    /^(gps )?(precision|accuracy)( \(m\))?$/i.test(k) && (v.type === 'number' || v.type === 'rich_text'));
+  if (accEntry) {
+    properties[accEntry[0]] = accEntry[1].type === 'number'
+      ? { number: Math.round(loc.acc) }
+      : { rich_text: [{ text: { content: `±${Math.round(loc.acc)} m` } }] };
+  }
 
   // Author: send to any tab whose DB has an Author property.
   const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
@@ -4243,6 +4268,7 @@ function resetForm() {
   renderTabFields(activeTab);
   recordedBlob = null;
   noteStartTime = new Date(); // fresh timestamp for the next note
+  stopGpsWatch();
   captureLocation = null;     // and a fresh position
   renderGpsStamp();
   clearDraft();               // note is safely in Notion — drop the local copy
