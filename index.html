@@ -131,6 +131,8 @@
     .recorder-timer { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); letter-spacing: -0.02em; display: none; }
     .recorder-timer.visible { display: block; }
     .recorder-status { font-size: var(--text-sm); color: var(--text-muted); text-align: center; min-height: 1.5em; }
+    .gps-stamp { display: block; font-size: var(--text-xs); color: var(--text-muted); text-align: center; text-decoration: none; margin-top: 2px; }
+    .gps-stamp[hidden] { display: none; }
 
     /* EDITABLE BOX */
     .editable-box-wrap { margin-bottom: var(--space-4); }
@@ -754,7 +756,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.1';
+  const CURRENT_VERSION = '0.11.2';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1196,6 +1198,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div class="recorder-timer" id="recTimer">0:00</div>
     <div class="recorder-status" id="recStatus">Tap to record voice note</div>
+    <a class="gps-stamp" id="gpsStamp" target="_blank" rel="noopener" hidden></a>
     <input type="file" id="videoSummaryPhotoInput" accept="image/*" multiple style="display:none">
     <input type="file" id="videoSummaryVideoInput" accept="video/*" style="display:none">
     <div class="media-previews" id="mediaPreviews"></div>
@@ -1630,6 +1633,45 @@ function renderNoteStamp() {
   if (authorEl) authorEl.textContent = document.getElementById('authorName')?.value.trim() || '';
 }
 
+// ─── GPS LOCATION ────────────────────────────────────────────
+// Taken when a capture starts (voice, photo or video) and sent with the note:
+// a 📍 line with a map link in the page, plus a Location/GPS column if the DB
+// has one. Never blocks: no permission or no fix just means no location.
+let captureLocation = null;   // { lat, lon, acc, at }
+let _gpsPending = null;
+
+function mapsUrl(loc) { return `https://www.google.com/maps?q=${loc.lat.toFixed(6)},${loc.lon.toFixed(6)}`; }
+function locationText(loc) { return `${loc.lat.toFixed(6)}, ${loc.lon.toFixed(6)} (±${Math.round(loc.acc)} m)`; }
+
+function renderGpsStamp() {
+  const el = document.getElementById('gpsStamp');
+  if (!el) return;
+  el.hidden = !captureLocation;
+  if (captureLocation) { el.textContent = '📍 ' + locationText(captureLocation); el.href = mapsUrl(captureLocation); }
+}
+
+// Must run inside the tap handler so iOS shows the permission prompt.
+function grabLocation() {
+  if (!('geolocation' in navigator)) return Promise.resolve(null);
+  if (_gpsPending) return _gpsPending;
+  _gpsPending = new Promise(resolve => {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const c = pos.coords;
+      // Keep the most accurate fix of this note.
+      if (!captureLocation || c.accuracy <= captureLocation.acc) {
+        captureLocation = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, at: new Date(pos.timestamp).toISOString() };
+        renderGpsStamp();
+        if (typeof saveDraft === 'function') saveDraft();
+      }
+      resolve(captureLocation);
+    }, err => {
+      console.warn('GPS unavailable:', err.message);
+      resolve(captureLocation);
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
+  }).finally(() => { _gpsPending = null; });
+  return _gpsPending;
+}
+
 // Re-render stamp if author name changes live
 document.getElementById('authorName').addEventListener('input', renderNoteStamp);
 
@@ -1919,6 +1961,7 @@ recordBtn.addEventListener('click', async () => {
 });
 
 async function startRecording() {
+  grabLocation();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     audioChunks = [];
@@ -3307,8 +3350,8 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
-document.getElementById('videoSummaryPhotoBtn').addEventListener('click', () => document.getElementById('videoSummaryPhotoInput').click());
-document.getElementById('videoSummaryVideoBtn').addEventListener('click', () => document.getElementById('videoSummaryVideoInput').click());
+document.getElementById('videoSummaryPhotoBtn').addEventListener('click', () => { grabLocation(); document.getElementById('videoSummaryPhotoInput').click(); });
+document.getElementById('videoSummaryVideoBtn').addEventListener('click', () => { grabLocation(); document.getElementById('videoSummaryVideoInput').click(); });
 
 // ─── iCLOUD-OFFLOADED MEDIA ──────────────────────────────────
 // With Settings → Photos → "Optimize iPhone Storage", the full-size asset lives
@@ -3685,6 +3728,7 @@ function writeDraft() {
       fields,
       tab: activeTab,
       startedAt: noteStartTime.toISOString(),
+      location: captureLocation,
       mediaCount: mediaFiles.length,
       savedAt: new Date().toISOString(),
     }));
@@ -3728,6 +3772,7 @@ function restoreDraft() {
     // Keep the original start time: it is what gets sent to Notion as the date.
     const started = d.startedAt ? new Date(d.startedAt) : null;
     if (started && !isNaN(started)) noteStartTime = started;
+    if (d.location && typeof d.location.lat === 'number') { captureLocation = d.location; renderGpsStamp(); }
   } finally {
     _restoringDraft = false;
   }
@@ -4068,9 +4113,28 @@ async function submitToNotion() {
     pushTextBlocks(note);
   }
 
+  // A fix still on its way gets a few more seconds; the note never waits longer.
+  if (_gpsPending && !captureLocation) await Promise.race([_gpsPending, new Promise(r => setTimeout(r, 5000))]);
+  const loc = captureLocation;
+  if (loc) {
+    children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[
+      { type:'text', text:{ content:'📍 ' } },
+      { type:'text', text:{ content: locationText(loc), link:{ url: mapsUrl(loc) } } },
+    ] } });
+  }
+
   const properties = {
     [titleProp]: { title: [{ text: { content: title } }] },
   };
+
+  // Location column, if the DB has one (Location / GPS, url or text).
+  const locEntry = loc && Object.entries(dbProps).find(([k, v]) =>
+    /^(location|gps|position)$/i.test(k) && (v.type === 'url' || v.type === 'rich_text'));
+  if (locEntry) {
+    properties[locEntry[0]] = locEntry[1].type === 'url'
+      ? { url: mapsUrl(loc) }
+      : { rich_text: [{ text: { content: locationText(loc), link: { url: mapsUrl(loc) } } }] };
+  }
 
   // Author: send to any tab whose DB has an Author property.
   const authorEntry = Object.entries(dbProps).find(([k]) => /^author$/i.test(k));
@@ -4179,6 +4243,8 @@ function resetForm() {
   renderTabFields(activeTab);
   recordedBlob = null;
   noteStartTime = new Date(); // fresh timestamp for the next note
+  captureLocation = null;     // and a fresh position
+  renderGpsStamp();
   clearDraft();               // note is safely in Notion — drop the local copy
   renderNoteStamp();
   updateSubmitBtn();
