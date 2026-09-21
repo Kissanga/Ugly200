@@ -12,6 +12,7 @@ gen/crop_library.js        the generator: edit crops/procedures here, then `node
 tests/phase_ab_test.sql    9 test blocks (PASS lines); tests/run_local.sh runs the whole chain on a local Postgres
 stub/00_schema_stub.sql    the ASSUMED platform schema, for local testing only — never run on Supabase
 console/CONSOLE-CHANGES.md fragments for farmbox-console (labels, Archive window, phase procedures, planning, release bump)
+crop-library-review.html   the whole library as one page (open in a browser) to review crops, phases and checklists before go-live
 ```
 
 Local proof (Postgres 16, stub schema): `tests/run_local.sh` → 9/9 PASS.
