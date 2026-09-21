@@ -70,6 +70,17 @@ Expected: 118 PASS from before + the 9 blocks in `tests/phase_ab_test.sql`.
 
 ## 3. Apply to the linked project (never `supabase db push`)
 
+**One command does steps 0 and 3 together** (schema check, both migrations with
+`migration repair`, the library, the release note, the editor grants, a smoke
+test; stops on the first error):
+
+```powershell
+.\apply-0757.ps1 -CheckOnly    # look first
+.\apply-0757.ps1               # apply
+```
+
+By hand, the same sequence is:
+
 ```powershell
 supabase db query --linked -f migrations/20260921120000_phase_a_grouped_tasks.sql
 supabase migration repair --status applied 20260921120000
@@ -104,7 +115,9 @@ submit_run payload, which the jsonb parameter ignores).
 
 ## 4. Console 0.7.57
 
-`console/CONSOLE-CHANGES.md` has the fragments. In order:
+`console/CONSOLE-CHANGES.md` now ships the whole Crop database page as one
+module (`console/farmbox-crops.js`, demo in `console/demo.html`): mount it on
+the page, map five CSS variables, done. The remaining hand edits:
 
 1. Category labels: `vines`/`fruiting` → `fruiting_vines`/`fruiting_bush`
    everywhere in the console (`grep -rn "vines\|'fruiting'" console/js`),

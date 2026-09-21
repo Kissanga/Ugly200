@@ -5,13 +5,16 @@ Built 21 Sept 2026 in a session that could only reach this repo. **Start with
 
 ```
 GO-LIVE-0.7.57.md          ordered commands for the owner's machine + assumptions to check
+apply-0757.ps1             ONE command: schema check, migrations, library, release note, grants, smoke test
 migrations/                two migrations (Phase A grouped tasks/units/phase procedures; Phase B categories/archive)
 data/crop_library_0757.sql 50 crops · 31 procedures with checklists · every phase linked (generated)
 data/release_notes_0757.sql
 gen/crop_library.js        the generator: edit crops/procedures here, then `node gen/crop_library.js > data/crop_library_0757.sql`
 tests/phase_ab_test.sql    9 test blocks (PASS lines); tests/run_local.sh runs the whole chain on a local Postgres
 stub/00_schema_stub.sql    the ASSUMED platform schema, for local testing only — never run on Supabase
-console/CONSOLE-CHANGES.md fragments for farmbox-console (labels, Archive window, phase procedures, planning, release bump)
+console/farmbox-crops.js   the Crop database page as one drop-in module (list, phases, procedure links, editor, archive, plan)
+console/demo.html          the module running on the tested library data (open in a browser)
+console/CONSOLE-CHANGES.md how to mount it, plus the remaining hand edits
 crop-library-review.html   the whole library as one page (open in a browser) to review crops, phases and checklists before go-live
 ```
 
