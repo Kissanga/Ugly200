@@ -15,22 +15,37 @@
 begin;
 
 -- ── 1. categories ─────────────────────────────────────────────────────────────
--- Drop whichever CHECK mentions the old values (name unknown), rename, re-add.
+-- Every CHECK in public that names the old values (crop, media defaults, zone
+-- defaults…) is dropped, the values are renamed in every table with a
+-- `category` column, and each CHECK is put back with the new values.
+-- Constraint and table names are discovered, not assumed.
+create temp table _cat_checks as
+  select conrelid::regclass as tbl, conname, pg_get_constraintdef(oid) as def
+  from pg_constraint
+  where contype = 'c' and connamespace = 'public'::regnamespace
+    and pg_get_constraintdef(oid) ~ '''vines''|''fruiting''';
 do $$
 declare r record;
 begin
+  for r in select * from _cat_checks loop
+    execute format('alter table %s drop constraint %I', r.tbl, r.conname);
+  end loop;
   for r in
-    select conname from pg_constraint
-    where conrelid = 'crop'::regclass and contype = 'c'
-      and pg_get_constraintdef(oid) ~ '''vines''|''fruiting'''
+    select c.table_name from information_schema.columns c
+    join information_schema.tables t on t.table_schema = c.table_schema and t.table_name = c.table_name
+    where c.table_schema = 'public' and c.column_name = 'category' and t.table_type = 'BASE TABLE'
   loop
-    execute format('alter table crop drop constraint %I', r.conname);
+    execute format('update %I set category = ''fruiting_vines'' where category = ''vines''', r.table_name);
+    execute format('update %I set category = ''fruiting_bush''  where category = ''fruiting''', r.table_name);
+  end loop;
+  for r in select * from _cat_checks loop
+    execute format('alter table %s add constraint %I %s', r.tbl, r.conname,
+      replace(replace(r.def, '''vines''', '''fruiting_vines'''), '''fruiting''', '''fruiting_bush'''));
   end loop;
 end $$;
+drop table _cat_checks;
 
-update crop set category = 'fruiting_vines' where category = 'vines';
-update crop set category = 'fruiting_bush'  where category = 'fruiting';
-
+-- crop always ends up with the six-value check, whatever it had before
 alter table crop drop constraint if exists crop_category_check;
 alter table crop add constraint crop_category_check
   check (category in ('fruiting_vines','fruiting_bush','leafy','mixed_leafy','herbs','microgreens'));
@@ -58,23 +73,6 @@ alter table crop_category enable row level security;
 drop policy if exists crop_category_read on crop_category;
 create policy crop_category_read on crop_category for select using (true);
 grant select on crop_category to authenticated, anon;
-
--- Any other table that carries a crop category (media defaults, zone defaults…)
--- gets the same rename. ASSUMED column name `category`; the loop finds them.
-do $$
-declare r record;
-begin
-  for r in
-    select c.table_name from information_schema.columns c
-    where c.table_schema = 'public' and c.column_name = 'category'
-      and c.table_name not in ('crop', 'crop_category')
-      and exists (select 1 from information_schema.tables t
-                  where t.table_schema = 'public' and t.table_name = c.table_name and t.table_type = 'BASE TABLE')
-  loop
-    execute format('update %I set category = ''fruiting_vines'' where category = ''vines''', r.table_name);
-    execute format('update %I set category = ''fruiting_bush'' where category = ''fruiting''', r.table_name);
-  end loop;
-end $$;
 
 -- ── 2. archive ────────────────────────────────────────────────────────────────
 alter table crop add column if not exists archived_at timestamptz;

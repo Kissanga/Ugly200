@@ -114,6 +114,11 @@ create table task (
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
 
+create table media_default (                          -- ASSUMED-OPTIONAL: a sibling table that also carries the category with its own CHECK
+  category text primary key check (category in ('vines','fruiting','leafy','mixed_leafy','herbs','microgreens')),
+  medium text, system text
+);
+
 create table release_note (
   id uuid primary key default gen_random_uuid(),
   version text not null, released_on date default current_date, title text, body text

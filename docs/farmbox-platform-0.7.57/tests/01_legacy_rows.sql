@@ -13,6 +13,8 @@ insert into crop (name, category, medium, system) values ('Cherry tomato', 'vine
 insert into crop (name, category) values ('Eggplant', 'fruiting');
 -- a crop not in the list: archived, never deleted
 insert into crop (name, category) values ('Old lettuce', 'leafy');
+-- media defaults keyed by the old category codes, with their own CHECK
+insert into media_default (category, medium, system) values ('vines', 'Slab', 'Drip-irrigated substrate'), ('fruiting', 'Bucket', 'Drip-irrigated substrate'), ('leafy', 'Net cup', 'NFT');
 -- one of the 21 existing per-batch procedures, with its own timing and one step
 with s as (insert into sop (title, trigger_kind, managed_in, status, base_minutes, minutes_per_unit, unit)
            values ('Scout for pests and disease', 'crop_plan', 'console', 'approved', 4, 5, 'position') returning id),

@@ -17,7 +17,13 @@ do $$ begin
     insert into crop (name, category) values ('bad', 'vines'); raise exception 'constraint should reject vines';
   exception when check_violation then null; end;
   if (select count(*) from crop_category) <> 6 then raise exception 'crop_category rows'; end if;
-  raise notice 'PASS 1 categories renamed, constraint rebuilt, catalogue present';
+  -- a sibling table with its own CHECK: values renamed, constraint rewritten, still enforced
+  if (select string_agg(category, ',' order by category) from media_default) <> 'fruiting_bush,fruiting_vines,leafy' then raise exception 'sibling table not renamed: %', (select string_agg(category, ',' order by category) from media_default); end if;
+  begin
+    insert into media_default (category) values ('vines'); raise exception 'sibling constraint should reject vines';
+  exception when check_violation then null; end;
+  insert into media_default (category) values ('microgreens'); delete from media_default where category = 'microgreens';
+  raise notice 'PASS 1 categories renamed on every table, constraints rewritten, catalogue present';
 end $$;
 
 -- ── 2. library matching and archive ──────────────────────────────────────────
@@ -101,17 +107,34 @@ begin
   -- repeats: harvest fruit every 3 days for 150 days = 50 tasks
   select count(*) into n from task t join sop s on s.id = t.sop_id where t.plan_id = v_plan and s.title = 'Harvest fruit';
   if n <> 50 then raise exception 'harvest repeats %', n; end if;
-  -- replan keeps done tasks, regenerates the rest
+  -- replan keeps done tasks, keeps open tasks' ids (a phone's queued completion still lands)
   update task set status = 'done' where id = v_task.id;
+  select id into v_sop from task where plan_id = v_plan and status <> 'done' order by planned_date limit 1;   -- an open task id
   n := replan_crop(v_plan);
   if (select status from task where id = v_task.id) <> 'done' then raise exception 'replan removed a done task'; end if;
+  if not exists (select 1 from task where id = v_sop) then raise exception 'replan changed an open task''s id'; end if;
+  if (select count(*) from task_position where task_id = v_sop) <> 3 then raise exception 'replan lost positions on a kept task'; end if;
   if (select count(*) from task where plan_id = v_plan group by sop_id, planned_date having count(*) > 1 limit 1) is not null then raise exception 'replan duplicated'; end if;
+  -- shorter harvest phase → surplus open tasks go, the rest stay
+  update crop_phase set days = 30 where id = (select ph.id from crop_phase ph join crop_cycle cy on cy.id = ph.cycle_id where cy.crop_id = v_crop and ph.name = 'Harvest');
+  n := replan_crop(v_plan);
+  select count(*) into n from task t join sop s on s.id = t.sop_id where t.plan_id = v_plan and s.title = 'Harvest fruit';
+  if n <> 10 then raise exception 'shortened phase: expected 10 harvest tasks, got %', n; end if;
+  update crop_phase set days = 150 where id = (select ph.id from crop_phase ph join crop_cycle cy on cy.id = ph.cycle_id where cy.crop_id = v_crop and ph.name = 'Harvest');
+  n := replan_crop(v_plan);
+  -- guards: a zone outside the farm, a farm the caller cannot see
+  begin
+    perform plan_crop(v_farm, v_crop, gen_random_uuid(), current_date, '[]'::jsonb); raise exception 'zone guard missing';
+  exception when others then if sqlerrm !~ 'not in farm' then raise; end if; end;
+  begin
+    perform plan_crop(gen_random_uuid(), v_crop, v_zone, current_date, '[]'::jsonb); raise exception 'farm guard missing';
+  exception when insufficient_privilege then null; end;
   -- editing a procedure's timing replans its open tasks
   select id into v_sop from sop where title = 'Harvest fruit';
   update sop set minutes_per_unit = 1 where id = v_sop;
   if (select estimated_minutes from task where plan_id = v_plan and sop_id = v_sop and status <> 'done' limit 1) <> 115 then
     raise exception 'timing trigger: expected 3×5 + 1×100 = 115, got %', (select estimated_minutes from task where plan_id = v_plan and sop_id = v_sop and status <> 'done' limit 1); end if;
-  raise notice 'PASS 6 plan_crop: % tasks, grouped per date, per-position minutes summed, repeats, replan, timing trigger', (select count(*) from task where plan_id = v_plan);
+  raise notice 'PASS 6 plan_crop: % tasks, grouped per date, per-position minutes summed, repeats, in-place replan, guards, timing trigger', (select count(*) from task where plan_id = v_plan);
 end $$;
 
 -- ── 7. sync_since: wrapper keeps the old keys and adds positions + names ────

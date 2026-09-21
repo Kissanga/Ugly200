@@ -35,7 +35,8 @@ supabase db query --linked "select proname, pg_get_function_identity_arguments(o
 | `sop(status='approved', base_minutes, minutes_per_unit, unit)` | timing | columns are added if missing; `status` values may need mapping |
 | `sop_version(sop_id, version, approved_at)` | `sop_current_version()` | adapt that one function |
 | `sync_since(uuid, timestamptz)` returns jsonb `{cursor,tasks,sops,sop_versions,sop_steps,deleted}` | the wrapper renames it to `sync_since_v1` and calls it | the rename block finds it by name whatever the argument types |
-| farm membership table | RLS on `crop_plan` | policy uses `exists (select 1 from farm)` — tighten to the membership check used by `task` |
+| farm membership table | RLS on `crop_plan`; the `assert_farm_member()` guard | both rely on `farm` rows being visible only to members (farm RLS). If `farm` is readable by everyone, replace the `exists (select 1 from farm …)` in both with the membership check `task` uses |
+| `task` RLS allows the console user to insert/update/delete | `plan_crop`, `plan_crop_tasks`, `replan_crop` run as the caller (security invoker), so the caller's own policies apply | if workers must be able to plan, widen `task` policies; never switch the functions back to definer without a membership check inside |
 
 The 21 existing per-batch procedures: the library matches by **title**. List
 them first and, where a library title says the same thing under another name,
@@ -94,6 +95,8 @@ supabase db query --linked "select plan_crop('<farm>', (select id from crop wher
 supabase db query --linked "select planned_date, title, quantity, unit, estimated_minutes from task where plan_id='<plan>' order by 1 limit 20"
 supabase db query --linked "select * from task_position where task_id=(select id from task where plan_id='<plan>' order by planned_date limit 1)"
 ```
+
+Replanning (a cycle or timing edit) updates open tasks **in place**: same task ids, positions and minutes recomputed, done tasks untouched, surplus open tasks removed. A phone's queued completion for an open task therefore still lands after a replan.
 
 No Edge Function changes are needed: `sync_since`, `complete_task` and
 `submit_run` keep their signatures (the phone adds `position_ids` to the

@@ -154,36 +154,47 @@ $$;
 
 -- ── 6. the generator ──────────────────────────────────────────────────────────
 -- One task per crop × zone × date per phase procedure; positions underneath.
--- Open tasks of the plan are regenerated; done ones are left alone.
+-- Runs as the CALLER (security invoker): the farm, crop_plan and task RLS
+-- policies decide what they may plan. Open tasks are updated IN PLACE (same
+-- id, so a phone's queued completion still lands); done ones are left alone;
+-- open tasks the plan no longer produces are removed.
+create or replace function assert_farm_member(p_farm uuid)
+returns void language plpgsql stable as $$
+begin
+  -- farm rows are only visible to their members (farm RLS), so visibility is membership
+  if not exists (select 1 from farm where id = p_farm) then
+    raise exception 'not a member of farm %', p_farm using errcode = '42501';
+  end if;
+end $$;
+
 create or replace function plan_crop_tasks(p_plan uuid, p_replace boolean default true)
-returns int language plpgsql security definer set search_path = public as $$
+returns int language plpgsql security invoker set search_path = public as $$
 declare
   v_plan   crop_plan%rowtype;
   v_crop   crop%rowtype;
   v_zone   zone%rowtype;
   v_cycle  uuid;
   v_n      int := 0;
+  v_keep   uuid[] := '{}';
   r_phase  record;
   r_sop    record;
   v_start  int;
   v_offset int;
   v_date   date;
   v_task   uuid;
+  v_status text;
   v_total_min numeric;
   v_total_qty numeric;
   v_pos_count int;
 begin
   select * into v_plan from crop_plan where id = p_plan;
   if not found then raise exception 'plan % not found', p_plan; end if;
+  perform assert_farm_member(v_plan.farm_id);
   select * into v_crop from crop where id = v_plan.crop_id;
   select * into v_zone from zone where id = v_plan.zone_id;
   v_cycle := coalesce(v_plan.cycle_id,
     (select id from crop_cycle where crop_id = v_crop.id order by is_default desc nulls last, id limit 1));
   if v_cycle is null then raise exception 'crop % has no cycle', v_crop.name; end if;
-
-  if p_replace then
-    delete from task where plan_id = p_plan and status <> 'done';
-  end if;
 
   select count(*) into v_pos_count from position where zone_id = v_zone.id;
 
@@ -202,15 +213,30 @@ begin
       -- once, or every repeat_days while the phase lasts
       while v_offset <= greatest(r_phase.days - 1, r_sop.day_offset) loop
         v_date := v_plan.start_date + v_start + v_offset;
-        if not exists (select 1 from task where plan_id = p_plan and phase_id = r_phase.id
-                       and sop_id = r_sop.id and planned_date = v_date) then
-          insert into task (farm_id, title, family, sop_id, sop_version_id, planned_date, area,
-                            estimated_minutes, status, crop_id, zone_id, phase_id, plan_id, quantity, unit, group_key)
-          values (v_plan.farm_id, r_sop.title || ' — ' || v_crop.name, coalesce(r_sop.family, 'agriculture'),
-                  r_sop.id, sop_current_version(r_sop.id), v_date, v_zone.name,
-                  0, 'open', v_crop.id, v_zone.id, r_phase.id, p_plan, 0, r_sop.unit,
-                  p_plan::text || ':' || r_sop.phase_sop_id::text || ':' || v_date::text)
-          returning id into v_task;
+        v_task := null; v_status := null;
+        select id, status into v_task, v_status from task
+        where plan_id = p_plan and phase_id = r_phase.id and sop_id = r_sop.id and planned_date = v_date
+        order by (status = 'done') desc limit 1;
+
+        if v_status = 'done' then
+          v_keep := v_keep || v_task;                 -- done: never touched
+        else
+          if v_task is null then
+            insert into task (farm_id, title, family, sop_id, sop_version_id, planned_date, area,
+                              estimated_minutes, status, crop_id, zone_id, phase_id, plan_id, quantity, unit, group_key)
+            values (v_plan.farm_id, r_sop.title || ' — ' || v_crop.name, coalesce(r_sop.family, 'agriculture'),
+                    r_sop.id, sop_current_version(r_sop.id), v_date, v_zone.name,
+                    0, 'open', v_crop.id, v_zone.id, r_phase.id, p_plan, 0, r_sop.unit,
+                    p_plan::text || ':' || r_sop.phase_sop_id::text || ':' || v_date::text)
+            returning id into v_task;
+            v_n := v_n + 1;
+          else
+            update task set title = r_sop.title || ' — ' || v_crop.name, sop_version_id = sop_current_version(r_sop.id),
+                            area = v_zone.name, unit = r_sop.unit, zone_id = v_zone.id, crop_id = v_crop.id
+            where id = v_task;
+            delete from task_position where task_id = v_task;
+          end if;
+          v_keep := v_keep || v_task;
 
           insert into task_position (task_id, position_id, position_code, quantity, unit, minutes)
           select v_task, pos.id, pos.code, q.qty, r_sop.unit,
@@ -231,7 +257,6 @@ begin
             v_total_min := sop_minutes(r_sop.base_minutes, r_sop.minutes_per_unit, 0);
           end if;
           update task set estimated_minutes = v_total_min, quantity = v_total_qty where id = v_task;
-          v_n := v_n + 1;
         end if;
         exit when r_sop.repeat_days is null;
         v_offset := v_offset + r_sop.repeat_days;
@@ -239,6 +264,10 @@ begin
     end loop;
     v_start := v_start + r_phase.days;
   end loop;
+
+  if p_replace then                                    -- open tasks the plan no longer produces
+    delete from task where plan_id = p_plan and status <> 'done' and not (id = any(v_keep));
+  end if;
   update crop_plan set status = 'active', updated_at = now() where id = p_plan and status = 'planned';
   return v_n;
 end $$;
@@ -246,9 +275,13 @@ end $$;
 -- Plan a crop in one call from the console: positions as [{position_id, quantity, unit}].
 create or replace function plan_crop(p_farm uuid, p_crop uuid, p_zone uuid, p_start date,
                                      p_positions jsonb, p_cycle uuid default null)
-returns uuid language plpgsql security definer set search_path = public as $$
+returns uuid language plpgsql security invoker set search_path = public as $$
 declare v_plan uuid;
 begin
+  perform assert_farm_member(p_farm);
+  if not exists (select 1 from zone where id = p_zone and farm_id = p_farm) then
+    raise exception 'zone % is not in farm %', p_zone, p_farm;
+  end if;
   insert into crop_plan (farm_id, crop_id, cycle_id, zone_id, start_date)
   values (p_farm, p_crop, p_cycle, p_zone, p_start) returning id into v_plan;
   insert into crop_plan_position (plan_id, position_id, quantity, unit)
@@ -260,7 +293,7 @@ end $$;
 
 -- Re-plan every open task of a plan after the crop cycle or a procedure's minutes change.
 create or replace function replan_crop(p_plan uuid)
-returns int language sql security definer set search_path = public as $$
+returns int language sql security invoker set search_path = public as $$
   select plan_crop_tasks(p_plan, true);
 $$;
 
@@ -318,7 +351,8 @@ grant execute on function plan_crop_tasks(uuid, boolean) to authenticated;
 grant execute on function replan_crop(uuid) to authenticated;
 
 -- ── 8. keep task_position minutes in step when a procedure's timing is edited ─
-create or replace function sop_timing_changed() returns trigger language plpgsql as $$
+-- Runs as the editor (console owner); open tasks keep their ids.
+create or replace function sop_timing_changed() returns trigger language plpgsql security invoker as $$
 begin
   if new.base_minutes is distinct from old.base_minutes
      or new.minutes_per_unit is distinct from old.minutes_per_unit
