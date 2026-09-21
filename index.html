@@ -736,6 +736,30 @@
       border:1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-offset); color: var(--text); }
     .fb-plan { margin-top: var(--space-3); padding: var(--space-3); border-left:3px solid var(--coral);
       background: var(--surface-offset); border-radius: 0 var(--radius-md) var(--radius-md) 0; font-size: var(--text-sm); }
+    /* positions a grouped task covers: name · quantity · minutes */
+    .fb-pos { background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
+      padding: var(--space-3) var(--space-4); margin: var(--space-3) 0; }
+    .fb-pos-row { display:flex; justify-content:space-between; gap: var(--space-3); padding:6px 0;
+      border-top:1px solid var(--border); font-size: var(--text-sm); }
+    .fb-pos-row:first-of-type { border-top:0; }
+    .fb-pos-row.done { opacity:.5; text-decoration: line-through; }
+    .fb-pos-row.total { font-weight:700; border-top:2px solid var(--border); text-decoration:none; opacity:1; }
+    .fb-pos-name { font-weight:600; }
+    .fb-pos-val { color: var(--text-muted); white-space:nowrap; font-variant-numeric: tabular-nums; }
+    .fb-pos-row.total .fb-pos-val { color: var(--text); }
+    /* two levels on a checklist: the title to tick, and Details underneath */
+    .fb-step-head { display:flex; align-items:flex-start; justify-content:space-between; gap: var(--space-2); }
+    .fb-step-head h4 { flex:1; }
+    .fb-link { font:inherit; font-size: var(--text-xs); font-weight:700; color: var(--accent-text, var(--primary));
+      background:none; border:0; padding:6px 0 6px 8px; cursor:pointer; white-space:nowrap; min-height:32px; }
+    .fb-link[aria-expanded="true"]::after { content: ' ▴'; }
+    .fb-link[aria-expanded="false"]::after { content: ' ▾'; }
+    .fb-detail { display:none; margin-bottom: var(--space-3); }
+    .fb-step.open .fb-detail { display:block; }
+    .fb-step.open .fb-link[aria-expanded]::after { content: ' ▴'; }
+    .fb-expect { font-size: var(--text-sm); color: var(--text-muted); margin-top: 4px; }
+    .fb-expect b { color: var(--text); font-weight:700; }
+    .fb-runbar { display:flex; justify-content:flex-end; margin: 0 0 var(--space-2); }
     .fb-shot { display:flex; align-items:center; gap: var(--space-2); margin-top: var(--space-2); flex-wrap:wrap; }
     .fb-shot img { width:56px; height:56px; object-fit:cover; border-radius: var(--radius-md); }
     #viewFarmbox .set-row { align-items: baseline; padding: var(--space-2) 0; }
@@ -767,7 +791,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.4';
+  const CURRENT_VERSION = '0.11.5';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6076,11 +6100,12 @@ function sopOpen() {
     if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
   // ── tiny IndexedDB wrapper (one store, keyed records) ───────────────────
-  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox'];
+  // v2 adds 'positions': the crop positions a grouped task covers (Phase A).
+  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox', 'positions'];
   let dbp;
   function db() {
     return dbp || (dbp = new Promise((res, rej) => {
-      const r = indexedDB.open('farmbox', 1);
+      const r = indexedDB.open('farmbox', 2);
       r.onupgradeneeded = () => STORES.forEach(s => {
         if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' });
       });
@@ -6173,8 +6198,12 @@ function sopOpen() {
       await putAll('sops', d.sops);
       await putAll('versions', d.sop_versions);
       await putAll('steps', d.sop_steps);
+      // Phase A: the platform sends one task per crop × zone × date and lists
+      // the positions it covers. Older servers send nothing here — fine.
+      await putAll('positions', d.task_positions);
       for (const x of (d.deleted || [])) {
-        const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps' }[x.table];
+        const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps',
+                        task_position: 'positions' }[x.table];
         if (store) await del(store, x.id);
       }
       await setKV('cursor', d.cursor);
@@ -6253,17 +6282,80 @@ function sopOpen() {
   const hhmm = t => (t || '').slice(0, 5);
   const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
+  // ── grouped tasks (Phase A) ─────────────────────────────────────────────
+  // The platform plans ONE task per crop × zone × date and lists the positions
+  // it covers (task_positions in the sync payload). A farm still on the old
+  // planner gets one task per position; those rows are folded here into the
+  // same shape, so every screen only ever sees a group:
+  //   { key, title, …, members:[task], positions:[{label, quantity, unit, minutes}], minutes }
+  const UNIT_WORDS = { tray: ['tray', 'trays'], plant: ['plant', 'plants'], position: ['position', 'positions'],
+                       m2: ['m²', 'm²'], area: ['m²', 'm²'], plug: ['plug', 'plugs'], unit: ['unit', 'units'] };
+  const unitWord = (u, n) => { const w = UNIT_WORDS[String(u || '').toLowerCase()]; return w ? (n === 1 ? w[0] : w[1]) : (u || ''); };
+  const num = v => { const n = +v; return isNaN(n) ? 0 : n; };
+  const fmtNum = n => (Math.round(n * 10) / 10).toString();
+  const fmtQty = (q, u) => q == null || q === '' ? '' : `${fmtNum(num(q))} ${unitWord(u, num(q))}`.trim();
+  const fmtMin = m => Math.round(num(m)) + ' min';
+  const posLabel = p => p.position_code || p.label || p.code || p.position_name || p.name || p.position_label || null;
+
+  async function loadGroups() {
+    const tasks = (await all('tasks')).filter(t => t.status !== 'cancelled');
+    const byTask = new Map();
+    (await all('positions')).forEach(p => {
+      if (!byTask.has(p.task_id)) byTask.set(p.task_id, []);
+      byTask.get(p.task_id).push(p);
+    });
+    const groups = new Map();
+    for (const t of tasks) {
+      const own = byTask.get(t.id) || (Array.isArray(t.positions) ? t.positions : null);
+      // a task that carries its own positions is already grouped by the server
+      const key = own ? 'srv:' + t.id : (t.group_key ? 'grp:' + t.group_key
+        : ['cli', t.sop_version_id || t.sop_id || '', t.planned_date, t.due_time || '', t.area || '',
+           t.crop_name || '', t.title].join('|'));
+      let g = groups.get(key);
+      if (!g) {
+        g = { ...t, key, members: [], positions: [], minutes: 0, quantity: 0, unit: t.unit || null };
+        groups.set(key, g);
+      }
+      g.members.push(t);
+      const ps = (own && own.length) ? own
+        : [{ task_id: t.id, position_code: posLabel(t), quantity: t.quantity, unit: t.unit, minutes: t.estimated_minutes }];
+      ps.forEach(p => g.positions.push({ ...p, task_id: p.task_id || t.id, label: posLabel(p),
+        unit: p.unit || t.unit || null, done: t.status === 'done' }));
+      g.minutes += num(t.estimated_minutes);
+      g.quantity += num(t.quantity);
+      if (!g.unit) g.unit = t.unit || ps.find(p => p.unit)?.unit || null;
+    }
+    for (const g of groups.values()) {
+      const done = g.members.filter(m => m.status === 'done').length;
+      g.status = done === g.members.length ? 'done' : done ? 'partial' : 'open';
+      g.doneCount = done;
+      if (!g.quantity) g.quantity = g.positions.reduce((s, p) => s + num(p.quantity), 0);
+      g.positions.sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), undefined, { numeric: true }));
+      // drop the placeholder when the old planner gave us nothing to name
+      if (g.positions.length === 1 && !g.positions[0].label && !g.positions[0].quantity) g.positions = [];
+    }
+    return [...groups.values()];
+  }
+
+  // "Zone A · 3 positions · 24 trays · 45 min" — only the parts we know
+  const groupMeta = g => {
+    const n = g.positions.length;
+    return [g.zone_name || g.area,
+            n > 1 ? `${n} positions` : (n === 1 && g.positions[0].label) || null,
+            g.quantity ? fmtQty(g.quantity, g.unit) : null,
+            fmtMin(g.minutes)].filter(Boolean).join(' · ');
+  };
+
   async function showWeek() {
-    const tasks = (await all('tasks'))
-      .filter(t => !['cancelled'].includes(t.status))
+    const groups = (await loadGroups())
       // plain comparison, not localeCompare: ICU collation sorts punctuation
       // before digits, which put the untimed tasks at the top of the day
       .sort((a, b) => {
-        const k = x => x.planned_date + (x.due_time || '99:99:99');
+        const k = x => x.planned_date + (x.due_time || '99:99:99') + (x.title || '');
         return k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : 0;
       });
     const today = todayISO(), horizon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-    const week = tasks.filter(t => t.planned_date <= horizon &&
+    const week = groups.filter(t => t.planned_date <= horizon &&
       (t.planned_date >= today || t.status !== 'done'));
 
     show('week', 'Tasks', null);
@@ -6277,12 +6369,10 @@ function sopOpen() {
       const card = el('div', 'fb-ink' + famClass(next.family));
       card.append(el('small', null, next.planned_date < today ? 'Overdue — do this first' : 'Now'));
       card.append(el('h3', null, next.title));
-      card.append(el('div', 'fb-meta',
-        [hhmm(next.due_time), next.area, Math.round(next.estimated_minutes) + ' min']
-          .filter(Boolean).join(' · ')));
+      card.append(el('div', 'fb-meta', [hhmm(next.due_time), groupMeta(next)].filter(Boolean).join(' · ')));
       const go = el('button', 'btn btn-primary btn-sm', 'Open');
       go.style.marginTop = 'var(--space-3)';
-      go.onclick = () => openTask(next.id);
+      go.onclick = () => openTask(next.key);
       card.append(go);
       nx.append(card);
     }
@@ -6293,7 +6383,8 @@ function sopOpen() {
     for (const [date, list] of byDay) {
       const sec = el('section', 'fb-day');
       const open = list.filter(t => t.status !== 'done').length;
-      sec.append(el('h2', null, `${fmtDay(date)} · ${open} open of ${list.length}`));
+      const mins = list.filter(t => t.status !== 'done').reduce((s, t) => s + t.minutes, 0);
+      sec.append(el('h2', null, `${fmtDay(date)} · ${open} open of ${list.length}` + (open ? ` · ${fmtMin(mins)}` : '')));
       list.forEach(t => sec.append(taskCard(t, date < today)));
       days.append(sec);
     }
@@ -6304,25 +6395,50 @@ function sopOpen() {
   // amber, Office grey. The line under the title says where instead.
   const famClass = f => ' fam-' + String(f || 'agriculture').toLowerCase();
 
-  function taskCard(t, late) {
-    const b = el('button', 'fb-card' + famClass(t.family) + (t.status === 'done' ? ' done' : ''));
-    b.append(el('span', 'fb-when', hhmm(t.due_time) || '—'));
+  function taskCard(g, late) {
+    const b = el('button', 'fb-card' + famClass(g.family) + (g.status === 'done' ? ' done' : ''));
+    b.append(el('span', 'fb-when', hhmm(g.due_time) || '—'));
     const body = el('div', 'fb-body');
-    body.append(el('div', 'fb-name', t.title));
+    body.append(el('div', 'fb-name', g.title));
     const meta = el('div', 'fb-meta');
-    if (t.area) { meta.append(el('span', 'fb-where', t.area)); meta.append(document.createTextNode(' · ')); }
-    meta.append(document.createTextNode(Math.round(t.estimated_minutes) + ' min'));
+    const where = g.zone_name || g.area;
+    if (where) { meta.append(el('span', 'fb-where', where)); meta.append(document.createTextNode(' · ')); }
+    const n = g.positions.length;
+    const bits = [n > 1 ? `${n} positions` : (n === 1 && g.positions[0].label) || null,
+                  g.quantity ? fmtQty(g.quantity, g.unit) : null, fmtMin(g.minutes)].filter(Boolean);
+    meta.append(document.createTextNode(bits.join(' · ')));
     body.append(meta);
     b.append(body);
     // only the states worth a word get one; "Open" is what a card already is
-    if (t.status === 'done') b.append(el('span', 'fb-chip ok', 'Done'));
+    if (g.status === 'done') b.append(el('span', 'fb-chip ok', 'Done'));
+    else if (g.status === 'partial') b.append(el('span', 'fb-chip', `${g.doneCount}/${g.members.length}`));
     else if (late) b.append(el('span', 'fb-chip late', 'Late'));
-    b.onclick = () => openTask(t.id);
+    b.onclick = () => openTask(g.key);
     return b;
   }
 
-  async function openTask(id) {
-    const t = (await all('tasks')).find(x => x.id === id);
+  // Positions the task covers, one line each: name · quantity · minutes.
+  function positionList(g) {
+    const box = el('div', 'fb-pos');
+    box.append(el('div', 'fb-sec', `Positions · ${g.positions.length}`));
+    g.positions.forEach(p => {
+      const r = el('div', 'fb-pos-row' + (p.done ? ' done' : ''));
+      r.append(el('span', 'fb-pos-name', p.label || 'Position'));
+      const right = [p.quantity != null && p.quantity !== '' ? fmtQty(p.quantity, p.unit || g.unit) : null,
+                     p.minutes != null ? fmtMin(p.minutes) : null].filter(Boolean).join(' · ');
+      r.append(el('span', 'fb-pos-val', right || (p.done ? 'done' : '')));
+      box.append(r);
+    });
+    const tot = el('div', 'fb-pos-row total');
+    tot.append(el('span', 'fb-pos-name', 'Total'));
+    tot.append(el('span', 'fb-pos-val', [g.quantity ? fmtQty(g.quantity, g.unit) : null, fmtMin(g.minutes)].filter(Boolean).join(' · ')));
+    box.append(tot);
+    return box;
+  }
+
+  async function openTask(key) {
+    const groups = await loadGroups();
+    const t = groups.find(x => x.key === key) || groups.find(x => x.id === key);
     if (!t) return;
     const sop = (await all('sops')).find(s => s.id === t.sop_id);
     const box = $('task'); box.textContent = '';
@@ -6335,11 +6451,16 @@ function sopOpen() {
     const row = (k, v) => { if (!v) return; const r = el('div', 'set-row');
       r.append(el('span', null, k)); r.append(el('span', null, String(v))); facts.append(r); };
     row('When', `${fmtDay(t.planned_date)}${t.due_time ? ' · ' + hhmm(t.due_time) : ''}`);
-    row('Where', t.area);
-    row('Takes', Math.round(t.estimated_minutes) + ' min');
+    row('Where', t.zone_name || t.area);
+    row('Crop', t.crop_name);
+    row('Phase', t.phase_name);
+    row('Quantity', t.quantity ? fmtQty(t.quantity, t.unit) : null);
+    row('Takes', fmtMin(t.minutes));
     if (sop?.safety_ppe) row('Safety', sop.safety_ppe);
     if (sop?.tools) row('Tools', sop.tools);
     box.append(facts);
+
+    if (t.positions.length) box.append(positionList(t));
 
     if (t.status === 'done') {
       box.append(el('div', 'config-hint', 'Done. Nothing more to do here.'));
@@ -6361,15 +6482,22 @@ function sopOpen() {
     show('task', 'Task', showWeek);
   }
 
-  async function markDone(t) {
-    t.status = 'done'; t.done_at = new Date().toISOString();
-    await putAll('tasks', [t]);
-    await queue({ __tick: true, client_run_id: 'tick-' + t.id, task_id: t.id, actual_minutes: null });
+  // Marks every open member of the group done: one tick per task row, so the
+  // server sees the same thing whether it grouped the task or the phone did.
+  async function markDone(g) {
+    const now = new Date().toISOString();
+    for (const t of g.members.filter(m => m.status !== 'done')) {
+      t.status = 'done'; t.done_at = now;
+      await putAll('tasks', [t]);
+      await queue({ __tick: true, client_run_id: 'tick-' + t.id, task_id: t.id, actual_minutes: null });
+    }
     showToast('Done ✓', 'success');
     showWeek();
   }
 
   // ── running a checklist ─────────────────────────────────────────────────
+  // Two levels: the list shows step titles to tick; "Details" on a step opens
+  // the instruction, the expected result and what to do if it is not OK.
   let run = null;
   async function startRun(task, sop) {
     const steps = (await all('steps'))
@@ -6380,25 +6508,55 @@ function sopOpen() {
       return;
     }
     run = { task, sop, steps, started: new Date().toISOString(),
-            answers: new Map(), media: new Map(),
+            answers: new Map(), media: new Map(), allOpen: false,
             clientId: 'run-' + task.id + '-' + Date.now() };
 
     const head = $('runHead'); head.textContent = '';
     head.append(el('h1', null, task.title));
-    head.append(el('p', null, [task.area, `${steps.length} steps`,
-      `about ${Math.round(task.estimated_minutes)} min`].filter(Boolean).join(' · ')));
+    head.append(el('p', null, [task.zone_name || task.area,
+      task.positions.length > 1 ? `${task.positions.length} positions` : (task.positions[0]?.label || null),
+      `${steps.length} steps`, `about ${fmtMin(task.minutes)}`].filter(Boolean).join(' · ')));
 
     const box = $('steps'); box.textContent = '';
+    const bar = el('div', 'fb-runbar');
+    const toggle = el('button', 'fb-link', 'Show all details');
+    toggle.onclick = () => {
+      run.allOpen = !run.allOpen;
+      toggle.textContent = run.allOpen ? 'Hide all details' : 'Show all details';
+      box.querySelectorAll('.fb-step').forEach(c => c.classList.toggle('open', run.allOpen));
+    };
+    bar.append(toggle);
+    box.append(bar);
     steps.forEach(s => box.append(stepCard(s)));
     $('runHint').textContent = '';
-    show('run', 'Checklist', () => openTask(task.id));
+    show('run', 'Checklist', () => openTask(task.key));
   }
 
   function stepCard(s) {
     const card = el('div', 'fb-step'); card.dataset.seq = s.seq;
-    card.append(el('div', 'fb-sec', s.section));
-    card.append(el('h4', null, s.title));
-    if (s.instruction) card.append(el('div', 'fb-inst', s.instruction));
+    if (s.section) card.append(el('div', 'fb-sec', s.section));
+    const head = el('div', 'fb-step-head');
+    head.append(el('h4', null, s.title));
+    const hasDetail = s.instruction || s.expected_result || s.action_plan;
+    if (hasDetail) {
+      const more = el('button', 'fb-link', 'Details');
+      more.setAttribute('aria-expanded', 'false');
+      more.onclick = () => {
+        const open = card.classList.toggle('open');
+        more.setAttribute('aria-expanded', String(open));
+      };
+      head.append(more);
+    }
+    card.append(head);
+
+    // the exhaustive version, folded under Details
+    if (hasDetail) {
+      const det = el('div', 'fb-detail');
+      if (s.instruction) det.append(el('div', 'fb-inst', s.instruction));
+      if (s.expected_result) { const x = el('div', 'fb-expect'); x.append(el('b', null, 'Expected: ')); x.append(document.createTextNode(s.expected_result)); det.append(x); }
+      if (s.action_plan) { const x = el('div', 'fb-expect'); x.append(el('b', null, 'If not OK: ')); x.append(document.createTextNode(s.action_plan)); det.append(x); }
+      card.append(det);
+    }
 
     const set = (result, extra) => {
       run.answers.set(s.seq, { seq: s.seq, step_id: s.id, result,
@@ -6506,15 +6664,22 @@ function sopOpen() {
       steps.push({ ...a, media, recorded_at: new Date().toISOString() });
     }
 
-    const payload = {
-      farm_id: farm.id, task_id: run.task.id, sop_version_id: run.task.sop_version_id,
-      client_run_id: run.clientId, status: 'completed',
-      started_at: run.started, finished_at: new Date().toISOString(), steps
-    };
+    // One run per task row. A server-grouped task is one row; a phone-grouped
+    // one is several, each getting the same answers (they were done together).
+    const finished = new Date().toISOString();
+    const open = run.task.members.filter(m => m.status !== 'done');
+    for (const [i, t] of open.entries()) {
+      const payload = {
+        farm_id: farm.id, task_id: t.id, sop_version_id: t.sop_version_id || run.task.sop_version_id,
+        client_run_id: i ? `${run.clientId}-${i}` : run.clientId, status: 'completed',
+        started_at: run.started, finished_at: finished, steps,
+        position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id)
+      };
+      t.status = 'done'; t.done_at = finished;
+      await putAll('tasks', [t]);
+      await queue(payload);
+    }
     const failed = steps.filter(s => s.result === 'nok').length;
-    run.task.status = 'done';
-    await putAll('tasks', [run.task]);
-    await queue(payload);
     $('finish').disabled = false;
     showToast(failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
               failed ? 'error' : 'success');
