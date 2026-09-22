@@ -765,6 +765,13 @@
     .fb-trap-code { display:inline-block; font-family: ui-monospace, monospace; font-weight:800; font-size: var(--text-lg);
       letter-spacing:.04em; padding:2px 8px; border-radius: var(--radius-md); background: #f4d24a; color:#2b2400; }
     .fb-trap .fb-shot img { width:96px; height:96px; }
+    .fb-cam { position:fixed; inset:0; z-index:1000; background:#000; display:flex; flex-direction:column; }
+    .fb-cam video { flex:1; width:100%; min-height:0; object-fit:cover; }
+    .fb-cam-hint { position:absolute; top:0; left:0; right:0; padding:10px 12px; text-align:center; color:#fff;
+      font-size: var(--text-sm); background:rgba(0,0,0,.55); }
+    .fb-cam-bar { display:flex; align-items:center; justify-content:space-around; padding:14px 16px 22px; background:#000; }
+    .fb-cam-shutter { width:74px; height:74px; border-radius:50%; border:5px solid #fff; background:#f4d24a; }
+    .fb-cam .fb-btn { color:#fff; border-color:#fff; background:transparent; }
     .fb-trap-counts { margin-top: var(--space-2); }
     .fb-trap-lbl { font-size: var(--text-sm); font-weight:600; }
     .fb-trap-counts select.fb-num { width:auto; }
@@ -799,7 +806,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.9';
+  const CURRENT_VERSION = '0.11.10';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6542,6 +6549,8 @@ function sopOpen() {
     run = { task, sop, steps, started: new Date().toISOString(),
             answers: new Map(), media: new Map(), allOpen: false,
             traps: null, clientId: 'run-' + task.id + '-' + Date.now() };
+    // remembered, so a relaunch (Android closing the app) comes straight back here
+    try { await setKV('run_open', { key: task.key || task.id, at: Date.now() }); } catch (e) {}
 
     const head = $('runHead'); head.textContent = '';
     head.append(el('h1', null, task.title));
@@ -6566,7 +6575,24 @@ function sopOpen() {
     if (isTrapRound(sop)) box.append(await trapRound(task, sop));
     steps.forEach(s => box.append(stepCard(s)));
     $('runHint').textContent = '';
-    show('run', 'Checklist', () => openTask(task.key));
+    show('run', 'Checklist', () => { setKV('run_open', null).catch(() => {}); openTask(task.key); });
+  }
+
+  // A run that was open when the app was closed (within 12 hours, and the
+  // task still open) is reopened as the section opens; the trap cards bring
+  // their draft back with them.
+  async function resumeRun() {
+    let o = null;
+    try { o = await getKV('run_open'); } catch (e) { return; }
+    if (!o || !o.key || Date.now() - (o.at || 0) > 12 * 3600000) return;
+    const groups = await loadGroups();
+    const t = groups.find(x => x.key === o.key) || groups.find(x => x.id === o.key);
+    if (!t || t.status === 'done') { await setKV('run_open', null); return; }
+    const sop = (await all('sops')).find(x => x.id === t.sop_id);
+    if (!sop) return;
+    await openTask(o.key);
+    await startRun(t, sop);
+    showToast('Back in the checklist you had open', 'info');
   }
 
   // ── IPM: the sticky trap round ──────────────────────────────────────────
@@ -6621,10 +6647,12 @@ function sopOpen() {
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*';
     pick.capture = 'environment'; pick.style.display = 'none';
     const btn = el('button', 'fb-btn', '📷 Photo of the trap');
-    btn.onclick = () => pick.click();
+    const gal = el('button', 'fb-btn', '🖼');
+    gal.title = 'From the gallery or the camera app'; gal.setAttribute('aria-label', 'Photo from the gallery');
+    gal.onclick = () => pick.click();
     const img = el('img'); img.alt = ''; img.style.display = 'none';
     const status = el('span', 'fb-chip', 'photo needed');
-    shot.append(img, btn, status, pick);
+    shot.append(img, btn, gal, status, pick);
     card.append(shot);
 
     const counts = el('div', 'fb-trap-counts hidden');
@@ -6658,13 +6686,12 @@ function sopOpen() {
       saveTrapDraft();
     };
 
-    pick.onchange = async () => {
-      const f = pick.files[0]; if (!f) return;
+    // a shrunk canvas of the trap, from the in-app camera or a picked file
+    const gotCanvas = async canvas => {
       status.textContent = 'counting…';
       try {
-        const { dataUrl, canvas } = await shrinkPhoto(f, 1000, 0.72);
         state.photo_data = shrinkCanvas(canvas, 640, 0.6);
-        img.src = dataUrl; img.style.display = '';
+        img.src = state.photo_data; img.style.display = '';
         await saveTrapDraft();                                   // the photo is safe before the count
         await new Promise(r => setTimeout(r, 40));               // let it paint first
         const r = countInsects(canvas, t);
@@ -6683,6 +6710,24 @@ function sopOpen() {
       }
       paintLevel();
       saveTrapDraft();
+    };
+    btn.onclick = async () => {
+      const r = await takeTrapPhoto(t.code);
+      if (r === 'cancel') return;
+      if (!r) { pick.click(); return; }                          // no camera here: the phone's own
+      await gotCanvas(r);
+    };
+    pick.onchange = async () => {
+      const f = pick.files[0]; if (!f) return;
+      status.textContent = 'reading the photo…';
+      try {
+        const { canvas } = await shrinkPhoto(f, 1000, 0.72);
+        await gotCanvas(canvas);
+      } catch (e) {
+        console.warn('photo failed', e);
+        status.textContent = 'photo needed';
+        showToast('That photo could not be read — try again', 'error');
+      }
       pick.value = '';
     };
 
@@ -6738,6 +6783,44 @@ function sopOpen() {
       im.src = url;
     });
   }
+  // The camera inside the app (0.11.10). Opening the phone's camera app was
+  // what got Naked Brain killed on Android — the app comes back empty, at the
+  // start screen. A live preview, a shutter, the frame drawn on a canvas at
+  // 1000 px: the app never leaves and nothing big is ever decoded. Resolves
+  // the canvas, 'cancel' when the person backs out, null when the browser
+  // has no camera to give (then the phone's own camera/gallery is used).
+  function takeTrapPhoto(code) {
+    return new Promise(async resolve => {
+      if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+      } catch (e) { console.warn('camera refused', e); return resolve(null); }
+      const ov = el('div', 'fb-cam');
+      const video = document.createElement('video');
+      video.autoplay = true; video.playsInline = true; video.muted = true; video.srcObject = stream;
+      const hint = el('div', 'fb-cam-hint', `Trap ${code} — square-on, the whole card and its code in the picture`);
+      const bar = el('div', 'fb-cam-bar');
+      const cancel = el('button', 'fb-btn', 'Cancel');
+      const shutter = el('button', 'fb-cam-shutter'); shutter.setAttribute('aria-label', 'Take the photo');
+      bar.append(cancel, shutter);
+      ov.append(video, hint, bar);
+      document.body.append(ov);
+      const stop = () => { try { stream.getTracks().forEach(x => x.stop()); } catch (e) {} ov.remove(); };
+      cancel.onclick = () => { stop(); resolve('cancel'); };
+      shutter.onclick = () => {
+        const w = video.videoWidth, h = video.videoHeight;
+        if (!w || !h) { showToast('The camera is still starting — try again', 'error'); return; }
+        const k = Math.min(1, 1000 / Math.max(w, h));
+        const c = document.createElement('canvas');
+        c.width = Math.round(w * k); c.height = Math.round(h * k);
+        c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+        stop(); resolve(c);
+      };
+    });
+  }
+
   // a smaller copy of an already-shrunk canvas: no second decode of the photo
   function shrinkCanvas(canvas, maxSide, quality) {
     const k = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
@@ -6999,6 +7082,7 @@ function sopOpen() {
     await putAll('tasks', open);
     await queue(payloads);
     if (run.traps) { try { await del('kv', trapDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
+    try { await setKV('run_open', null); } catch (e) {}
     const failed = steps.filter(s => s.result === 'nok').length;
     $('finish').disabled = false;
     showToast(failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
@@ -7058,10 +7142,12 @@ function sopOpen() {
     }
   }
 
+  let resumed = false;
   function fbOpen() {
     paintAccount();
     if (!session) { show('auth', 'Sign in', null); return; }
     showWeek();
+    if (!resumed) { resumed = true; resumeRun().catch(e => console.warn('resume', e)); }
     if (navigator.onLine) sync(false);
   }
 
