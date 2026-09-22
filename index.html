@@ -744,6 +744,8 @@
     .fb-sec + .fb-pos-row { border-top:0; }
     .fb-pos-row.done { opacity:.5; text-decoration: line-through; }
     .fb-pos-row.total { font-weight:700; border-top:2px solid var(--border); text-decoration:none; opacity:1; }
+    .fb-pos-name { display:flex; flex-direction:column; }
+    .fb-pos-sow { color: var(--muted); font-size: var(--fs-sm, .8rem); font-weight:400; }
     .fb-pos-row.zone { font-size: var(--fs-sm, .85rem); color: var(--muted); text-transform: uppercase; letter-spacing:.04em; padding-top:10px; }
     .fb-pos-name { font-weight:600; }
     .fb-pos-val { color: var(--text-muted); white-space:nowrap; font-variant-numeric: tabular-nums; }
@@ -812,7 +814,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.13';
+  const CURRENT_VERSION = '0.11.14';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6478,6 +6480,17 @@ function sopOpen() {
   // Positions the task covers, one line each: name · quantity · minutes —
   // by zone when the task spans more than one (a farm-wide sowing), and
   // with the crop on the line when the task carries more than one (0073).
+  const sowingLine = x => {
+    if (!x || typeof x !== 'object') return '';
+    const n = v => (v === '' || v == null ? null : Number(v));
+    return [n(x.seeds_per_plug) != null ? `${n(x.seeds_per_plug)} seed${n(x.seeds_per_plug) === 1 ? '' : 's'}/plug` : null,
+            n(x.seed_g_per_tray) != null ? `${n(x.seed_g_per_tray)} g/tray` : null,
+            n(x.depth_mm) != null ? (n(x.depth_mm) === 0 ? 'on the surface' : `${n(x.depth_mm)} mm deep`) : null,
+            x.cover && x.cover !== 'none' ? String(x.cover) : null,
+            n(x.blackout_days) != null ? `blackout ${n(x.blackout_days)} d` : null,
+            x.germination_c ? `${x.germination_c} °C` : null,
+            x.notes || null].filter(Boolean).join(' · ');
+  };
   const cropsOf = g => new Set(g.positions.map(p => p.crop_name).filter(Boolean));
   const zonesOf = g => new Set(g.positions.map(p => p.zone_name).filter(Boolean));
   function positionList(g) {
@@ -6490,7 +6503,11 @@ function sopOpen() {
         box.append(el('div', 'fb-pos-row zone', p.zone_name)); lastZone = p.zone_name;
       }
       const r = el('div', 'fb-pos-row' + (p.done ? ' done' : ''));
-      r.append(el('span', 'fb-pos-name', [p.label || 'Position', manyCrops ? p.crop_name : null].filter(Boolean).join(' · ')));
+      const name = el('span', 'fb-pos-name', [p.label || 'Position', manyCrops ? p.crop_name : null].filter(Boolean).join(' · '));
+      // the crop's sowing figures under the batch on a sowing / nursery task (FarmBox 0074)
+      const sow = sowingLine(p.sowing);
+      if (sow) name.append(el('small', 'fb-pos-sow', sow));
+      r.append(name);
       const right = [p.quantity != null && p.quantity !== '' && !isPosUnit(p.unit || g.unit) ? fmtQty(p.quantity, p.unit || g.unit) : null,
                      p.minutes != null ? fmtMin(p.minutes) : null].filter(Boolean).join(' · ');
       r.append(el('span', 'fb-pos-val', right || (p.done ? 'done' : '')));
