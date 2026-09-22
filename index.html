@@ -773,6 +773,11 @@
     .fb-cam-shutter { width:74px; height:74px; border-radius:50%; border:5px solid #fff; background:#f4d24a; }
     .fb-cam .fb-btn { color:#fff; border-color:#fff; background:transparent; }
     .fb-trap-counts { margin-top: var(--space-2); }
+    .fb-harv-row { display:flex; align-items:center; gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid var(--line, rgba(0,0,0,.08)); flex-wrap:wrap; }
+    .fb-harv-row .fb-pos-name { flex: 1 1 120px; }
+    .fb-harv-row input.fb-num { width: 96px; }
+    .fb-harv-row .fb-btn[aria-pressed="true"] { background: var(--ink, #111); color: #fff; }
+    .fb-harv-total { display:flex; justify-content:space-between; padding: 8px 0 0; font-weight:700; }
     .fb-trap-lbl { font-size: var(--text-sm); font-weight:600; }
     .fb-trap-counts select.fb-num { width:auto; }
     .fb-trap.bad .fb-trap-code { outline:2px solid var(--coral); }
@@ -806,7 +811,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.11';
+  const CURRENT_VERSION = '0.11.12';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6558,7 +6563,7 @@ function sopOpen() {
     }
     run = { task, sop, steps, started: new Date().toISOString(),
             answers: new Map(), media: new Map(), allOpen: false,
-            traps: null, clientId: 'run-' + task.id + '-' + Date.now() };
+            traps: null, harvests: null, clientId: 'run-' + task.id + '-' + Date.now() };
     // remembered, so a relaunch (Android closing the app) comes straight back here
     try { await setKV('run_open', { key: task.key || task.id, at: Date.now() }); } catch (e) {}
 
@@ -6583,6 +6588,8 @@ function sopOpen() {
     box.append(bar);
     // the IPM trap round: one card per sticky trap of the zone, before the steps
     if (isTrapRound(sop)) box.append(await trapRound(task, sop));
+    // a harvest task: the weight per batch, before the steps
+    if (isHarvestTask(sop) && task.positions.some(p => p.plan_id)) box.append(await harvestBlock(task));
     steps.forEach(s => box.append(stepCard(s)));
     $('runHint').textContent = '';
     show('run', 'Checklist', () => { setKV('run_open', null).catch(() => {}); openTask(task.key); });
@@ -6636,6 +6643,55 @@ function sopOpen() {
     const kept = traps.filter(t => prior.get(t.id)?.photo_data).length;
     if (kept) box.append(el('div', 'config-hint', `${kept} photo${kept > 1 ? 's' : ''} from before the app was closed ${kept > 1 ? 'are' : 'is'} back — carry on from there.`));
     traps.forEach(t => box.append(trapCard(t, th, prior.get(t.id))));
+    return box;
+  }
+
+  // ── the harvest weight, per batch ─────────────────────────────────────
+  // A harvest procedure (sop.attributes.module = 'harvest') on a grouped task:
+  // one line per batch (position) with the kg cut and "Last cut" when the
+  // batch is cleared. The weights go up with the run as `harvests` and land
+  // on the batch through record_harvest — the dashboard calendar shows them.
+  // Kept in the phone's database as they are typed, like the trap cards.
+  const isHarvestTask = sop => sop && sop.attributes?.module === 'harvest';
+  const harvDraftKey = task => 'harvdraft:' + (task.key || task.id);
+  async function saveHarvDraft() {
+    if (!run?.harvests) return;
+    try { await setKV(harvDraftKey(run.task), { saved: Date.now(), rows: [...run.harvests.values()] }); }
+    catch (e) { console.warn('harvest draft not saved', e); }
+  }
+  async function harvestBlock(task) {
+    let draft = null;
+    try { draft = await getKV(harvDraftKey(task)); } catch (e) { /* none */ }
+    const prior = new Map((draft?.rows || []).map(x => [x.plan_id, x]));
+    run.harvests = new Map();
+    const box = el('div', 'fb-traps');
+    box.append(el('div', 'fb-sec', 'Harvest weight'));
+    box.append(el('div', 'config-hint', 'Weigh what you cut from each position, in kg. Tick "Last cut" when the position is cleared — it is freed for the next batch.'));
+    const total = el('div', 'fb-harv-total');
+    const totalVal = el('span', null, '0 kg');
+    total.append(el('span', null, 'Total'), totalVal);
+    const paintTotal = () => {
+      const kg = [...run.harvests.values()].reduce((a, x) => a + (num(x.kg) || 0), 0);
+      totalVal.textContent = (Math.round(kg * 100) / 100) + ' kg';
+    };
+    task.positions.filter(p => p.plan_id && !p.done).forEach(p => {
+      const st = { plan_id: p.plan_id, position_code: p.label || p.position_code || '', kg: null, final: false,
+                   ...(prior.get(p.plan_id) || {}) };
+      run.harvests.set(p.plan_id, st);
+      const row = el('div', 'fb-harv-row');
+      row.append(el('span', 'fb-pos-name', [st.position_code, task.crop_name].filter(Boolean).join(' · ')));
+      const kg = el('input', 'fb-num'); kg.type = 'number'; kg.min = '0'; kg.step = '0.1'; kg.placeholder = 'kg';
+      kg.setAttribute('aria-label', 'Kilograms from ' + st.position_code);
+      if (st.kg != null) kg.value = String(st.kg);
+      kg.oninput = () => { const v = parseFloat(kg.value); st.kg = isNaN(v) ? null : v; paintTotal(); saveHarvDraft(); };
+      const last = el('button', 'fb-btn', 'Last cut');
+      last.setAttribute('aria-pressed', String(!!st.final));
+      last.onclick = () => { st.final = !st.final; last.setAttribute('aria-pressed', String(st.final)); saveHarvDraft(); };
+      row.append(kg, el('span', 'fb-chip', 'kg'), last);
+      box.append(row);
+    });
+    box.append(total);
+    paintTotal();
     return box;
   }
 
@@ -7076,6 +7132,18 @@ function sopOpen() {
         if (!(run.media.get(s.seq) || []).length) run.media.set(s.seq, [{ trapEvidence: true }]);
       });
     }
+    // a harvest task: the weights typed above answer the weigh / record steps
+    if (run.harvests) {
+      const rows = [...run.harvests.values()].filter(x => num(x.kg) > 0);
+      const kg = Math.round(rows.reduce((a, x) => a + num(x.kg), 0) * 100) / 100;
+      if (kg > 0) {
+        run.steps.filter(s => (s.step_type === 'measure' || s.step_type === 'record') && !run.answers.has(s.seq)).forEach(s => {
+          run.answers.set(s.seq, { seq: s.seq, step_id: s.id, result: 'ok',
+            ...(s.step_type === 'measure' ? { value_num: kg } : { value_text: rows.map(x => `${x.position_code} ${x.kg} kg`).join(', ') }),
+            note: `${kg} kg from ${rows.length} position${rows.length > 1 ? 's' : ''}` });
+        });
+      }
+    }
     const missing = run.steps.filter(s => !run.answers.has(s.seq));
     const noPhoto = run.steps.filter(s => /photo|video/.test(s.evidence || '') && !(run.media.get(s.seq) || []).length);
     if (missing.length || noPhoto.length) {
@@ -7125,6 +7193,9 @@ function sopOpen() {
       client_run_id: i ? `${run.clientId}-${i}` : run.clientId, status: 'completed',
       started_at: run.started, finished_at: finished, steps,
       position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id),
+      // harvest weights, on the first run only
+      ...(run.harvests && !i ? { harvests: [...run.harvests.values()].filter(x => num(x.kg) > 0).map(x => ({
+        plan_id: x.plan_id, position_code: x.position_code, kg: x.kg, final: !!x.final })) } : {}),
       // IPM readings, on the first run only (a phone-grouped round is one zone anyway)
       ...(run.traps && !i ? { traps: [...run.traps.values()].filter(x => x.photo_data != null).map(x => ({
         trap_id: x.trap_id, code: x.code, photo_data: x.photo_data, photo_path: x.photo_path || null,
@@ -7137,6 +7208,7 @@ function sopOpen() {
     await putAll('tasks', open);
     await queue(payloads);
     if (run.traps) { try { await del('kv', trapDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
+    if (run.harvests) { try { await del('kv', harvDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
     try { await setKV('run_open', null); } catch (e) {}
     const failed = steps.filter(s => s.result === 'nok').length;
     $('finish').disabled = false;
