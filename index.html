@@ -746,6 +746,7 @@
     .fb-pos-row.total { font-weight:700; border-top:2px solid var(--border); text-decoration:none; opacity:1; }
     .fb-pos-name { display:flex; flex-direction:column; }
     .fb-pos-sow { color: var(--muted); font-size: var(--fs-sm, .8rem); font-weight:400; }
+    .fb-item-head { margin-top: var(--space-5, 20px); font-weight:700; color: var(--accent, #1bbfa8); }
     .fb-pos-row.zone { font-size: var(--fs-sm, .85rem); color: var(--muted); text-transform: uppercase; letter-spacing:.04em; padding-top:10px; }
     .fb-pos-name { font-weight:600; }
     .fb-pos-val { color: var(--text-muted); white-space:nowrap; font-variant-numeric: tabular-nums; }
@@ -814,7 +815,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.15';
+  const CURRENT_VERSION = '0.11.16';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6596,7 +6597,7 @@ function sopOpen() {
     }
     run = { task, sop, steps, started: new Date().toISOString(),
             answers: new Map(), media: new Map(), allOpen: false,
-            traps: null, harvests: null, items: null, clientId: 'run-' + task.id + '-' + Date.now() };
+            traps: null, harvests: null, items: null, perItem: false, itemList: [], clientId: 'run-' + task.id + '-' + Date.now() };
     // remembered, so a relaunch (Android closing the app) comes straight back here
     try { await setKV('run_open', { key: task.key || task.id, at: Date.now() }); } catch (e) {}
 
@@ -6623,9 +6624,20 @@ function sopOpen() {
     if (isTrapRound(sop)) box.append(await trapRound(task, sop));
     // a harvest task: the weight per batch, before the steps
     if (isHarvestTask(sop) && task.positions.some(p => p.plan_id)) box.append(await harvestBlock(task));
-    // the assets of a maintenance task, each with its own tick
-    if (task.positions.some(isItem)) box.append(itemBlock(task));
-    steps.forEach(s => box.append(stepCard(s)));
+    // a one_task routine with items (the sumps, the zones): the steps once per
+    // item under its heading, every reading kept with its item (FarmBox 0078);
+    // any other task with items (maintenance assets): a tick per item, steps once
+    run.perItem = !!(sop?.one_task && task.positions.some(isItem));
+    if (run.perItem) {
+      run.itemList = task.positions.filter(isItem);
+      run.itemList.forEach(it => {
+        box.append(el('div', 'fb-sec fb-item-head', it.label || 'Item'));
+        steps.forEach(s => box.append(stepCard(s, it)));
+      });
+    } else {
+      if (task.positions.some(isItem)) box.append(itemBlock(task));
+      steps.forEach(s => box.append(stepCard(s)));
+    }
     $('runHint').textContent = '';
     show('run', 'Checklist', () => { setKV('run_open', null).catch(() => {}); openTask(task.key); });
   }
@@ -7072,8 +7084,12 @@ function sopOpen() {
   }
   window.fbCountInsects = countInsects;   // for support: count a canvas from the console
 
-  function stepCard(s) {
-    const card = el('div', 'fb-step'); card.dataset.seq = s.seq;
+  // The key of an answer: the step's seq, or item|seq when the checklist runs
+  // once per item (FarmBox 0078: a sump check answered for each sump).
+  const stepKey = (s, item) => item ? `${item.id}|${s.seq}` : s.seq;
+  function stepCard(s, item) {
+    const key = stepKey(s, item);
+    const card = el('div', 'fb-step'); card.dataset.seq = s.seq; card.dataset.key = String(key);
     if (s.section) card.append(el('div', 'fb-sec', s.section));
     const head = el('div', 'fb-step-head');
     head.append(el('h4', null, s.title));
@@ -7099,7 +7115,7 @@ function sopOpen() {
     }
 
     const set = (result, extra) => {
-      run.answers.set(s.seq, { seq: s.seq, step_id: s.id, result,
+      run.answers.set(key, { seq: s.seq, step_id: s.id, result, ...(item ? { item_id: item.id } : {}),
         min_value: s.min_value, max_value: s.max_value, ...extra });
       card.classList.toggle('answered', result === 'ok');
       card.classList.toggle('bad', result === 'nok');
@@ -7116,7 +7132,7 @@ function sopOpen() {
         : (s.target_source !== 'fixed' ? 'target comes from the crop' : '');
       input.oninput = () => {
         const v = parseFloat(input.value);
-        if (isNaN(v)) { run.answers.delete(s.seq); card.classList.remove('answered', 'bad'); return; }
+        if (isNaN(v)) { run.answers.delete(key); card.classList.remove('answered', 'bad'); return; }
         const bad = (s.min_value != null && v < s.min_value) || (s.max_value != null && v > s.max_value);
         set(bad ? 'nok' : 'ok', { value_num: v });
       };
@@ -7127,7 +7143,7 @@ function sopOpen() {
       input.placeholder = s.expected_result || 'what you saw';
       input.setAttribute('aria-label', s.title);
       input.oninput = () => input.value.trim() ? set('ok', { value_text: input.value.trim() })
-                                               : run.answers.delete(s.seq);
+                                               : run.answers.delete(key);
       acts.append(input);
     } else {
       const yes = el('button', 'fb-btn', s.step_type === 'check' ? 'OK' : 'Done');
@@ -7151,8 +7167,8 @@ function sopOpen() {
       btn.onclick = () => pick.click();
       pick.onchange = () => {
         const f = pick.files[0]; if (!f) return;
-        const list = run.media.get(s.seq) || [];
-        list.push(f); run.media.set(s.seq, list);
+        const list = run.media.get(key) || [];
+        list.push(f); run.media.set(key, list);
         const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'evidence';
         shot.insertBefore(img, btn);
         shot.querySelector('.fb-chip')?.remove();
@@ -7164,7 +7180,7 @@ function sopOpen() {
 
     const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional)';
     note.setAttribute('aria-label', 'Note for ' + s.title);
-    note.oninput = () => { const a = run.answers.get(s.seq); if (a) a.note = note.value; };
+    note.oninput = () => { const a = run.answers.get(key); if (a) a.note = note.value; };
     card.append(note);
 
     const plan = el('div', 'fb-plan hidden');
@@ -7200,14 +7216,18 @@ function sopOpen() {
         });
       }
     }
-    const missing = run.steps.filter(s => !run.answers.has(s.seq));
-    const noPhoto = run.steps.filter(s => /photo|video/.test(s.evidence || '') && !(run.media.get(s.seq) || []).length);
+    const expected = run.perItem
+      ? run.itemList.flatMap(it => run.steps.map(s => ({ s, key: stepKey(s, it), item: it })))
+      : run.steps.map(s => ({ s, key: s.seq, item: null }));
+    const missing = expected.filter(x => !run.answers.has(x.key));
+    const noPhoto = expected.filter(x => /photo|video/.test(x.s.evidence || '') && !(run.media.get(x.key) || []).length);
     if (missing.length || noPhoto.length) {
+      const where = x => x.item ? ` (${x.item.label})` : '';
       $('runHint').textContent = missing.length
-        ? `${missing.length} step${missing.length > 1 ? 's' : ''} still to answer.`
-        : `${noPhoto.length} step${noPhoto.length > 1 ? 's' : ''} still need a photo.`;
-      const first = (missing[0] || noPhoto[0]).seq;
-      document.querySelector(`.fb-step[data-seq="${first}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        ? `${missing.length} step${missing.length > 1 ? 's' : ''} still to answer${where(missing[0])}.`
+        : `${noPhoto.length} step${noPhoto.length > 1 ? 's' : ''} still need a photo${where(noPhoto[0])}.`;
+      const first = (missing[0] || noPhoto[0]).key;
+      document.querySelector(`.fb-step[data-key="${first}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     $('finish').disabled = true;
@@ -7215,12 +7235,13 @@ function sopOpen() {
 
     // photos first; if there is no signal they wait with the run in the outbox
     const steps = [];
-    for (const s of run.steps) {
-      const a = run.answers.get(s.seq);
+    for (const x of expected) {
+      const s = x.s;
+      const a = run.answers.get(x.key);
       const media = [];
-      for (const [i, file] of (run.media.get(s.seq) || []).entries()) {
+      for (const [i, file] of (run.media.get(x.key) || []).entries()) {
         if (!(file instanceof Blob)) continue;             // the trap cards carry their own photos
-        const path = `${farm.id}/${run.clientId}/${s.seq}-${i}-${Date.now()}.jpg`;
+        const path = `${farm.id}/${run.clientId}/${String(x.key).replace(/[^0-9a-z]/gi, '')}-${i}-${Date.now()}.jpg`;
         try {
           await api('/storage/v1/object/evidence/' + path, {
             method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file
