@@ -799,7 +799,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.7';
+  const CURRENT_VERSION = '0.11.8';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6577,6 +6577,9 @@ function sopOpen() {
     const th = (await getKV('ipm_threshold')) || { watch: 25, over: 50 };
     run.traps = new Map();
     run.trapList = traps;
+    let draft = null;
+    try { draft = await getKV(trapDraftKey(task)); } catch (e) { /* no draft */ }
+    const prior = new Map((draft?.traps || []).map(x => [x.trap_id, x]));
     const box = el('div', 'fb-traps');
     box.append(el('div', 'fb-sec', 'Sticky traps in this zone'));
     if (!traps.length) {
@@ -6584,11 +6587,13 @@ function sopOpen() {
       return box;
     }
     box.append(el('div', 'config-hint', `${traps.length} trap${traps.length > 1 ? 's' : ''} — photograph each one square-on with its code in the picture. The phone counts; correct it if it is wrong.`));
-    traps.forEach(t => box.append(trapCard(t, th)));
+    const kept = traps.filter(t => prior.get(t.id)?.photo_data).length;
+    if (kept) box.append(el('div', 'config-hint', `${kept} photo${kept > 1 ? 's' : ''} from before the app was closed ${kept > 1 ? 'are' : 'is'} back — carry on from there.`));
+    traps.forEach(t => box.append(trapCard(t, th, prior.get(t.id))));
     return box;
   }
 
-  function trapCard(t, th) {
+  function trapCard(t, th, prior) {
     const card = el('div', 'fb-step fb-trap'); card.dataset.trap = t.id;
     const head = el('div', 'fb-step-head');
     const title = el('h4');
@@ -6618,7 +6623,7 @@ function sopOpen() {
     const algoNote = el('span', 'fb-chip', '');
     const pest = el('select', 'fb-num');
     PESTS.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; pest.append(o); });
-    pest.onchange = () => { state.pest = pest.value; };
+    pest.onchange = () => { state.pest = pest.value; saveTrapDraft(); };
     const line = el('div', 'fb-actions');
     line.append(el('span', 'fb-trap-lbl', 'Insects'), totalIn, algoNote, pest);
     counts.append(line);
@@ -6640,6 +6645,7 @@ function sopOpen() {
       state.corrected = state.algo_total != null && state.total !== state.algo_total;
       algoNote.textContent = state.algo_total != null ? (state.corrected ? `phone said ${state.algo_total}` : 'counted by the phone') : '';
       paintLevel();
+      saveTrapDraft();
     };
 
     pick.onchange = async () => {
@@ -6647,9 +6653,10 @@ function sopOpen() {
       status.textContent = 'counting…';
       try {
         const { dataUrl, canvas } = await shrinkPhoto(f, 1000, 0.72);
-        const small = await shrinkPhoto(f, 640, 0.6);
-        state.photo_data = small.dataUrl;
+        state.photo_data = shrinkCanvas(canvas, 640, 0.6);
         img.src = dataUrl; img.style.display = '';
+        await saveTrapDraft();                                   // the photo is safe before the count
+        await new Promise(r => setTimeout(r, 40));               // let it paint first
         const r = countInsects(canvas, t);
         state.counts = r.counts; state.algo_total = r.total; state.total = r.total;
         state.algorithm = r.algorithm; state.confidence = r.confidence; state.corrected = false;
@@ -6665,36 +6672,80 @@ function sopOpen() {
         sizes.textContent = 'The phone could not count this one — type the number.';
       }
       paintLevel();
+      saveTrapDraft();
+      pick.value = '';
     };
 
     const acts = el('div', 'fb-actions');
     const rep = el('button', 'fb-btn', 'Replaced');
     rep.setAttribute('aria-pressed', 'false');
-    rep.onclick = () => { state.replaced = !state.replaced; rep.setAttribute('aria-pressed', String(state.replaced)); };
+    rep.onclick = () => { state.replaced = !state.replaced; rep.setAttribute('aria-pressed', String(state.replaced)); saveTrapDraft(); };
     acts.append(rep);
     card.append(acts);
     const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional): missing, torn, wet…';
-    note.oninput = () => { state.notes = note.value; };
+    note.oninput = () => { state.notes = note.value; saveTrapDraft(); };
     card.append(note);
+
+    // what this trap already had before the app was closed
+    if (prior && prior.photo_data) {
+      Object.assign(state, prior, { trap_id: t.id, code: t.code });
+      img.src = state.photo_data; img.style.display = '';
+      if (state.total != null) totalIn.value = String(state.total);
+      pest.value = state.pest || '';
+      rep.setAttribute('aria-pressed', String(!!state.replaced));
+      note.value = state.notes || '';
+      algoNote.textContent = state.algo_total != null ? (state.corrected ? `phone said ${state.algo_total}` : 'counted by the phone') : '';
+      const c = state.counts || {};
+      sizes.textContent = state.algo_total != null ? `tiny ${c.tiny ?? 0} · small ${c.small ?? 0} · medium ${c.medium ?? 0} · large ${c.large ?? 0}` : '';
+      counts.classList.remove('hidden');
+      paintLevel();
+    }
     return card;
   }
 
   // A photo scaled down on a canvas: the data URL to keep, the canvas to count on.
-  function shrinkPhoto(file, maxSide, quality) {
+  // Decoded ONCE, as a bitmap that is closed at once (0.11.8): a 12–50 MP phone
+  // photo decoded twice through <img> was enough to push the app out of memory
+  // on the phone. createImageBitmap also applies the EXIF rotation.
+  async function shrinkPhoto(file, maxSide, quality) {
+    let src;
+    try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (e) { src = await loadImage(file); }
+    const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+    const k = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    if (src.close) src.close();
+    return { dataUrl: c.toDataURL('image/jpeg', quality), canvas: c };
+  }
+  function loadImage(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const im = new Image();
-      im.onload = () => {
-        const k = Math.min(1, maxSide / Math.max(im.naturalWidth, im.naturalHeight));
-        const c = document.createElement('canvas');
-        c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
-        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        resolve({ dataUrl: c.toDataURL('image/jpeg', quality), canvas: c });
-      };
+      im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
       im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not a picture')); };
       im.src = url;
     });
+  }
+  // a smaller copy of an already-shrunk canvas: no second decode of the photo
+  function shrinkCanvas(canvas, maxSide, quality) {
+    const k = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(canvas.width * k)); c.height = Math.max(1, Math.round(canvas.height * k));
+    c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', quality);
+  }
+
+  // Opening the camera can push the app out of memory on Android; when it
+  // comes back the run would be empty. So what was photographed and counted
+  // is kept in the phone's database as it happens, and comes back when the
+  // same task is opened again (cleared when the round is sent).
+  const trapDraftKey = task => 'trapdraft:' + (task.key || task.id);
+  async function saveTrapDraft() {
+    if (!run?.traps) return;
+    try { await setKV(trapDraftKey(run.task), { saved: Date.now(), traps: [...run.traps.values()] }); }
+    catch (e) { console.warn('trap draft not saved', e); }
   }
 
   // ── counting insects on a sticky trap (blobs-v1) ────────────────────────
@@ -6937,6 +6988,7 @@ function sopOpen() {
     open.forEach(t => { t.status = 'done'; t.done_at = finished; });
     await putAll('tasks', open);
     await queue(payloads);
+    if (run.traps) { try { await del('kv', trapDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
     const failed = steps.filter(s => s.result === 'nok').length;
     $('finish').disabled = false;
     showToast(failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
