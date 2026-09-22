@@ -814,7 +814,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.14';
+  const CURRENT_VERSION = '0.11.15';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6229,13 +6229,14 @@ function sopOpen() {
       await putAll('steps', d.sop_steps);
       // Phase A: the platform sends one task per crop × zone × date and lists
       // the positions it covers. Older servers send nothing here — fine.
-      await putAll('positions', d.task_positions);
+      // FarmBox 0075 sends task_items (every kind: batch, asset, area, trap); older servers only the batches
+      await putAll('positions', d.task_items || d.task_positions);
       // IPM: the sticky traps of the farm and the count thresholds
       await putAll('traps', d.sticky_traps);
       if (d.ipm_threshold) await setKV('ipm_threshold', d.ipm_threshold);
       for (const x of (d.deleted || [])) {
         const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps',
-                        task_position: 'positions', sticky_trap: 'traps' }[x.table];
+                        task_position: 'positions', task_item: 'positions', sticky_trap: 'traps' }[x.table];
         if (store) await del(store, x.id);
       }
       // The server only sends tasks from a week back: anything older on the
@@ -6491,11 +6492,13 @@ function sopOpen() {
             x.germination_c ? `${x.germination_c} °C` : null,
             x.notes || null].filter(Boolean).join(' · ');
   };
+  const isItem = p => p.kind && p.kind !== 'position';
   const cropsOf = g => new Set(g.positions.map(p => p.crop_name).filter(Boolean));
   const zonesOf = g => new Set(g.positions.map(p => p.zone_name).filter(Boolean));
   function positionList(g) {
     const box = el('div', 'fb-pos');
-    box.append(el('div', 'fb-sec', `Positions · ${g.positions.length}`));
+    const items = g.positions.every(isItem);
+    box.append(el('div', 'fb-sec', `${items ? 'Items' : 'Positions'} · ${g.positions.length}`));
     const manyCrops = cropsOf(g).size > 1, manyZones = zonesOf(g).size > 1;
     let lastZone = null;
     g.positions.forEach(p => {
@@ -6503,7 +6506,8 @@ function sopOpen() {
         box.append(el('div', 'fb-pos-row zone', p.zone_name)); lastZone = p.zone_name;
       }
       const r = el('div', 'fb-pos-row' + (p.done ? ' done' : ''));
-      const name = el('span', 'fb-pos-name', [p.label || 'Position', manyCrops ? p.crop_name : null].filter(Boolean).join(' · '));
+      const name = el('span', 'fb-pos-name', [p.label || (isItem(p) ? 'Item' : 'Position'), manyCrops ? p.crop_name : null].filter(Boolean).join(' · '));
+      if (isItem(p) && p.done_at) r.classList.add('done');
       // the crop's sowing figures under the batch on a sowing / nursery task (FarmBox 0074)
       const sow = sowingLine(p.sowing);
       if (sow) name.append(el('small', 'fb-pos-sow', sow));
@@ -6592,7 +6596,7 @@ function sopOpen() {
     }
     run = { task, sop, steps, started: new Date().toISOString(),
             answers: new Map(), media: new Map(), allOpen: false,
-            traps: null, harvests: null, clientId: 'run-' + task.id + '-' + Date.now() };
+            traps: null, harvests: null, items: null, clientId: 'run-' + task.id + '-' + Date.now() };
     // remembered, so a relaunch (Android closing the app) comes straight back here
     try { await setKV('run_open', { key: task.key || task.id, at: Date.now() }); } catch (e) {}
 
@@ -6619,6 +6623,8 @@ function sopOpen() {
     if (isTrapRound(sop)) box.append(await trapRound(task, sop));
     // a harvest task: the weight per batch, before the steps
     if (isHarvestTask(sop) && task.positions.some(p => p.plan_id)) box.append(await harvestBlock(task));
+    // the assets of a maintenance task, each with its own tick
+    if (task.positions.some(isItem)) box.append(itemBlock(task));
     steps.forEach(s => box.append(stepCard(s)));
     $('runHint').textContent = '';
     show('run', 'Checklist', () => { setKV('run_open', null).catch(() => {}); openTask(task.key); });
@@ -6688,6 +6694,27 @@ function sopOpen() {
     try { await setKV(harvDraftKey(run.task), { saved: Date.now(), rows: [...run.harvests.values()] }); }
     catch (e) { console.warn('harvest draft not saved', e); }
   }
+  // The items of a task that is not about crop batches (FarmBox 0075: the assets
+  // of a maintenance task): one row each, ticked as it is done; the ticks travel
+  // with the run and the server sets last_done on every rule under the task.
+  function itemBlock(task) {
+    run.items = new Map();
+    const box = el('div', 'fb-harv');
+    box.append(el('div', 'fb-sec', `Items · ${task.positions.filter(isItem).length}`));
+    task.positions.filter(isItem).forEach(p => {
+      const st = { id: p.id, done: !!p.done_at, note: p.result?.note || '' };
+      run.items.set(p.id, st);
+      const row = el('div', 'fb-harv-row');
+      row.append(el('span', 'fb-pos-name', p.label || 'Item'));
+      const b = el('button', 'fb-btn', 'Done');
+      b.setAttribute('aria-pressed', String(st.done));
+      b.onclick = () => { st.done = !st.done; b.setAttribute('aria-pressed', String(st.done)); };
+      row.append(b);
+      box.append(row);
+    });
+    return box;
+  }
+
   async function harvestBlock(task) {
     let draft = null;
     try { draft = await getKV(harvDraftKey(task)); } catch (e) { /* none */ }
@@ -7225,6 +7252,8 @@ function sopOpen() {
       // harvest weights, on the first run only
       ...(run.harvests && !i ? { harvests: [...run.harvests.values()].filter(x => num(x.kg) > 0).map(x => ({
         plan_id: x.plan_id, position_code: x.position_code, kg: x.kg, final: !!x.final })) } : {}),
+      // the ticks on the task's items, on the first run only
+      ...(run.items && !i ? { items: [...run.items.values()].map(x => ({ id: x.id, done: !!x.done, note: x.note || '' })) } : {}),
       // IPM readings, on the first run only (a phone-grouped round is one zone anyway)
       ...(run.traps && !i ? { traps: [...run.traps.values()].filter(x => x.photo_data != null).map(x => ({
         trap_id: x.trap_id, code: x.code, photo_data: x.photo_data, photo_path: x.photo_path || null,
