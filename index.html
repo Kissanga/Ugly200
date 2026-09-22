@@ -690,6 +690,10 @@
     #viewFarmbox .hero h1 { font-size: var(--text-lg); font-weight:750; letter-spacing:-0.02em; }
     #viewFarmbox .hero p { margin:0; color: var(--text-muted); font-size: var(--text-sm); }
     .fb-day { margin-top: var(--space-4); }
+    .fb-slot { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+      padding: 10px 0 4px; margin-top: 4px; }
+    .fb-slot.pm { border-top: 2px solid var(--accent, #1bbfa8); color: var(--accent, #1bbfa8); }
+    .fb-slot.any { border-top: 1px dashed var(--border); }
     .fb-day h2 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing:.08em;
       color: var(--text-muted); margin: 0 0 var(--space-2); font-weight: 700; }
     .fb-card { display:flex; align-items:center; gap: var(--space-3); width:100%; text-align:left;
@@ -815,7 +819,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.16';
+  const CURRENT_VERSION = '0.11.17';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6335,6 +6339,10 @@ function sopOpen() {
     return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' });
   };
   const hhmm = t => (t || '').slice(0, 5);
+  const SLOTS = ['am', 'pm', 'any'];
+  const SLOT_WORD = { am: 'Morning', pm: 'Afternoon', any: 'Anytime' };
+  const SLOT_SHORT = { am: 'AM', pm: 'PM', any: '—' };
+  const slotOf = t => SLOTS.includes(t.slot) ? t.slot : (t.due_time ? (t.due_time < '12:00' ? 'am' : 'pm') : 'any');
   const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
   // ── grouped tasks (Phase A) ─────────────────────────────────────────────
@@ -6415,7 +6423,7 @@ function sopOpen() {
       // plain comparison, not localeCompare: ICU collation sorts punctuation
       // before digits, which put the untimed tasks at the top of the day
       .sort((a, b) => {
-        const k = x => x.planned_date + (x.due_time || '99:99:99') + (x.title || '');
+        const k = x => x.planned_date + SLOTS.indexOf(slotOf(x)) + (x.due_time || '99:99:99') + (x.title || '');
         return k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : 0;
       });
     const today = todayISO(), horizon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -6433,7 +6441,7 @@ function sopOpen() {
       const card = el('div', 'fb-ink' + famClass(next.family));
       card.append(el('small', null, next.planned_date < today ? 'Overdue — do this first' : 'Now'));
       card.append(el('h3', null, next.title));
-      card.append(el('div', 'fb-meta', [hhmm(next.due_time), groupMeta(next)].filter(Boolean).join(' · ')));
+      card.append(el('div', 'fb-meta', [SLOT_WORD[slotOf(next)], hhmm(next.due_time), groupMeta(next)].filter(Boolean).join(' · ')));
       const go = el('button', 'btn btn-primary btn-sm', 'Open');
       go.style.marginTop = 'var(--space-3)';
       go.onclick = () => openTask(next.key);
@@ -6449,7 +6457,13 @@ function sopOpen() {
       const open = list.filter(t => t.status !== 'done').length;
       const mins = list.reduce((s, t) => s + t.openMinutes, 0);
       sec.append(el('h2', null, `${fmtDay(date)} · ${open} open of ${list.length}` + (open ? ` · ${fmtMin(mins)}` : '')));
-      list.forEach(t => sec.append(taskCard(t, date < today)));
+      // the morning above a line, the afternoon below it, anytime under a dotted one
+      SLOTS.forEach(slot => {
+        const part = list.filter(t => slotOf(t) === slot);
+        if (!part.length && slot === 'any') return;
+        sec.append(el('div', 'fb-slot ' + slot, SLOT_WORD[slot] + (part.length ? '' : ' — nothing')));
+        part.forEach(t => sec.append(taskCard(t, date < today)));
+      });
       days.append(sec);
     }
     paintFoot();
@@ -6461,7 +6475,7 @@ function sopOpen() {
 
   function taskCard(g, late) {
     const b = el('button', 'fb-card' + famClass(g.family) + (g.status === 'done' ? ' done' : ''));
-    b.append(el('span', 'fb-when', hhmm(g.due_time) || '—'));
+    b.append(el('span', 'fb-when', SLOT_SHORT[slotOf(g)]));
     const body = el('div', 'fb-body');
     body.append(el('div', 'fb-name', g.title));
     const meta = el('div', 'fb-meta');
@@ -6539,7 +6553,7 @@ function sopOpen() {
     const facts = el('div', 'set-group');
     const row = (k, v) => { if (!v) return; const r = el('div', 'set-row');
       r.append(el('span', null, k)); r.append(el('span', null, String(v))); facts.append(r); };
-    row('When', `${fmtDay(t.planned_date)}${t.due_time ? ' · ' + hhmm(t.due_time) : ''}`);
+    row('When', `${fmtDay(t.planned_date)} · ${SLOT_WORD[slotOf(t)]}${t.due_time ? ' · ' + hhmm(t.due_time) : ''}`);
     row('Where', [t.zone_name || t.area, zonesOf(t).size > 1 ? [...zonesOf(t)].join(', ') : null].filter(Boolean).join(' · '));
     row('Crop', t.crop_name);
     row('Phase', t.phase_name);
