@@ -806,7 +806,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.10';
+  const CURRENT_VERSION = '0.11.11';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6263,7 +6263,17 @@ function sopOpen() {
         if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
         });
-        else await api('/rest/v1/rpc/submit_run', { method: 'POST', body: JSON.stringify({ p: row.payload }) });
+        else {
+          // trap photos that never reached the bucket go first (the run waits if they cannot)
+          for (const t of (row.payload.traps || [])) {
+            if (t.photo_blob instanceof Blob && !t.photo_path) {
+              t.photo_path = await uploadTrapPhoto(row.payload.client_run_id, t.code, t.photo_blob);
+              await putAll('outbox', [row]);
+            }
+            delete t.photo_blob;
+          }
+          await api('/rest/v1/rpc/submit_run', { method: 'POST', body: JSON.stringify({ p: row.payload }) });
+        }
         await del('outbox', row.id);
       } catch (e) {
         await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 120) }]);
@@ -6711,23 +6721,33 @@ function sopOpen() {
       paintLevel();
       saveTrapDraft();
     };
+    // The photo, from the camera or the gallery: a 2000 px copy is kept for
+    // the console and the AI (uploaded with the round — the API would scale a
+    // 12 MP picture down anyway), the count runs on 1600 px, the 640 px
+    // thumbnail travels inside the reading.
+    const gotFile = async file => {
+      status.textContent = 'reading the photo…';
+      let big;
+      try { big = await shrinkPhoto(file, 2000, null); }
+      catch (e) {
+        console.warn('photo failed', e);
+        status.textContent = 'photo needed';
+        showToast('That photo could not be read — try again', 'error');
+        return;
+      }
+      state.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', 0.85));
+      state.photo_path = null;
+      await gotCanvas(scaleCanvas(big.canvas, 1600));
+    };
     btn.onclick = async () => {
       const r = await takeTrapPhoto(t.code);
       if (r === 'cancel') return;
       if (!r) { pick.click(); return; }                          // no camera here: the phone's own
-      await gotCanvas(r);
+      await gotFile(r);
     };
     pick.onchange = async () => {
       const f = pick.files[0]; if (!f) return;
-      status.textContent = 'reading the photo…';
-      try {
-        const { canvas } = await shrinkPhoto(f, 1000, 0.72);
-        await gotCanvas(canvas);
-      } catch (e) {
-        console.warn('photo failed', e);
-        status.textContent = 'photo needed';
-        showToast('That photo could not be read — try again', 'error');
-      }
+      await gotFile(f);
       pick.value = '';
     };
 
@@ -6772,7 +6792,23 @@ function sopOpen() {
     c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
     c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
     if (src.close) src.close();
-    return { dataUrl: c.toDataURL('image/jpeg', quality), canvas: c };
+    return { dataUrl: quality == null ? null : c.toDataURL('image/jpeg', quality), canvas: c };
+  }
+  function scaleCanvas(canvas, maxSide) {
+    const k = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
+    if (k === 1) return canvas;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(canvas.width * k)); c.height = Math.max(1, Math.round(canvas.height * k));
+    c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
+    return c;
+  }
+  // the full trap photo goes to the evidence bucket: <farm>/<run>/trap-<code>-<time>.jpg
+  async function uploadTrapPhoto(runId, code, blob) {
+    const path = `${farm.id}/${runId}/trap-${String(code).replace(/[^A-Za-z0-9]/g, '')}-${Date.now()}.jpg`;
+    await api('/storage/v1/object/evidence/' + path, {
+      method: 'POST', headers: { 'Content-Type': blob.type || 'image/jpeg' }, body: blob
+    });
+    return path;
   }
   function loadImage(file) {
     return new Promise((resolve, reject) => {
@@ -6786,16 +6822,16 @@ function sopOpen() {
   // The camera inside the app (0.11.10). Opening the phone's camera app was
   // what got Naked Brain killed on Android — the app comes back empty, at the
   // start screen. A live preview, a shutter, the frame drawn on a canvas at
-  // 1000 px: the app never leaves and nothing big is ever decoded. Resolves
-  // the canvas, 'cancel' when the person backs out, null when the browser
-  // has no camera to give (then the phone's own camera/gallery is used).
+  // the app never leaves. Resolves the photo as a Blob, 'cancel' when the
+  // person backs out, null when the browser has no camera to give (then the
+  // phone's own camera/gallery is used).
   function takeTrapPhoto(code) {
     return new Promise(async resolve => {
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } }, audio: false });
       } catch (e) { console.warn('camera refused', e); return resolve(null); }
       const ov = el('div', 'fb-cam');
       const video = document.createElement('video');
@@ -6809,14 +6845,22 @@ function sopOpen() {
       document.body.append(ov);
       const stop = () => { try { stream.getTracks().forEach(x => x.stop()); } catch (e) {} ov.remove(); };
       cancel.onclick = () => { stop(); resolve('cancel'); };
-      shutter.onclick = () => {
-        const w = video.videoWidth, h = video.videoHeight;
-        if (!w || !h) { showToast('The camera is still starting — try again', 'error'); return; }
-        const k = Math.min(1, 1000 / Math.max(w, h));
-        const c = document.createElement('canvas');
-        c.width = Math.round(w * k); c.height = Math.round(h * k);
-        c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
-        stop(); resolve(c);
+      // the full photo: the camera's own still where the browser offers it
+      // (ImageCapture, Chrome on Android), else the preview frame at its size
+      shutter.onclick = async () => {
+        shutter.disabled = true;
+        let blob = null;
+        try {
+          if (window.ImageCapture) blob = await new ImageCapture(stream.getVideoTracks()[0]).takePhoto();
+        } catch (e) { console.warn('takePhoto', e); }
+        if (!blob) {
+          const w = video.videoWidth, h = video.videoHeight;
+          if (!w || !h) { showToast('The camera is still starting — try again', 'error'); shutter.disabled = false; return; }
+          const c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(video, 0, 0);
+          blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
+        }
+        stop(); resolve(blob);
       };
     });
   }
@@ -7063,6 +7107,15 @@ function sopOpen() {
       steps.push({ ...a, media, recorded_at: new Date().toISOString() });
     }
 
+    // the full trap photos, to the evidence bucket; without signal they stay in the outbox with the run
+    if (run.traps) {
+      for (const x of run.traps.values()) {
+        if (!(x.full instanceof Blob) || x.photo_path) continue;
+        try { x.photo_path = await uploadTrapPhoto(run.clientId, x.code, x.full); }
+        catch (e) { console.warn('trap photo not uploaded yet:', e); }
+      }
+    }
+
     // One run per task row. A server-grouped task is one row; a phone-grouped
     // one is several, each getting the same answers (they were done together).
     const finished = new Date().toISOString();
@@ -7074,7 +7127,9 @@ function sopOpen() {
       position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id),
       // IPM readings, on the first run only (a phone-grouped round is one zone anyway)
       ...(run.traps && !i ? { traps: [...run.traps.values()].filter(x => x.photo_data != null).map(x => ({
-        trap_id: x.trap_id, photo_data: x.photo_data, counts: x.counts || {}, total: x.total ?? 0,
+        trap_id: x.trap_id, code: x.code, photo_data: x.photo_data, photo_path: x.photo_path || null,
+        photo_blob: x.photo_path ? null : (x.full instanceof Blob ? x.full : null),
+        counts: x.counts || {}, total: x.total ?? 0,
         algo_total: x.algo_total, algorithm: x.algorithm, confidence: x.confidence, corrected: x.corrected,
         pest: x.pest || null, replaced: x.replaced, notes: x.notes || null, read_at: finished })) } : {})
     }));
