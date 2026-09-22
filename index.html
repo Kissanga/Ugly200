@@ -761,6 +761,14 @@
     .fb-expect b { color: var(--text); font-weight:700; }
     .fb-runbar { display:flex; justify-content:flex-end; margin: 0 0 var(--space-2); }
     .fb-shot { display:flex; align-items:center; gap: var(--space-2); margin-top: var(--space-2); flex-wrap:wrap; }
+    .fb-traps { margin: var(--space-3) 0; }
+    .fb-trap-code { display:inline-block; font-family: ui-monospace, monospace; font-weight:800; font-size: var(--text-lg);
+      letter-spacing:.04em; padding:2px 8px; border-radius: var(--radius-md); background: #f4d24a; color:#2b2400; }
+    .fb-trap .fb-shot img { width:96px; height:96px; }
+    .fb-trap-counts { margin-top: var(--space-2); }
+    .fb-trap-lbl { font-size: var(--text-sm); font-weight:600; }
+    .fb-trap-counts select.fb-num { width:auto; }
+    .fb-trap.bad .fb-trap-code { outline:2px solid var(--coral); }
     .fb-shot img { width:56px; height:56px; object-fit:cover; border-radius: var(--radius-md); }
     #viewFarmbox .set-row { align-items: baseline; padding: var(--space-2) 0; }
     #viewFarmbox .set-row > span:first-child { flex: 0 0 auto; white-space: nowrap; color: var(--text-muted); }
@@ -791,7 +799,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.6';
+  const CURRENT_VERSION = '0.11.7';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6101,11 +6109,12 @@ function sopOpen() {
 
   // ── tiny IndexedDB wrapper (one store, keyed records) ───────────────────
   // v2 adds 'positions': the crop positions a grouped task covers (Phase A).
-  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox', 'positions'];
+  // v3 adds 'traps': the farm's sticky traps, for the IPM trap round.
+  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox', 'positions', 'traps'];
   let dbp;
   function db() {
     return dbp || (dbp = new Promise((res, rej) => {
-      const r = indexedDB.open('farmbox', 2);
+      const r = indexedDB.open('farmbox', 3);
       r.onupgradeneeded = () => STORES.forEach(s => {
         if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' });
       });
@@ -6206,9 +6215,12 @@ function sopOpen() {
       // Phase A: the platform sends one task per crop × zone × date and lists
       // the positions it covers. Older servers send nothing here — fine.
       await putAll('positions', d.task_positions);
+      // IPM: the sticky traps of the farm and the count thresholds
+      await putAll('traps', d.sticky_traps);
+      if (d.ipm_threshold) await setKV('ipm_threshold', d.ipm_threshold);
       for (const x of (d.deleted || [])) {
         const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps',
-                        task_position: 'positions' }[x.table];
+                        task_position: 'positions', sticky_trap: 'traps' }[x.table];
         if (store) await del(store, x.id);
       }
       await setKV('cursor', d.cursor);
@@ -6519,7 +6531,7 @@ function sopOpen() {
     }
     run = { task, sop, steps, started: new Date().toISOString(),
             answers: new Map(), media: new Map(), allOpen: false,
-            clientId: 'run-' + task.id + '-' + Date.now() };
+            traps: null, clientId: 'run-' + task.id + '-' + Date.now() };
 
     const head = $('runHead'); head.textContent = '';
     head.append(el('h1', null, task.title));
@@ -6540,10 +6552,225 @@ function sopOpen() {
     };
     bar.append(toggle);
     box.append(bar);
+    // the IPM trap round: one card per sticky trap of the zone, before the steps
+    if (isTrapRound(sop)) box.append(await trapRound(task, sop));
     steps.forEach(s => box.append(stepCard(s)));
     $('runHint').textContent = '';
     show('run', 'Checklist', () => openTask(task.key));
   }
+
+  // ── IPM: the sticky trap round ──────────────────────────────────────────
+  // The procedure ipm-trap-round (sop.attributes.module = 'ipm_traps') asks
+  // for every trap of the zone: a photo with the code in the frame, a count
+  // (the phone counts the dark specks on the yellow card; the person corrects),
+  // what the insects mostly are, whether the trap was replaced. The cards are
+  // the evidence for the checklist's photo step; the readings go up with the
+  // run as `traps`.
+  const isTrapRound = sop => sop && (sop.attributes?.module === 'ipm_traps' || sop.slug === 'ipm-trap-round');
+  const PESTS = [['', 'mostly…'], ['whitefly', 'whitefly'], ['thrips', 'thrips'], ['fungus_gnat', 'fungus gnats'],
+                 ['aphid', 'aphids (winged)'], ['leafminer', 'leaf miners'], ['moth', 'moths'], ['other', 'other / mixed']];
+
+  async function trapRound(task, sop) {
+    const traps = (await all('traps')).filter(t => t.active !== false
+      && (t.zone_id === task.zone_id || (t.system_id && t.system_id === task.system_id)))
+      .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+    const th = (await getKV('ipm_threshold')) || { watch: 25, over: 50 };
+    run.traps = new Map();
+    run.trapList = traps;
+    const box = el('div', 'fb-traps');
+    box.append(el('div', 'fb-sec', 'Sticky traps in this zone'));
+    if (!traps.length) {
+      box.append(el('div', 'config-hint', 'No sticky trap is registered for this zone. Add them on the console (IPM page) and sync; the round can still be finished without readings.'));
+      return box;
+    }
+    box.append(el('div', 'config-hint', `${traps.length} trap${traps.length > 1 ? 's' : ''} — photograph each one square-on with its code in the picture. The phone counts; correct it if it is wrong.`));
+    traps.forEach(t => box.append(trapCard(t, th)));
+    return box;
+  }
+
+  function trapCard(t, th) {
+    const card = el('div', 'fb-step fb-trap'); card.dataset.trap = t.id;
+    const head = el('div', 'fb-step-head');
+    const title = el('h4');
+    title.append(el('span', 'fb-trap-code', t.code));
+    title.append(document.createTextNode(' ' + [t.row_label ? 'row ' + t.row_label : null, t.metres != null ? `${t.metres} m` : null, t.colour].filter(Boolean).join(' · ')));
+    head.append(title);
+    if (t.last_total != null) head.append(el('span', 'fb-chip', `last ${t.last_total}`));
+    card.append(head);
+
+    const state = { trap_id: t.id, code: t.code, photo_data: null, counts: null, total: null, algo_total: null,
+                    algorithm: null, confidence: null, corrected: false, pest: '', replaced: false, notes: '' };
+    run.traps.set(t.id, state);
+
+    const shot = el('div', 'fb-shot');
+    const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*';
+    pick.capture = 'environment'; pick.style.display = 'none';
+    const btn = el('button', 'fb-btn', '📷 Photo of the trap');
+    btn.onclick = () => pick.click();
+    const img = el('img'); img.alt = ''; img.style.display = 'none';
+    const status = el('span', 'fb-chip', 'photo needed');
+    shot.append(img, btn, status, pick);
+    card.append(shot);
+
+    const counts = el('div', 'fb-trap-counts hidden');
+    const totalIn = el('input', 'fb-num'); totalIn.type = 'number'; totalIn.min = '0'; totalIn.step = '1';
+    totalIn.setAttribute('aria-label', 'Insects on trap ' + t.code);
+    const algoNote = el('span', 'fb-chip', '');
+    const pest = el('select', 'fb-num');
+    PESTS.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; pest.append(o); });
+    pest.onchange = () => { state.pest = pest.value; };
+    const line = el('div', 'fb-actions');
+    line.append(el('span', 'fb-trap-lbl', 'Insects'), totalIn, algoNote, pest);
+    counts.append(line);
+    const sizes = el('div', 'fb-meta');
+    counts.append(sizes);
+    card.append(counts);
+
+    const paintLevel = () => {
+      const n = Number(totalIn.value);
+      card.classList.toggle('answered', state.photo_data != null && !isNaN(n) && totalIn.value !== '');
+      card.classList.toggle('bad', n >= th.over);
+      status.textContent = state.photo_data == null ? 'photo needed'
+        : n >= th.over ? `over ${th.over} — the manager is told` : n >= th.watch ? 'watch' : 'ok';
+      status.className = 'fb-chip' + (n >= th.over ? ' late' : state.photo_data != null ? ' ok' : '');
+    };
+    totalIn.oninput = () => {
+      const n = parseInt(totalIn.value, 10);
+      state.total = isNaN(n) ? null : n;
+      state.corrected = state.algo_total != null && state.total !== state.algo_total;
+      algoNote.textContent = state.algo_total != null ? (state.corrected ? `phone said ${state.algo_total}` : 'counted by the phone') : '';
+      paintLevel();
+    };
+
+    pick.onchange = async () => {
+      const f = pick.files[0]; if (!f) return;
+      status.textContent = 'counting…';
+      try {
+        const { dataUrl, canvas } = await shrinkPhoto(f, 1000, 0.72);
+        const small = await shrinkPhoto(f, 640, 0.6);
+        state.photo_data = small.dataUrl;
+        img.src = dataUrl; img.style.display = '';
+        const r = countInsects(canvas, t);
+        state.counts = r.counts; state.algo_total = r.total; state.total = r.total;
+        state.algorithm = r.algorithm; state.confidence = r.confidence; state.corrected = false;
+        totalIn.value = String(r.total);
+        algoNote.textContent = 'counted by the phone';
+        sizes.textContent = `tiny ${r.counts.tiny} · small ${r.counts.small} · medium ${r.counts.medium} · large ${r.counts.large}` +
+          (r.confidence < 0.4 ? ' · the yellow card was hard to find: check the number' : '');
+        counts.classList.remove('hidden');
+      } catch (e) {
+        console.warn('count failed', e);
+        state.photo_data = state.photo_data || null;
+        counts.classList.remove('hidden');
+        sizes.textContent = 'The phone could not count this one — type the number.';
+      }
+      paintLevel();
+    };
+
+    const acts = el('div', 'fb-actions');
+    const rep = el('button', 'fb-btn', 'Replaced');
+    rep.setAttribute('aria-pressed', 'false');
+    rep.onclick = () => { state.replaced = !state.replaced; rep.setAttribute('aria-pressed', String(state.replaced)); };
+    acts.append(rep);
+    card.append(acts);
+    const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional): missing, torn, wet…';
+    note.oninput = () => { state.notes = note.value; };
+    card.append(note);
+    return card;
+  }
+
+  // A photo scaled down on a canvas: the data URL to keep, the canvas to count on.
+  function shrinkPhoto(file, maxSide, quality) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        const k = Math.min(1, maxSide / Math.max(im.naturalWidth, im.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve({ dataUrl: c.toDataURL('image/jpeg', quality), canvas: c });
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not a picture')); };
+      im.src = url;
+    });
+  }
+
+  // ── counting insects on a sticky trap (blobs-v1) ────────────────────────
+  // 1. find the card: the biggest yellow (or blue) area in the photo;
+  // 2. inside it, an insect is a dark speck that is not the card's colour;
+  // 3. group touching specks, drop the dust (< 3 px) and the writing / edges
+  //    (very large or very long shapes), and count by size in millimetres
+  //    from the card's known width: tiny < 1.5 mm (thrips), small < 3 mm
+  //    (whitefly, fungus gnats), medium < 6 mm (aphids, leaf miners), large.
+  // It is a count of dark specks, not a species identification: the person
+  // says what they mostly are and corrects the number.
+  function countInsects(canvas, trap) {
+    const W = canvas.width, H = canvas.height;
+    const d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+    const blue = trap.colour === 'blue';
+    const isCard = i => {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      return blue ? (b > 110 && b > r + 40 && b > g + 10) : (r > 140 && g > 110 && b < 120 && r - b > 60 && g - b > 40);
+    };
+    // the card's bounding box from the 3rd–97th percentile of card-coloured pixels
+    const xs = [], ys = [];
+    let cardPx = 0;
+    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) {
+      if (isCard((y * W + x) * 4)) { cardPx++; if (cardPx % 7 === 0) { xs.push(x); ys.push(y); } }
+    }
+    let x0 = 0, y0 = 0, x1 = W - 1, y1 = H - 1, conf = 0;
+    if (xs.length > 50) {
+      xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+      const q = (arr, p) => arr[Math.min(arr.length - 1, Math.floor(arr.length * p))];
+      x0 = q(xs, 0.03); x1 = q(xs, 0.97); y0 = q(ys, 0.03); y1 = q(ys, 0.97);
+      const area = Math.max(1, (x1 - x0) * (y1 - y0));
+      conf = Math.min(1, (cardPx * 4) / area);          // how much of the box is card colour
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    // pixels per millimetre from the card's known width (the long side)
+    const longPx = Math.max(bw, bh), longMm = Math.max(Number(trap.width_cm) || 25, Number(trap.height_cm) || 10) * 10;
+    const ppm = longPx / longMm;
+    // dark, non-card pixels inside the box
+    const mask = new Uint8Array(bw * bh);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const i = (y * W + x) * 4;
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      if (!isCard(i) && lum < 120) mask[(y - y0) * bw + (x - x0)] = 1;
+    }
+    // connected components (4-neighbour), iterative
+    const seen = new Uint8Array(bw * bh);
+    const stack = new Int32Array(bw * bh);
+    const counts = { tiny: 0, small: 0, medium: 0, large: 0 };
+    const minPx = Math.max(3, Math.round(0.6 * ppm * 0.6 * ppm));       // dust
+    const maxPx = Math.round(0.02 * bw * bh);                              // writing, edges, a fold
+    for (let p = 0; p < bw * bh; p++) {
+      if (!mask[p] || seen[p]) continue;
+      let sp = 0, n = 0, minx = bw, maxx = 0, miny = bh, maxy = 0;
+      stack[sp++] = p; seen[p] = 1;
+      while (sp) {
+        const q = stack[--sp]; n++;
+        const qx = q % bw, qy = (q - qx) / bw;
+        if (qx < minx) minx = qx; if (qx > maxx) maxx = qx; if (qy < miny) miny = qy; if (qy > maxy) maxy = qy;
+        if (qx > 0 && mask[q - 1] && !seen[q - 1]) { seen[q - 1] = 1; stack[sp++] = q - 1; }
+        if (qx < bw - 1 && mask[q + 1] && !seen[q + 1]) { seen[q + 1] = 1; stack[sp++] = q + 1; }
+        if (qy > 0 && mask[q - bw] && !seen[q - bw]) { seen[q - bw] = 1; stack[sp++] = q - bw; }
+        if (qy < bh - 1 && mask[q + bw] && !seen[q + bw]) { seen[q + bw] = 1; stack[sp++] = q + bw; }
+      }
+      if (n < minPx || n > maxPx) continue;
+      const w = maxx - minx + 1, h = maxy - miny + 1;
+      if (Math.max(w, h) > 8 * Math.min(w, h) + 4) continue;           // a line: pen stroke or card edge
+      // touching the box edge over a long stretch: the card's border, not an insect
+      if ((minx === 0 || maxx === bw - 1 || miny === 0 || maxy === bh - 1) && Math.max(w, h) > 6 * ppm) continue;
+      const mm = Math.max(w, h) / ppm;
+      if (mm > 9) continue;                                            // bigger than any trap insect: the code, a label, a leaf
+      if (mm < 1.5) counts.tiny++; else if (mm < 3) counts.small++; else if (mm < 6) counts.medium++; else counts.large++;
+    }
+    const total = counts.tiny + counts.small + counts.medium + counts.large;
+    return { counts, total, confidence: Math.round(conf * 100) / 100, algorithm: 'blobs-v1' };
+  }
+  window.fbCountInsects = countInsects;   // for support: count a canvas from the console
 
   function stepCard(s) {
     const card = el('div', 'fb-step'); card.dataset.seq = s.seq;
@@ -6647,6 +6874,20 @@ function sopOpen() {
   }
 
   async function finishRun() {
+    // the trap round: every trap needs its photo and a number before the round can close
+    if (run.traps && run.trapList?.length) {
+      const undone = [...run.traps.values()].filter(t => t.photo_data == null || t.total == null);
+      if (undone.length) {
+        $('runHint').textContent = `${undone.length} trap${undone.length > 1 ? 's' : ''} still need a photo and a count.`;
+        document.querySelector(`.fb-trap[data-trap="${undone[0].trap_id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      // the photo step of the procedure is answered by the trap cards
+      run.steps.filter(s => /photo/.test(s.evidence || '')).forEach(s => {
+        if (!run.answers.has(s.seq)) run.answers.set(s.seq, { seq: s.seq, step_id: s.id, result: 'ok', note: `${run.traps.size} traps photographed and counted` });
+        if (!(run.media.get(s.seq) || []).length) run.media.set(s.seq, [{ trapEvidence: true }]);
+      });
+    }
     const missing = run.steps.filter(s => !run.answers.has(s.seq));
     const noPhoto = run.steps.filter(s => /photo|video/.test(s.evidence || '') && !(run.media.get(s.seq) || []).length);
     if (missing.length || noPhoto.length) {
@@ -6666,6 +6907,7 @@ function sopOpen() {
       const a = run.answers.get(s.seq);
       const media = [];
       for (const [i, file] of (run.media.get(s.seq) || []).entries()) {
+        if (!(file instanceof Blob)) continue;             // the trap cards carry their own photos
         const path = `${farm.id}/${run.clientId}/${s.seq}-${i}-${Date.now()}.jpg`;
         try {
           await api('/storage/v1/object/evidence/' + path, {
@@ -6685,7 +6927,12 @@ function sopOpen() {
       farm_id: farm.id, task_id: t.id, sop_version_id: t.sop_version_id || run.task.sop_version_id,
       client_run_id: i ? `${run.clientId}-${i}` : run.clientId, status: 'completed',
       started_at: run.started, finished_at: finished, steps,
-      position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id)
+      position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id),
+      // IPM readings, on the first run only (a phone-grouped round is one zone anyway)
+      ...(run.traps && !i ? { traps: [...run.traps.values()].filter(x => x.photo_data != null).map(x => ({
+        trap_id: x.trap_id, photo_data: x.photo_data, counts: x.counts || {}, total: x.total ?? 0,
+        algo_total: x.algo_total, algorithm: x.algorithm, confidence: x.confidence, corrected: x.corrected,
+        pest: x.pest || null, replaced: x.replaced, notes: x.notes || null, read_at: finished })) } : {})
     }));
     open.forEach(t => { t.status = 'done'; t.done_at = finished; });
     await putAll('tasks', open);
