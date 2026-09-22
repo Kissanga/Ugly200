@@ -799,7 +799,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.8';
+  const CURRENT_VERSION = '0.11.9';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6222,6 +6222,16 @@ function sopOpen() {
         const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps',
                         task_position: 'positions', sticky_trap: 'traps' }[x.table];
         if (store) await del(store, x.id);
+      }
+      // The server only sends tasks from a week back: anything older on the
+      // phone can never be updated again (a cancellation would not arrive), so
+      // it goes — done or not. The outbox keeps what is still to upload.
+      const keepFrom = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      const stale = (await all('tasks')).filter(t => t.planned_date && t.planned_date < keepFrom);
+      for (const t of stale) await del('tasks', t.id);
+      if (stale.length) {
+        const gone = new Set(stale.map(t => t.id));
+        for (const p of (await all('positions')).filter(p => gone.has(p.task_id))) await del('positions', p.id);
       }
       await setKV('cursor', d.cursor);
       await setKV('synced_at', Date.now());
