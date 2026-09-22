@@ -819,7 +819,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.17';
+  const CURRENT_VERSION = '0.11.18';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6343,6 +6343,9 @@ function sopOpen() {
   const SLOT_WORD = { am: 'Morning', pm: 'Afternoon', any: 'Anytime' };
   const SLOT_SHORT = { am: 'AM', pm: 'PM', any: '—' };
   const slotOf = t => SLOTS.includes(t.slot) ? t.slot : (t.due_time ? (t.due_time < '12:00' ? 'am' : 'pm') : 'any');
+  // where it is drawn (FarmBox 0080): an anytime task fills the morning while it has room, else the afternoon
+  const BANDS = ['am', 'pm'];
+  const bandOf = t => BANDS.includes(t.plan_slot) ? t.plan_slot : (slotOf(t) === 'pm' ? 'pm' : 'am');
   const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
   // ── grouped tasks (Phase A) ─────────────────────────────────────────────
@@ -6423,7 +6426,7 @@ function sopOpen() {
       // plain comparison, not localeCompare: ICU collation sorts punctuation
       // before digits, which put the untimed tasks at the top of the day
       .sort((a, b) => {
-        const k = x => x.planned_date + SLOTS.indexOf(slotOf(x)) + (x.due_time || '99:99:99') + (x.title || '');
+        const k = x => x.planned_date + BANDS.indexOf(bandOf(x)) + (slotOf(x) === 'any' ? '1' : '0') + (x.due_time || '99:99:99') + (x.title || '');
         return k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : 0;
       });
     const today = todayISO(), horizon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -6458,9 +6461,8 @@ function sopOpen() {
       const mins = list.reduce((s, t) => s + t.openMinutes, 0);
       sec.append(el('h2', null, `${fmtDay(date)} · ${open} open of ${list.length}` + (open ? ` · ${fmtMin(mins)}` : '')));
       // the morning above a line, the afternoon below it, anytime under a dotted one
-      SLOTS.forEach(slot => {
-        const part = list.filter(t => slotOf(t) === slot);
-        if (!part.length && slot === 'any') return;
+      BANDS.forEach(slot => {
+        const part = list.filter(t => bandOf(t) === slot);
         sec.append(el('div', 'fb-slot ' + slot, SLOT_WORD[slot] + (part.length ? '' : ' — nothing')));
         part.forEach(t => sec.append(taskCard(t, date < today)));
       });
@@ -6475,7 +6477,7 @@ function sopOpen() {
 
   function taskCard(g, late) {
     const b = el('button', 'fb-card' + famClass(g.family) + (g.status === 'done' ? ' done' : ''));
-    b.append(el('span', 'fb-when', SLOT_SHORT[slotOf(g)]));
+    b.append(el('span', 'fb-when', SLOT_SHORT[bandOf(g)]));
     const body = el('div', 'fb-body');
     body.append(el('div', 'fb-name', g.title));
     const meta = el('div', 'fb-meta');
