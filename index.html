@@ -744,6 +744,7 @@
     .fb-sec + .fb-pos-row { border-top:0; }
     .fb-pos-row.done { opacity:.5; text-decoration: line-through; }
     .fb-pos-row.total { font-weight:700; border-top:2px solid var(--border); text-decoration:none; opacity:1; }
+    .fb-pos-row.zone { font-size: var(--fs-sm, .85rem); color: var(--muted); text-transform: uppercase; letter-spacing:.04em; padding-top:10px; }
     .fb-pos-name { font-weight:600; }
     .fb-pos-val { color: var(--text-muted); white-space:nowrap; font-variant-numeric: tabular-nums; }
     .fb-pos-row.total .fb-pos-val { color: var(--text); }
@@ -811,7 +812,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.12';
+  const CURRENT_VERSION = '0.11.13';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6386,7 +6387,8 @@ function sopOpen() {
       g.doneCount = done;
       g.openMinutes = g.members.filter(m => m.status !== 'done').reduce((s, m) => s + num(m.estimated_minutes), 0);
       if (!g.quantity) g.quantity = g.positions.reduce((s, p) => s + num(p.quantity), 0);
-      g.positions.sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), undefined, { numeric: true }));
+      g.positions.sort((a, b) => String(a.zone_name || '').localeCompare(String(b.zone_name || ''), undefined, { numeric: true })
+        || String(a.label || '').localeCompare(String(b.label || ''), undefined, { numeric: true }));
       // drop the placeholder when the old planner gave us nothing to name
       if (g.positions.length === 1 && !g.positions[0].label && !g.positions[0].quantity) g.positions = [];
     }
@@ -6459,7 +6461,8 @@ function sopOpen() {
     const body = el('div', 'fb-body');
     body.append(el('div', 'fb-name', g.title));
     const meta = el('div', 'fb-meta');
-    const where = g.zone_name || g.area;
+    const zn = zonesOf(g).size;
+    const where = g.zone_name || g.area || (zn > 1 ? `${zn} zones` : null);
     if (where) { meta.append(el('span', 'fb-where', where)); meta.append(document.createTextNode(' · ')); }
     meta.append(document.createTextNode(qtyBits(g).join(' · ')));
     body.append(meta);
@@ -6472,13 +6475,22 @@ function sopOpen() {
     return b;
   }
 
-  // Positions the task covers, one line each: name · quantity · minutes.
+  // Positions the task covers, one line each: name · quantity · minutes —
+  // by zone when the task spans more than one (a farm-wide sowing), and
+  // with the crop on the line when the task carries more than one (0073).
+  const cropsOf = g => new Set(g.positions.map(p => p.crop_name).filter(Boolean));
+  const zonesOf = g => new Set(g.positions.map(p => p.zone_name).filter(Boolean));
   function positionList(g) {
     const box = el('div', 'fb-pos');
     box.append(el('div', 'fb-sec', `Positions · ${g.positions.length}`));
+    const manyCrops = cropsOf(g).size > 1, manyZones = zonesOf(g).size > 1;
+    let lastZone = null;
     g.positions.forEach(p => {
+      if (manyZones && p.zone_name && p.zone_name !== lastZone) {
+        box.append(el('div', 'fb-pos-row zone', p.zone_name)); lastZone = p.zone_name;
+      }
       const r = el('div', 'fb-pos-row' + (p.done ? ' done' : ''));
-      r.append(el('span', 'fb-pos-name', p.label || 'Position'));
+      r.append(el('span', 'fb-pos-name', [p.label || 'Position', manyCrops ? p.crop_name : null].filter(Boolean).join(' · ')));
       const right = [p.quantity != null && p.quantity !== '' && !isPosUnit(p.unit || g.unit) ? fmtQty(p.quantity, p.unit || g.unit) : null,
                      p.minutes != null ? fmtMin(p.minutes) : null].filter(Boolean).join(' · ');
       r.append(el('span', 'fb-pos-val', right || (p.done ? 'done' : '')));
@@ -6506,7 +6518,7 @@ function sopOpen() {
     const row = (k, v) => { if (!v) return; const r = el('div', 'set-row');
       r.append(el('span', null, k)); r.append(el('span', null, String(v))); facts.append(r); };
     row('When', `${fmtDay(t.planned_date)}${t.due_time ? ' · ' + hhmm(t.due_time) : ''}`);
-    row('Where', t.zone_name || t.area);
+    row('Where', [t.zone_name || t.area, zonesOf(t).size > 1 ? [...zonesOf(t)].join(', ') : null].filter(Boolean).join(' · '));
     row('Crop', t.crop_name);
     row('Phase', t.phase_name);
     row('Quantity', t.quantity && !isPosUnit(t.unit) ? fmtQty(t.quantity, t.unit) : null);
@@ -6679,7 +6691,7 @@ function sopOpen() {
                    ...(prior.get(p.plan_id) || {}) };
       run.harvests.set(p.plan_id, st);
       const row = el('div', 'fb-harv-row');
-      row.append(el('span', 'fb-pos-name', [st.position_code, task.crop_name].filter(Boolean).join(' · ')));
+      row.append(el('span', 'fb-pos-name', [st.position_code, p.crop_name || task.crop_name].filter(Boolean).join(' · ')));
       const kg = el('input', 'fb-num'); kg.type = 'number'; kg.min = '0'; kg.step = '0.1'; kg.placeholder = 'kg';
       kg.setAttribute('aria-label', 'Kilograms from ' + st.position_code);
       if (st.kg != null) kg.value = String(st.kg);
