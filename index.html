@@ -822,7 +822,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.19';
+  const CURRENT_VERSION = '0.11.20';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -6235,7 +6235,8 @@ function sopOpen() {
       await putAll('tasks', d.tasks);
       // who is on each task: a task that came back brings its whole list, so the old one goes first
       if (d.task_workers) {
-        const came = new Set((d.tasks || []).map(t => t.id));
+        // FarmBox 0087 sends the whole window's list every time; an older server only the changed tasks'
+        const came = new Set(d.workers && d.me !== undefined ? (await all('task_workers')).map(x => x.task_id) : (d.tasks || []).map(t => t.id));
         for (const x of (await all('task_workers')).filter(x => came.has(x.task_id))) await del('task_workers', x.id);
         await putAll('task_workers', d.task_workers.map(x => ({ ...x, id: x.task_id + '|' + x.worker_id })));
       }
@@ -6477,7 +6478,7 @@ function sopOpen() {
       const card = el('div', 'fb-ink' + famClass(next.family));
       card.append(el('small', null, next.planned_date < today ? 'Overdue — do this first' : 'Now'));
       card.append(el('h3', null, next.title));
-      card.append(el('div', 'fb-meta', [SLOT_WORD[slotOf(next)], hhmm(next.due_time), groupMeta(next)].filter(Boolean).join(' · ')));
+      card.append(el('div', 'fb-meta', [hhmm(next.due_time), groupMeta(next)].filter(Boolean).join(' · ')));
       const go = el('button', 'btn btn-primary btn-sm', 'Open');
       go.style.marginTop = 'var(--space-3)';
       go.onclick = () => openTask(next.key);
@@ -6510,7 +6511,6 @@ function sopOpen() {
 
   function taskCard(g, late) {
     const b = el('button', 'fb-card' + famClass(g.family) + (g.status === 'done' ? ' done' : ''));
-    b.append(el('span', 'fb-when', SLOT_SHORT[bandOf(g)]));
     const body = el('div', 'fb-body');
     body.append(el('div', 'fb-name', g.title));
     const meta = el('div', 'fb-meta');
