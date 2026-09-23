@@ -822,15 +822,29 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.21';
+  const CURRENT_VERSION = '0.11.22';
   let updateAvailable = false;
 
+  let lastSaid = null, notYetAt = 0;
+  // the page that carries the number, fetched past every cache: does it say the new one?
+  async function arrived(v) {
+    try {
+      const txt = await (await fetch('./index.html?probe=' + Date.now(), { cache: 'reload' })).text();
+      return txt.includes("CURRENT_VERSION = '" + v + "'");
+    } catch (_) { return false; }
+  }
   async function checkForUpdates() {
     try {
       const res = await fetch('./version.json?t=' + Date.now());
       if (!res.ok) return;
       const data = await res.json();
-      if (data.version && data.version !== CURRENT_VERSION && sessionStorage.getItem('nb_update_dismissed') !== data.version) {
+      // a CDN can say the new number before it has the new files, and flip for a while:
+      // a number is offered only once it has been said twice, and not within five
+      // minutes of a tap that found the files not there yet
+      const steady = data.version && data.version === lastSaid;
+      lastSaid = data.version;
+      if (Date.now() - notYetAt < 5 * 60 * 1000) return;
+      if (steady && data.version !== CURRENT_VERSION && sessionStorage.getItem('nb_update_dismissed') !== data.version) {
         updateAvailable = true;
         // "Update now" was already tapped for this version but the phone is
         // still on the old one: say so instead of offering the same button again.
@@ -900,6 +914,19 @@
     document.body.appendChild(notification);
 
     document.getElementById('updateNowBtn').addEventListener('click', async () => {
+      // reloading into the old files is the loop: the new page must be reachable first
+      const btn = document.getElementById('updateNowBtn');
+      btn.disabled = true; btn.textContent = 'Checking…';
+      if (!(await arrived(newVersion))) {
+        notYetAt = Date.now();
+        notification.querySelector('#updateNowBtn').textContent = 'Not here yet';
+        const msg = document.createElement('div');
+        msg.style.cssText = 'font-size:12px;opacity:.85;margin-top:4px';
+        msg.textContent = newVersion + ' is published but has not reached this connection yet — it will be offered again in a few minutes.';
+        btn.parentElement.appendChild(msg);
+        setTimeout(() => notification.remove(), 8000);
+        return;
+      }
       try {
         if ('serviceWorker' in navigator) {
           const regs = await navigator.serviceWorker.getRegistrations();
@@ -929,6 +956,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.22', '2026-09-23', 'No more update loop', 'Update now checks that the new version has reached this connection before reloading, and waits when it has not; a number is offered only once the server has said it twice.'],
     ['0.11.21', '2026-09-23', 'Version log', 'This list, in Settings.'],
     ['0.11.20', '2026-09-23', 'No AM / PM word on the cards', 'The morning and afternoon headings say it; the window\'s assignments come whole from the server, so a phone that synced before gets the people and their tasks at once.'],
     ['0.11.19', '2026-09-23', 'Whose tasks, and clearer colours', 'A person selector above the day list — Everyone, Nobody yet, each person — opening on the person signed in. The family colour is a wider bar and a stronger ground.'],
