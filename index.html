@@ -48,9 +48,9 @@
       --rec-pulse: rgba(239,100,97,0.35);
       /* task families: the card's own ground. A bar carries the same meaning,
          so the colour is never the only signal. */
-      --fam-ag: #12a892; --fam-ag-bg: #e4f5f1;
-      --fam-mt: #c8761a; --fam-mt-bg: #fbeddb;
-      --fam-of: #6f6d68; --fam-of-bg: #eeece7;
+      --fam-ag: #12a892; --fam-ag-bg: #cfeee6;
+      --fam-mt: #c8761a; --fam-mt-bg: #f8e1c2;
+      --fam-of: #6f6d68; --fam-of-bg: #e4e1da;
     }
     [data-theme="dark"] {
       --bg: #131315; --bg-end: #2b2418;
@@ -64,9 +64,9 @@
       --success: #5fdcc9; --success-bg: #133b36; --error: #ff8a86; --error-bg: #4a2826; --warning: #f0c060; --warning-bg: #40341a;
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 6px 20px rgba(0,0,0,0.35); --shadow-lg: 0 16px 40px rgba(0,0,0,0.5);
       --rec-pulse: rgba(239,100,97,0.35);
-      --fam-ag: #2fd3bb; --fam-ag-bg: #16332e;
-      --fam-mt: #e5a049; --fam-mt-bg: #35281a;
-      --fam-of: #9d9b95; --fam-of-bg: #26262a;
+      --fam-ag: #2fd3bb; --fam-ag-bg: #1b4a42;
+      --fam-mt: #e5a049; --fam-mt-bg: #4a3520;
+      --fam-of: #9d9b95; --fam-of-bg: #303036;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme]) {
@@ -79,8 +79,8 @@
         --accent-soft: #133b36; --coral-soft: #4a2826; --lavender-soft: #262a44; --ink: #2b2b30;
         --success: #5fdcc9; --success-bg: #133b36; --error: #ff8a86; --error-bg: #4a2826; --warning: #f0c060; --warning-bg: #40341a;
         --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 6px 20px rgba(0,0,0,0.35); --shadow-lg: 0 16px 40px rgba(0,0,0,0.5);
-        --fam-ag: #2fd3bb; --fam-ag-bg: #16332e;
-        --fam-mt: #e5a049; --fam-mt-bg: #35281a;
+        --fam-ag: #2fd3bb; --fam-ag-bg: #1b4a42;
+        --fam-mt: #e5a049; --fam-mt-bg: #4a3520;
         --fam-of: #9d9b95; --fam-of-bg: #26262a;
       }
     }
@@ -693,11 +693,14 @@
     .fb-slot { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
       padding: 10px 0 4px; margin-top: 4px; }
     .fb-slot.pm { border-top: 2px solid var(--accent, #1bbfa8); color: var(--accent, #1bbfa8); }
+    .fb-who { margin: var(--space-3) 0; }
+    .fb-who-sel { width:100%; font-size: var(--text-base); padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; }
     .fb-slot.any { border-top: 1px dashed var(--border); }
     .fb-day h2 { font-size: var(--text-sm); text-transform: uppercase; letter-spacing:.08em;
       color: var(--text-muted); margin: 0 0 var(--space-2); font-weight: 700; }
     .fb-card { display:flex; align-items:center; gap: var(--space-3); width:100%; text-align:left;
-      background: var(--surface); border:1px solid var(--border); border-left:4px solid var(--border);
+      background: var(--surface); border:1px solid var(--border); border-left:6px solid var(--border);
       border-radius: var(--radius-md);
       padding: var(--space-2) var(--space-3); margin-bottom: 6px; cursor:pointer;
       font: inherit; color: var(--text); box-shadow: var(--shadow-sm); }
@@ -819,7 +822,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.18';
+  const CURRENT_VERSION = '0.11.19';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -1166,6 +1169,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <!-- my week -->
     <div id="fb-week" class="doc hidden">
       <div class="hero"><h1 id="fb-weekTitle">This week</h1><p id="fb-weekSub">Your farm work, day by day.</p></div>
+      <div id="fb-who" class="fb-who"></div>
       <div id="fb-next"></div>
       <div id="fb-days"></div>
       <div id="fb-empty" class="config-hint hidden">Nothing planned yet. Pull ⟳ to sync.</div>
@@ -6130,11 +6134,11 @@ function sopOpen() {
   // ── tiny IndexedDB wrapper (one store, keyed records) ───────────────────
   // v2 adds 'positions': the crop positions a grouped task covers (Phase A).
   // v3 adds 'traps': the farm's sticky traps, for the IPM trap round.
-  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox', 'positions', 'traps'];
+  const STORES = ['kv', 'tasks', 'sops', 'versions', 'steps', 'outbox', 'positions', 'traps', 'task_workers', 'workers'];
   let dbp;
   function db() {
     return dbp || (dbp = new Promise((res, rej) => {
-      const r = indexedDB.open('farmbox', 3);
+      const r = indexedDB.open('farmbox', 4);
       r.onupgradeneeded = () => STORES.forEach(s => {
         if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: 'id' });
       });
@@ -6229,6 +6233,14 @@ function sopOpen() {
         body: JSON.stringify({ p_farm: farm.id, p_since: since || '-infinity' })
       });
       await putAll('tasks', d.tasks);
+      // who is on each task: a task that came back brings its whole list, so the old one goes first
+      if (d.task_workers) {
+        const came = new Set((d.tasks || []).map(t => t.id));
+        for (const x of (await all('task_workers')).filter(x => came.has(x.task_id))) await del('task_workers', x.id);
+        await putAll('task_workers', d.task_workers.map(x => ({ ...x, id: x.task_id + '|' + x.worker_id })));
+      }
+      await putAll('workers', d.workers);
+      if (d.me) await setKV('me', d.me);
       await putAll('sops', d.sops);
       await putAll('versions', d.sop_versions);
       await putAll('steps', d.sop_steps);
@@ -6253,6 +6265,7 @@ function sopOpen() {
       if (stale.length) {
         const gone = new Set(stale.map(t => t.id));
         for (const p of (await all('positions')).filter(p => gone.has(p.task_id))) await del('positions', p.id);
+        for (const x of (await all('task_workers')).filter(x => gone.has(x.task_id))) await del('task_workers', x.id);
       }
       await setKV('cursor', d.cursor);
       await setKV('synced_at', Date.now());
@@ -6396,7 +6409,10 @@ function sopOpen() {
       g.quantity += num(t.quantity);
       if (!g.unit) g.unit = t.unit || ps.find(p => p.unit)?.unit || null;
     }
+    const who = new Map();
+    (await all('task_workers')).forEach(x => { if (!who.has(x.task_id)) who.set(x.task_id, new Set()); who.get(x.task_id).add(x.worker_id); });
     for (const g of groups.values()) {
+      g.workerIds = new Set(g.members.flatMap(m => [...(who.get(m.id) || [])]));
       const done = g.members.filter(m => m.status === 'done').length;
       g.status = done === g.members.length ? 'done' : done ? 'partial' : 'open';
       g.doneCount = done;
@@ -6430,8 +6446,25 @@ function sopOpen() {
         return k(a) < k(b) ? -1 : k(a) > k(b) ? 1 : 0;
       });
     const today = todayISO(), horizon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    // whose tasks: everyone, nobody yet, or one person — the person signed in by default (FarmBox 0086)
+    const workers = (await all('workers')).filter(w => w.active !== false)
+      .sort((a, b) => (a.employment === 'casual') - (b.employment === 'casual') || String(a.name).localeCompare(String(b.name)));
+    const me = await getKV('me');
+    let who = await getKV('who');
+    if (!who || (who !== 'all' && who !== 'none' && !workers.some(w => w.id === who))) who = workers.some(w => w.id === me) ? me : 'all';
+    const whoBox = $('who'); whoBox.textContent = '';
+    if (workers.length) {
+      const sel = el('select', 'fb-who-sel');
+      [['all', 'Everyone'], ['none', 'Nobody yet'], ...workers.map(w => [w.id, w.name + (w.id === me ? ' (me)' : '') + (w.employment === 'casual' ? ' · casual' : '')])]
+        .forEach(([v, label]) => { const o = el('option', null, label); o.value = v; sel.append(o); });
+      sel.value = who;
+      sel.setAttribute('aria-label', 'Whose tasks');
+      sel.onchange = async () => { await setKV('who', sel.value); showWeek(); };
+      whoBox.append(sel);
+    }
+    const mine = t => who === 'all' ? true : who === 'none' ? t.workerIds.size === 0 : t.workerIds.has(who);
     const week = groups.filter(t => t.planned_date <= horizon &&
-      (t.planned_date >= today || t.status !== 'done'));
+      (t.planned_date >= today || t.status !== 'done') && mine(t));
 
     show('week', 'Tasks', null);
     $('weekSub').textContent = farm ? farm.name : 'Your farm work, day by day.';
