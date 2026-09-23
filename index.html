@@ -822,7 +822,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.20';
+  const CURRENT_VERSION = '0.11.21';
   let updateAvailable = false;
 
   async function checkForUpdates() {
@@ -925,6 +925,76 @@
     });
   }
 
+  // ── the version log: every release of this app, newest first (Settings › Version log) ──
+  // Same idea as the console's Settings › Version log (release_note): one line per
+  // release, what it changed, in plain words. Add the new release on top with each bump.
+  const VERSION_LOG = [
+    ['0.11.21', '2026-09-23', 'Version log', 'This list, in Settings.'],
+    ['0.11.20', '2026-09-23', 'No AM / PM word on the cards', 'The morning and afternoon headings say it; the window\'s assignments come whole from the server, so a phone that synced before gets the people and their tasks at once.'],
+    ['0.11.19', '2026-09-23', 'Whose tasks, and clearer colours', 'A person selector above the day list — Everyone, Nobody yet, each person — opening on the person signed in. The family colour is a wider bar and a stronger ground.'],
+    ['0.11.18', '2026-09-23', 'One line between AM and PM', 'An anytime task is drawn in the morning while the morning has room, else the afternoon: one list with one line in it.'],
+    ['0.11.17', '2026-09-23', 'Morning, afternoon, anytime', 'The day grouped with a line above the afternoon; a task\'s place in the day is one of three words, not a clock time.'],
+    ['0.11.16', '2026-09-22', 'The steps once per item', 'A grouped routine (the sump check, the irrigation check) runs its steps under a heading per sump or zone; every reading keeps its item.'],
+    ['0.11.15', '2026-09-22', 'The items of a task', 'A task may cover assets as well as crop batches (maintenance): the list says Items, each with a Done toggle in the run.'],
+    ['0.11.14', '2026-09-22', 'Sowing figures under each batch', 'A sowing or nursery task shows the crop\'s own seeds per plug, depth, cover, germination °C, seed per tray, blackout days.'],
+    ['0.11.13', '2026-09-22', 'Positions by zone', 'A task spanning zones lists its positions under zone headings, with the crop on the line when the task has more than one.'],
+    ['0.11.12', '2026-09-22', 'Harvest weight in the harvest task', 'One kg per batch typed in the harvest task, with Last cut; the weights go up with the run.'],
+    ['0.11.11', '2026-09-22', 'The full trap photo', 'The camera\'s own still, 2000 px, uploaded with the round for the count and the AI.'],
+    ['0.11.10', '2026-09-22', 'The camera inside the app', 'The trap photo is taken inside the app so Android cannot kill it; an open round comes back after a relaunch.'],
+    ['0.11.9', '2026-09-22', 'Old tasks leave the phone', 'Tasks older than a week are dropped at sync — the server no longer updates them.'],
+    ['0.11.8', '2026-09-22', 'The trap round survives the camera', 'One decode per photo; the round\'s photos, counts and notes saved as they happen.'],
+    ['0.11.7', '2026-09-22', 'The IPM sticky trap round', 'One card per trap of the zone: photo, an insect count by size the person corrects, the pest named.'],
+    ['0.11.6', '2026-09-21', 'Grouped tasks, reviewed', 'Fixes from the self-review of the grouped tasks.'],
+    ['0.11.5', '2026-09-21', 'Grouped tasks with positions', 'One card per crop × zone × day with the positions it covers; a two-level checklist.'],
+    ['0.11.4', '2026-09-19', 'Add location, with live GPS precision', ''],
+    ['0.11.3', '2026-09-19', 'GPS precision', ''],
+    ['0.11.2', '2026-09-19', 'GPS location on captures', ''],
+    ['0.11.1', '2026-09-18', 'SoP capture writes Effective Date / Summary', ''],
+    ['0.11.0', '2026-09-12', 'A compact task list, and Back that goes back', 'Task families are colour, not words: Agriculture green, Maintenance amber, Office grey.'],
+    ['0.10.0', '2026-09-12', 'FarmBox cloud module', 'The Tasks tab served by Supabase: sign in, sync the week, work offline, post the outbox.'],
+    ['0.9.16', '2026-09-12', 'Skins', 'Design-token JSON files selectable in Settings › Appearance.'],
+    ['0.9.15', '2026-09-11', 'Title on Daily', 'Author name by default; "Tap AI to…" hints.'],
+    ['0.9.14', '2026-09-11', 'AI summary buttons beside the section title', ''],
+    ['0.9.13', '2026-09-11', 'Compact Capture', 'Small buttons on each section title line.'],
+    ['0.9.12', '2026-09-11', 'Capture rebuilt', 'One capture box, automatic transcription.'],
+    ['0.9.11', '2026-09-11', 'Daily date first', ''],
+    ['0.9.10', '2026-09-11', 'Daily matches the renamed Notion columns', 'Rename-proof sending.'],
+    ['0.9.9', '2026-09-11', 'The top Tasks | Capture bar restored', ''],
+    ['0.9.8', '2026-09-11', 'Always-dark navigation bar', 'Daily uses FarmBox1 and TechPlan.'],
+    ['0.9.7', '2026-09-11', 'A reliable update box', ''],
+    ['0.9.6', '2026-09-11', 'Tasks dashboard by family', 'Agriculture, Maintenance, Office.'],
+    ['0.9.5', '2026-09-11', 'Tasks and Capture only', 'The app opens on Tasks.'],
+    ['0.9.4', '2026-09-11', 'The version after "beta" in the header', ''],
+    ['0.9.3', '2026-09-11', 'The SoP app merged into Naked Brain', ''],
+    ['0.9.2', '2026-09-11', 'Checklists never ask for a name', 'Always serve fresh HTML.'],
+    ['0.9.1', '2026-09-11', 'Mandatory author name', 'SoP checklists use it.'],
+    ['0.9', '2026-09-11', 'Tasks / SoP / Capture', 'The FarmBox SOP app inside Naked Brain.'],
+    ['0.8.2', '2026-09-11', 'Bigger logo with "beta"', 'Warm gradient, update popup, launch fixes.'],
+    ['0.8', '2026-09-11', 'The version under the nb. logo', 'New version scheme.'],
+  ];
+  function renderVersionLog() {
+    const box = document.getElementById('versionLog');
+    if (!box) return;
+    box.textContent = '';
+    const fmt = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); } catch (_) { return d; } };
+    VERSION_LOG.forEach(([v, d, t, sum]) => {
+      const row = document.createElement('div');
+      row.className = 'set-row';
+      row.style.cssText = 'align-items:flex-start;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--border)';
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;justify-content:space-between;width:100%;gap:8px';
+      const left = document.createElement('span');
+      left.innerHTML = '<b>' + v + '</b>' + (v === CURRENT_VERSION ? ' <span style="color:var(--accent,#1bbfa8)">· this one</span>' : '') + ' — ' + t;
+      const right = document.createElement('span');
+      right.style.cssText = 'color:var(--text-muted);white-space:nowrap;font-size:var(--text-sm)';
+      right.textContent = fmt(d);
+      head.append(left, right);
+      row.append(head);
+      if (sum) { const p = document.createElement('div'); p.style.cssText = 'color:var(--text-muted);font-size:var(--text-sm)'; p.textContent = sum; row.append(p); }
+      box.append(row);
+    });
+  }
+
   // Keep the header version label in sync with CURRENT_VERSION (was hardcoded before).
   function updateVersionDisplay() {
     const el = document.getElementById('versionDisplay');
@@ -959,9 +1029,10 @@
 
   // Check for updates on page load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { updateVersionDisplay(); checkForUpdates(); });
+    document.addEventListener('DOMContentLoaded', () => { updateVersionDisplay(); renderVersionLog(); checkForUpdates(); });
   } else {
     updateVersionDisplay();
+    renderVersionLog();
     checkForUpdates();
   }
 
@@ -1458,6 +1529,9 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="set-row"><span>Version</span><span id="settingsVersion" style="color:var(--text-muted)"></span></div>
       <div class="set-row"><span>User guide</span><a href="guide.html" target="_blank" rel="noopener" class="btn-copy" style="text-decoration:none">Open</a></div>
     </div>
+
+    <div class="set-title">Version log</div>
+    <div class="set-group" id="versionLog"></div>
 
     <div class="set-title">Configuration <span class="lock-badge" id="configLockBadge">🔒 PIN required</span></div>
     <div class="set-group">
