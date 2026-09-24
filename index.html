@@ -822,7 +822,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.22';
+  const CURRENT_VERSION = '0.11.23';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -956,6 +956,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.23', '2026-09-24', 'On demand and part time', 'The person selector says on demand instead of casual, and marks part-time people.'],
     ['0.11.22', '2026-09-23', 'No more update loop', 'Update now checks that the new version has reached this connection before reloading, and waits when it has not; a number is offered only once the server has said it twice.'],
     ['0.11.21', '2026-09-23', 'Version log', 'This list, in Settings.'],
     ['0.11.20', '2026-09-23', 'No AM / PM word on the cards', 'The morning and afternoon headings say it; the window\'s assignments come whole from the server, so a phone that synced before gets the people and their tasks at once.'],
@@ -6558,7 +6559,7 @@ function sopOpen() {
     const whoBox = $('who'); whoBox.textContent = '';
     if (workers.length) {
       const sel = el('select', 'fb-who-sel');
-      [['all', 'Everyone'], ['none', 'Nobody yet'], ...workers.map(w => [w.id, w.name + (w.id === me ? ' (me)' : '') + (w.employment === 'casual' ? ' · casual' : '')])]
+      [['all', 'Everyone'], ['none', 'Nobody yet'], ...workers.map(w => [w.id, w.name + (w.id === me ? ' (me)' : '') + (w.employment === 'casual' ? ' · on demand' : w.employment === 'part_time' ? ' · part time' : '')])]
         .forEach(([v, label]) => { const o = el('option', null, label); o.value = v; sel.append(o); });
       sel.value = who;
       sel.setAttribute('aria-label', 'Whose tasks');
