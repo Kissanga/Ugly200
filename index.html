@@ -784,6 +784,9 @@
     .fb-cam-shutter { width:74px; height:74px; border-radius:50%; border:5px solid #fff; background:#f4d24a; }
     .fb-cam .fb-btn { color:#fff; border-color:#fff; background:transparent; }
     .fb-trap-counts { margin-top: var(--space-2); }
+    .fb-photo .fb-shot img { width:96px; height:96px; }
+    .fb-photo .fb-actions { margin-top: var(--space-1); }
+    .fb-photo .fb-btn { min-height:32px; padding:4px 10px; font-size: var(--text-xs); }
     .fb-harv-row { display:flex; align-items:center; gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid var(--line, rgba(0,0,0,.08)); flex-wrap:wrap; }
     .fb-harv-row .fb-pos-name { flex: 1 1 120px; }
     .fb-harv-row input.fb-num { width: 96px; }
@@ -822,7 +825,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.24';
+  const CURRENT_VERSION = '0.11.25';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -956,6 +959,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.25', '2026-09-24', 'Daily scouting', 'Traps and plants in one daily round, zone by zone: the trap cards folded (count today, or skip), any number of plant photos with the crop and the part. Photos at full quality; the full files upload after the run, so a slow signal never holds it. The kind of insect is named in the console.'],
     ['0.11.24', '2026-09-24', 'One IPM round', 'The sticky-trap count and the plant checks are one round on Monday, Wednesday and Friday, zone by zone: each zone\'s trap cards under its heading, then its leaf and root checks.'],
     ['0.11.23', '2026-09-24', 'On demand and part time', 'The person selector says on demand instead of casual, and marks part-time people.'],
     ['0.11.22', '2026-09-23', 'No more update loop', 'Update now checks that the new version has reached this connection before reloading, and waits when it has not; a number is offered only once the server has said it twice.'],
@@ -6395,6 +6399,16 @@ function sopOpen() {
         if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
         });
+        else if (row.payload.__upload) {
+          // a full photo after its run: to the evidence bucket, then attached to the reading or the observation
+          const u = row.payload;
+          if (u.blob instanceof Blob) {
+            const path = `${farm.id}/${u.run_client_id}/${u.kind === 'trap' ? 'trap' : 'scout'}-${String(u.ref).replace(/[^A-Za-z0-9]/g, '')}-${Date.now()}.jpg`;
+            await api('/storage/v1/object/evidence/' + path, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: u.blob });
+            await api('/rest/v1/rpc/attach_photo', { method: 'POST',
+              body: JSON.stringify({ p_kind: u.kind, p_run_client_id: u.run_client_id, p_ref: u.ref, p_path: path }) });
+          }
+        }
         else {
           // trap photos that never reached the bucket go first (the run waits if they cannot)
           for (const t of (row.payload.traps || [])) {
@@ -6777,16 +6791,17 @@ function sopOpen() {
     // item under its heading, every reading kept with its item (FarmBox 0078);
     // any other task with items (maintenance assets): a tick per item, steps once
     run.perItem = !!(sop?.one_task && task.positions.some(isItem));
-    // the IPM trap round on one zone: one card per sticky trap, before the steps
-    if (isTrapRound(sop) && !run.perItem) box.append(await trapRound(task, sop));
+    // the IPM trap round on one zone (the old round): one card per sticky trap, before the steps
+    if (isTrapRound(sop) && !isScouting(sop) && !run.perItem) box.append(await trapRound(task, sop));
     // a harvest task: the weight per batch, before the steps
     if (isHarvestTask(sop) && task.positions.some(p => p.plan_id)) box.append(await harvestBlock(task));
     if (run.perItem) {
       run.itemList = task.positions.filter(isItem);
       for (const it of run.itemList) {
         box.append(el('div', 'fb-sec fb-item-head', it.label || 'Item'));
-        // the IPM round over every zone (FarmBox 0095): this zone's trap cards, then its steps
-        if (isTrapRound(sop)) box.append(await trapRound(task, sop, it));
+        // the daily scouting (FarmBox 0096): this zone's traps (count, or skip) and its plant photos, then its steps
+        if (isScouting(sop)) box.append(await scoutBlock(task, sop, it));
+        else if (isTrapRound(sop)) box.append(await trapRound(task, sop, it));
         steps.forEach(s => box.append(stepCard(s, it)));
       }
     } else {
@@ -6822,8 +6837,9 @@ function sopOpen() {
   // the evidence for the checklist's photo step; the readings go up with the
   // run as `traps`.
   const isTrapRound = sop => sop && (sop.attributes?.module === 'ipm_traps' || sop.slug === 'ipm-trap-round');
-  const PESTS = [['', 'mostly…'], ['whitefly', 'whitefly'], ['thrips', 'thrips'], ['fungus_gnat', 'fungus gnats'],
-                 ['aphid', 'aphids (winged)'], ['leafminer', 'leaf miners'], ['moth', 'moths'], ['other', 'other / mixed']];
+  // the daily scouting (FarmBox 0096): the traps folded, count or skip, and plant photos
+  const isScouting = sop => sop && sop.attributes?.module === 'scouting';
+  // the kind of insect is named in the console, by the AI on request or by a person (0.11.25)
 
   async function trapRound(task, sop, item = null) {
     // one zone: the task's own, or (a grouped round, FarmBox 0095) the item's
@@ -6850,6 +6866,141 @@ function sopOpen() {
     const kept = traps.filter(t => prior.get(t.id)?.photo_data).length;
     if (kept) box.append(el('div', 'config-hint', `${kept} photo${kept > 1 ? 's' : ''} from before the app was closed ${kept > 1 ? 'are' : 'is'} back — carry on from there.`));
     traps.forEach(t => box.append(trapCard(t, th, prior.get(t.id))));
+    return box;
+  }
+
+  // ── the daily scouting, per zone (FarmBox 0096) ──────────────────────
+  // Under the zone's heading: the sticky traps folded — Count today opens the
+  // trap cards, Skip today leaves them (no reading, the curve simply waits) —
+  // and the plant photos: any number, each with the crop it shows (chips from
+  // the crops standing in the zone), the part (leaf, fruit, root…) and a note.
+  // The photos go up with the run as `observations`; the full files follow
+  // from the outbox and attach themselves (attach_photo), so a slow signal
+  // never holds the run. Kept in the phone's database as they are taken.
+  const PARTS = [['leaf', 'Leaf'], ['fruit', 'Fruit'], ['root', 'Root'], ['stem', 'Stem'], ['whole', 'Whole plant'], ['other', 'Other']];
+  const scoutDraftKey = task => 'scoutdraft:' + (task.key || task.id);
+  async function saveScoutDraft() {
+    if (!run?.scout) return;
+    try { await setKV(scoutDraftKey(run.task), { saved: Date.now(), photos: [...run.scout.values()], opened: [...(run.trapsOpen || [])] }); }
+    catch (e) { console.warn('scouting draft not saved', e); }
+  }
+
+  async function scoutBlock(task, sop, item) {
+    if (!run.scout) {
+      run.scout = new Map(); run.trapsOpen = new Set();
+      let draft = null;
+      try { draft = await getKV(scoutDraftKey(task)); } catch (e) { /* none */ }
+      (draft?.photos || []).forEach(x => run.scout.set(x.client_ref, x));
+      (draft?.opened || []).forEach(x => run.trapsOpen.add(x));
+    }
+    const box = el('div', 'fb-traps');
+
+    // the traps, folded
+    const zoneId = item.area_zone_id, systemId = item.area_system_id;
+    const traps = (await all('traps')).filter(t => t.active !== false
+      && ((zoneId && t.zone_id === zoneId) || (t.system_id && t.system_id === systemId)));
+    const head = el('div', 'fb-actions'); head.style.alignItems = 'center';
+    head.append(el('span', 'fb-sec', `Sticky traps · ${traps.length}`));
+    const count = el('button', 'fb-btn', 'Count today');
+    const skip = el('button', 'fb-btn', 'Skip today');
+    const cards = el('div');
+    const paintTrapState = () => {
+      const open = run.trapsOpen.has(item.id);
+      count.setAttribute('aria-pressed', String(open));
+      skip.setAttribute('aria-pressed', String(!open));
+    };
+    const openTraps = async () => {
+      if (run.trapsOpen.has(item.id)) return;
+      run.trapsOpen.add(item.id);
+      cards.textContent = '';
+      cards.append(await trapRound(task, sop, item));
+      paintTrapState(); saveScoutDraft();
+    };
+    const skipTraps = () => {
+      run.trapsOpen.delete(item.id);
+      for (const t of (run.trapsByItem?.get(item.id) || [])) run.traps?.delete(t.id);
+      run.trapsByItem?.delete(item.id);
+      cards.textContent = '';
+      paintTrapState(); saveScoutDraft(); saveTrapDraft();
+    };
+    count.onclick = openTraps;
+    skip.onclick = skipTraps;
+    if (traps.length) head.append(count, skip);
+    else head.append(el('span', 'fb-chip', 'none registered here'));
+    box.append(head, cards);
+    paintTrapState();
+    if (run.trapsOpen.has(item.id)) { run.trapsOpen.delete(item.id); await openTraps(); }
+
+    // the plant photos
+    const ph = el('div');
+    ph.style.marginTop = 'var(--space-3)';
+    const phHead = el('div', 'fb-actions'); phHead.style.alignItems = 'center';
+    phHead.append(el('span', 'fb-sec', 'Plant photos'));
+    const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.capture = 'environment'; pick.style.display = 'none';
+    const shoot = el('button', 'fb-btn', '📷 Plant photo');
+    const gal = el('button', 'fb-btn', '🖼'); gal.title = 'From the gallery'; gal.setAttribute('aria-label', 'Photo from the gallery');
+    gal.onclick = () => pick.click();
+    phHead.append(shoot, gal, pick);
+    const list = el('div');
+    ph.append(phHead, el('div', 'config-hint', 'Anything unusual: leaf undersides, fruit, roots. Say which crop and which part.'), list);
+    box.append(ph);
+
+    const crops = Array.isArray(item.crops) ? item.crops : [];
+    const addPhoto = async file => {
+      let big;
+      try { big = await shrinkPhoto(file, FULL_PX, null); }
+      catch (e) { showToast('That photo could not be read — try again', 'error'); return; }
+      const st = { client_ref: 'obs-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                   item_id: item.id, zone_id: zoneId || null, crop_id: crops.length === 1 ? crops[0].id : null,
+                   part: 'leaf', note: '', taken_at: new Date().toISOString(),
+                   photo_data: shrinkCanvas(big.canvas, 640, 0.6), photo_path: null };
+      st.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
+      run.scout.set(st.client_ref, st);
+      list.append(photoCard(st));
+      await saveScoutDraft();
+    };
+    const photoCard = st => {
+      const card = el('div', 'fb-step fb-photo'); card.dataset.ref = st.client_ref;
+      const row = el('div', 'fb-shot');
+      const img = el('img'); img.src = st.photo_data; img.alt = '';
+      const meta = el('div'); meta.style.flex = '1';
+      if (crops.length) {
+        const cr = el('div', 'fb-actions');
+        crops.forEach(c => {
+          const b = el('button', 'fb-btn', c.name);
+          b.setAttribute('aria-pressed', String(st.crop_id === c.id));
+          b.onclick = () => { st.crop_id = st.crop_id === c.id ? null : c.id;
+            cr.querySelectorAll('.fb-btn').forEach((x, i) => x.setAttribute('aria-pressed', String(crops[i].id === st.crop_id)));
+            saveScoutDraft(); };
+          cr.append(b);
+        });
+        meta.append(cr);
+      }
+      const pr = el('div', 'fb-actions');
+      PARTS.forEach(([v, l]) => {
+        const b = el('button', 'fb-btn', l);
+        b.setAttribute('aria-pressed', String(st.part === v));
+        b.onclick = () => { st.part = v; pr.querySelectorAll('.fb-btn').forEach((x, i) => x.setAttribute('aria-pressed', String(PARTS[i][0] === v))); saveScoutDraft(); };
+        pr.append(b);
+      });
+      meta.append(pr);
+      row.append(img, meta);
+      const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'What you see (optional)'; note.value = st.note || '';
+      note.oninput = () => { st.note = note.value; saveScoutDraft(); };
+      const drop = el('button', 'fb-link', 'Remove this photo');
+      drop.onclick = () => { run.scout.delete(st.client_ref); card.remove(); saveScoutDraft(); };
+      card.append(row, note, drop);
+      return card;
+    };
+    shoot.onclick = async () => {
+      const r = await takeTrapPhoto('', `${item.label || 'This zone'} — close, in focus, the part that looks wrong`);
+      if (r === 'cancel') return;
+      if (!r) { pick.click(); return; }
+      await addPhoto(r);
+    };
+    pick.onchange = async () => { const f = pick.files[0]; if (f) await addPhoto(f); pick.value = ''; };
+    // the photos of this zone taken before the app was closed
+    [...run.scout.values()].filter(x => x.item_id === item.id).forEach(x => list.append(photoCard(x)));
     return box;
   }
 
@@ -6953,11 +7104,8 @@ function sopOpen() {
     const totalIn = el('input', 'fb-num'); totalIn.type = 'number'; totalIn.min = '0'; totalIn.step = '1';
     totalIn.setAttribute('aria-label', 'Insects on trap ' + t.code);
     const algoNote = el('span', 'fb-chip', '');
-    const pest = el('select', 'fb-num');
-    PESTS.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; pest.append(o); });
-    pest.onchange = () => { state.pest = pest.value; saveTrapDraft(); };
     const line = el('div', 'fb-actions');
-    line.append(el('span', 'fb-trap-lbl', 'Insects'), totalIn, algoNote, pest);
+    line.append(el('span', 'fb-trap-lbl', 'Insects'), totalIn, algoNote);
     counts.append(line);
     const sizes = el('div', 'fb-meta');
     counts.append(sizes);
@@ -7005,21 +7153,21 @@ function sopOpen() {
       paintLevel();
       saveTrapDraft();
     };
-    // The photo, from the camera or the gallery: a 2000 px copy is kept for
-    // the console and the AI (uploaded with the round — the API would scale a
-    // 12 MP picture down anyway), the count runs on 1600 px, the 640 px
-    // thumbnail travels inside the reading.
+    // The photo, from the camera or the gallery: the full copy (FULL_PX, high
+    // quality — for zooming in the console and for the AI; uploaded after the
+    // round, the phone does not wait for it), the count on 1600 px, the 640 px
+    // thumbnail inside the reading.
     const gotFile = async file => {
       status.textContent = 'reading the photo…';
       let big;
-      try { big = await shrinkPhoto(file, 2000, null); }
+      try { big = await shrinkPhoto(file, FULL_PX, null); }
       catch (e) {
         console.warn('photo failed', e);
         status.textContent = 'photo needed';
         showToast('That photo could not be read — try again', 'error');
         return;
       }
-      state.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', 0.85));
+      state.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
       state.photo_path = null;
       await gotCanvas(scaleCanvas(big.canvas, 1600));
     };
@@ -7050,7 +7198,6 @@ function sopOpen() {
       Object.assign(state, prior, { trap_id: t.id, code: t.code });
       img.src = state.photo_data; img.style.display = '';
       if (state.total != null) totalIn.value = String(state.total);
-      pest.value = state.pest || '';
       rep.setAttribute('aria-pressed', String(!!state.replaced));
       note.value = state.notes || '';
       algoNote.textContent = state.algo_total != null ? (state.corrected ? `phone said ${state.algo_total}` : 'counted by the phone') : '';
@@ -7109,7 +7256,11 @@ function sopOpen() {
   // the app never leaves. Resolves the photo as a Blob, 'cancel' when the
   // person backs out, null when the browser has no camera to give (then the
   // phone's own camera/gallery is used).
-  function takeTrapPhoto(code) {
+  // the full photo kept for the console's zoom and the AI: the camera's still capped at
+  // FULL_PX on the long side (about 15 px/mm on a trap card — beyond that the lens, not
+  // the pixels, limits the detail, and a 50 MP file can push the app out of memory)
+  const FULL_PX = 4000, FULL_Q = 0.9;
+  function takeTrapPhoto(code, hintText) {
     return new Promise(async resolve => {
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
       let stream;
@@ -7120,7 +7271,7 @@ function sopOpen() {
       const ov = el('div', 'fb-cam');
       const video = document.createElement('video');
       video.autoplay = true; video.playsInline = true; video.muted = true; video.srcObject = stream;
-      const hint = el('div', 'fb-cam-hint', `Trap ${code} — square-on, the whole card and its code in the picture`);
+      const hint = el('div', 'fb-cam-hint', hintText || `Trap ${code} — square-on, the whole card and its code in the picture`);
       const bar = el('div', 'fb-cam-bar');
       const cancel = el('button', 'fb-btn', 'Cancel');
       const shutter = el('button', 'fb-cam-shutter'); shutter.setAttribute('aria-label', 'Take the photo');
@@ -7358,16 +7509,21 @@ function sopOpen() {
         document.querySelector(`.fb-trap[data-trap="${undone[0].trap_id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      // the procedure's trap-photo step is answered by the trap cards — only that one:
-      // the plant checks of the IPM round need their own photos (FarmBox 0095)
-      const trapSteps = run.steps.filter(s => /photo/.test(s.evidence || '') && /trap/i.test(s.title || ''));
-      const answer = (key, s, n) => {
-        if (!run.answers.has(key)) run.answers.set(key, { seq: s.seq, step_id: s.id, result: 'ok',
-          note: n ? `${n} trap${n > 1 ? 's' : ''} photographed and counted` : 'no sticky trap registered here' });
+    }
+    // the procedure's trap step is answered by the trap cards — counted, or skipped today (0096) —
+    // only that one: the plant checks need their own answer
+    if (run.traps || run.scout) {
+      const trapSteps = run.steps.filter(s => /trap/i.test(s.title || ''));
+      const answer = (key, s, it) => {
+        const n = it ? (run.trapsByItem?.get(it.id) || []).length : (run.trapList?.length || 0);
+        const opened = it ? run.trapsOpen?.has(it.id) !== false && n > 0 : n > 0;
+        if (!run.answers.has(key)) run.answers.set(key, { seq: s.seq, step_id: s.id, result: opened ? 'ok' : 'skipped',
+          ...(it ? { item_id: it.id } : {}),
+          note: opened ? `${n} trap${n > 1 ? 's' : ''} photographed and counted` : (n ? 'skipped today' : 'no sticky trap registered here') });
         if (!(run.media.get(key) || []).length) run.media.set(key, [{ trapEvidence: true }]);
       };
-      if (run.perItem) run.itemList.forEach(it => trapSteps.forEach(s => answer(stepKey(s, it), s, (run.trapsByItem?.get(it.id) || []).length)));
-      else if (run.trapList?.length) trapSteps.forEach(s => answer(s.seq, s, run.traps.size));
+      if (run.perItem) run.itemList.forEach(it => trapSteps.forEach(s => answer(stepKey(s, it), s, it)));
+      else trapSteps.forEach(s => answer(s.seq, s, null));
     }
     // a harvest task: the weights typed above answer the weigh / record steps
     if (run.harvests) {
@@ -7417,13 +7573,14 @@ function sopOpen() {
       steps.push({ ...a, media, recorded_at: new Date().toISOString() });
     }
 
-    // the full trap photos, to the evidence bucket; without signal they stay in the outbox with the run
-    if (run.traps) {
-      for (const x of run.traps.values()) {
-        if (!(x.full instanceof Blob) || x.photo_path) continue;
-        try { x.photo_path = await uploadTrapPhoto(run.clientId, x.code, x.full); }
-        catch (e) { console.warn('trap photo not uploaded yet:', e); }
-      }
+    // the full photos (traps and plants) follow the run from the outbox and attach themselves:
+    // a slow signal never holds the run (0.11.25)
+    const uploads = [];
+    for (const x of (run.traps ? run.traps.values() : [])) {
+      if (x.full instanceof Blob && !x.photo_path) uploads.push({ kind: 'trap', ref: x.code, blob: x.full });
+    }
+    for (const x of (run.scout ? run.scout.values() : [])) {
+      if (x.full instanceof Blob && !x.photo_path) uploads.push({ kind: 'observation', ref: x.client_ref, blob: x.full });
     }
 
     // One run per task row. A server-grouped task is one row; a phone-grouped
@@ -7443,15 +7600,21 @@ function sopOpen() {
       // IPM readings, on the first run only (a phone-grouped round is one zone anyway)
       ...(run.traps && !i ? { traps: [...run.traps.values()].filter(x => x.photo_data != null).map(x => ({
         trap_id: x.trap_id, code: x.code, photo_data: x.photo_data, photo_path: x.photo_path || null,
-        photo_blob: x.photo_path ? null : (x.full instanceof Blob ? x.full : null),
         counts: x.counts || {}, total: x.total ?? 0,
         algo_total: x.algo_total, algorithm: x.algorithm, confidence: x.confidence, corrected: x.corrected,
-        pest: x.pest || null, replaced: x.replaced, notes: x.notes || null, read_at: finished })) } : {})
+        pest: x.pest || null, replaced: x.replaced, notes: x.notes || null, read_at: finished })) } : {}),
+      // the scouting photos, on the first run only (0096)
+      ...(run.scout && !i ? { observations: [...run.scout.values()].filter(x => x.photo_data).map(x => ({
+        client_ref: x.client_ref, item_id: x.item_id, zone_id: x.zone_id, crop_id: x.crop_id, part: x.part,
+        note: x.note || null, photo_data: x.photo_data, taken_at: x.taken_at })) } : {})
     }));
     open.forEach(t => { t.status = 'done'; t.done_at = finished; });
     await putAll('tasks', open);
-    await queue(payloads);
+    // the run first, then its full photos, keyed to sort right after it
+    await queue([...payloads, ...uploads.map((u, n) => ({ __upload: true, client_run_id: `${run.clientId}~up-${String(n).padStart(3, '0')}`,
+      run_client_id: run.clientId, kind: u.kind, ref: u.ref, blob: u.blob }))]);
     if (run.traps) { try { await del('kv', trapDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
+    if (run.scout) { try { await del('kv', scoutDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
     if (run.harvests) { try { await del('kv', harvDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
     try { await setKV('run_open', null); } catch (e) {}
     const failed = steps.filter(s => s.result === 'nok').length;
@@ -7462,11 +7625,14 @@ function sopOpen() {
   }
 
   async function paintFoot() {
-    const pending = (await all('outbox')).length;
+    const rows = await all('outbox');
+    const photos = rows.filter(r => r.payload?.__upload).length;
+    const pending = rows.length - photos;
     const at = await getKV('synced_at');
     $('foot').textContent = [
       at ? 'Synced ' + new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not synced yet',
-      pending ? `${pending} waiting to upload` : null
+      pending ? `${pending} waiting to upload` : null,
+      photos ? `${photos} photo${photos > 1 ? 's' : ''} still uploading` : null
     ].filter(Boolean).join(' · ');
   }
 
