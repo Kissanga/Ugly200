@@ -716,8 +716,6 @@
     .fb-swipe-bg.left { background: var(--accent); color:#0d2b27; justify-content:flex-start; }
     .fb-swipe-bg.right { background: var(--coral); color:#fff; justify-content:flex-end; }
     .fb-swipe.to-right .fb-swipe-bg.left, .fb-swipe.to-left .fb-swipe-bg.right { display:flex; }
-    .fb-swipe-dot { flex:none; width:20px; height:20px; border-radius:50%; background: var(--accent); color:#0d2b27;
-      font-size:12px; font-weight:900; display:grid; place-items:center; }
     .fb-chip.skip { background: var(--coral-soft); color: var(--coral); }
     .fb-undo { position:fixed; left:12px; right:12px; top:calc(env(safe-area-inset-top) + 10px); z-index:1500; display:none; align-items:center; gap:12px;
       padding:12px 14px; border-radius: var(--radius-md); background: var(--ink); color: var(--ink-text); box-shadow: var(--shadow-lg);
@@ -853,7 +851,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.28';
+  const CURRENT_VERSION = '0.11.29';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -987,6 +985,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.29', '2026-09-24', 'Inputs on the card', 'The aqua ✓ dot is gone. A task that needs answers says how many on its card, just before its time ("5 inputs"): a weight per batch for a harvest, else the steps of its checklist, once per zone for a round run zone by zone. A card that says nothing needs no input and can be swiped done.'],
     ['0.11.28', '2026-09-24', 'Undo at the top', 'After a swipe, the Undo bar shows at the top of the screen instead of the bottom, where it covered the quick buttons.'],
     ['0.11.27', '2026-09-24', 'Swipe a task', 'Swipe right to mark done a task that needs no input (the aqua ✓ dot shows which); a task that needs readings or photos says what and offers to open it. Swipe left for Not done, with a reason (No time by default) and a note — for the Admin and the task\'s own people. Five seconds to undo either.'],
     ['0.11.26', '2026-09-24', 'Harvest under withholding', 'A harvest task on a crop that had a treatment says, in red on the task and at the top of its checklist, the first day it may be harvested.'],
@@ -6673,7 +6672,11 @@ function sopOpen() {
     const zn = zonesOf(g).size;
     const where = g.zone_name || g.area || (zn > 1 ? `${zn} zones` : null);
     if (where) { meta.append(el('span', 'fb-where', where)); meta.append(document.createTextNode(' · ')); }
-    meta.append(document.createTextNode(qtyBits(g).join(' · ')));
+    // what the task asks for, just before its time: none said = it can be swiped done (0.11.29)
+    const bits = qtyBits(g);
+    const k = isClosed(g.status) ? 0 : inputsOf(g);
+    if (k) bits.splice(fmtMin(g.minutes) ? bits.length - 1 : bits.length, 0, `${k} input${k > 1 ? 's' : ''}`);
+    meta.append(document.createTextNode(bits.join(' · ')));
     body.append(meta);
     b.append(body);
     // only the states worth a word get one; "Open" is what a card already is
@@ -6681,10 +6684,6 @@ function sopOpen() {
     else if (g.status === 'skipped') b.append(el('span', 'fb-chip skip', 'Not done'));
     else if (g.status === 'partial') b.append(el('span', 'fb-chip', `${g.doneCount}/${g.members.length}`));
     else if (late) b.append(el('span', 'fb-chip late', 'Late'));
-    // a task that can be finished with a swipe, without any input
-    if (!isClosed(g.status) && g.status !== 'partial' && canSwipeDone(g)) {
-      const d = el('span', 'fb-swipe-dot', '✓'); d.title = 'Swipe right to mark it done'; b.append(d);
-    }
     b.onclick = () => { if (b.dataset.swiped) { delete b.dataset.swiped; return; } openTask(g.key); };
     return swipeable(b, g);
   }
@@ -6703,6 +6702,18 @@ function sopOpen() {
   const REASONS = [['no_time', 'No time'], ['not_needed', 'Not needed today'], ['blocked', 'Weather or equipment']];
   const reasonWord = r => (REASONS.find(x => x[0] === r) || [r, r || ''])[1];
   const INPUT_MODULES = ['harvest', 'scouting', 'ipm_traps'];
+
+  // how many answers a task asks for: a weight per batch for a harvest, else its checklist's
+  // steps — once per place when the routine runs its steps in each (0078). 0 = swipe it done.
+  function inputsOf(g) {
+    if (canSwipeDone(g)) return 0;
+    const sop = SW.sops.get(g.sop_id);
+    if (!sop) return 0;
+    if (sop.attributes?.module === 'harvest') return g.positions.filter(p => !isItem(p)).length || 1;
+    const steps = (SW.steps.get(g.sop_version_id) || []).length;
+    const places = g.positions.filter(isItem).length;
+    return steps * (sop.one_task && places > 1 ? places : 1);
+  }
 
   function canSwipeDone(g) {
     const sop = SW.sops.get(g.sop_id);
