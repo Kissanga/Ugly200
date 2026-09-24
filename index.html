@@ -719,10 +719,12 @@
     .fb-swipe-dot { flex:none; width:20px; height:20px; border-radius:50%; background: var(--accent); color:#0d2b27;
       font-size:12px; font-weight:900; display:grid; place-items:center; }
     .fb-chip.skip { background: var(--coral-soft); color: var(--coral); }
-    .fb-undo { position:fixed; left:12px; right:12px; bottom:16px; z-index:1500; display:none; align-items:center; gap:12px;
+    .fb-undo { position:fixed; left:12px; right:12px; top:calc(env(safe-area-inset-top) + 10px); z-index:1500; display:none; align-items:center; gap:12px;
       padding:12px 14px; border-radius: var(--radius-md); background: var(--ink); color: var(--ink-text); box-shadow: var(--shadow-lg);
       font-size: var(--text-sm); }
-    .fb-undo.show { display:flex; }
+    .fb-undo.show { display:flex; animation: fb-undo-in .18s ease-out; }
+    @keyframes fb-undo-in { from { transform: translateY(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .fb-undo.show { animation: none; } }
     .fb-undo span { flex:1; }
     .fb-undo .fb-link { color: var(--accent); font-weight:800; }
     .fb-sheet { position:fixed; inset:0; z-index:1400; background: rgba(0,0,0,.45); display:flex; align-items:flex-end; }
@@ -851,7 +853,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.27';
+  const CURRENT_VERSION = '0.11.28';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -985,6 +987,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.28', '2026-09-24', 'Undo at the top', 'After a swipe, the Undo bar shows at the top of the screen instead of the bottom, where it covered the quick buttons.'],
     ['0.11.27', '2026-09-24', 'Swipe a task', 'Swipe right to mark done a task that needs no input (the aqua ✓ dot shows which); a task that needs readings or photos says what and offers to open it. Swipe left for Not done, with a reason (No time by default) and a note — for the Admin and the task\'s own people. Five seconds to undo either.'],
     ['0.11.26', '2026-09-24', 'Harvest under withholding', 'A harvest task on a crop that had a treatment says, in red on the task and at the top of its checklist, the first day it may be harvested.'],
     ['0.11.25', '2026-09-24', 'Daily scouting', 'Traps and plants in one daily round, zone by zone: the trap cards folded (count today, or skip), any number of plant photos with the crop and the part. Photos at full quality; the full files upload after the run, so a slow signal never holds it. The kind of insect is named in the console.'],
