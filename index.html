@@ -706,6 +706,30 @@
       font: inherit; color: var(--text); box-shadow: var(--shadow-sm); }
     .fb-card:active { transform: scale(.995); }
     .fb-card.done { opacity:.5; }
+    /* swipe (0.11.27): the card slides over a band saying what the swipe does */
+    .fb-swipe { position:relative; margin-bottom: 6px; border-radius: var(--radius-md); }
+    .fb-swipe > .fb-card { margin-bottom: 0; position:relative; z-index:1; touch-action: pan-y; }
+    .fb-swipe.moving > .fb-card { transition:none; }
+    .fb-swipe > .fb-card { transition: transform .18s ease; }
+    .fb-swipe-bg { position:absolute; inset:0; border-radius: var(--radius-md); display:none; align-items:center;
+      padding: 0 16px; font-weight:800; font-size: var(--text-sm); }
+    .fb-swipe-bg.left { background: var(--accent); color:#0d2b27; justify-content:flex-start; }
+    .fb-swipe-bg.right { background: var(--coral); color:#fff; justify-content:flex-end; }
+    .fb-swipe.to-right .fb-swipe-bg.left, .fb-swipe.to-left .fb-swipe-bg.right { display:flex; }
+    .fb-swipe-dot { flex:none; width:20px; height:20px; border-radius:50%; background: var(--accent); color:#0d2b27;
+      font-size:12px; font-weight:900; display:grid; place-items:center; }
+    .fb-chip.skip { background: var(--coral-soft); color: var(--coral); }
+    .fb-undo { position:fixed; left:12px; right:12px; bottom:16px; z-index:1500; display:none; align-items:center; gap:12px;
+      padding:12px 14px; border-radius: var(--radius-md); background: var(--ink); color: var(--ink-text); box-shadow: var(--shadow-lg);
+      font-size: var(--text-sm); }
+    .fb-undo.show { display:flex; }
+    .fb-undo span { flex:1; }
+    .fb-undo .fb-link { color: var(--accent); font-weight:800; }
+    .fb-sheet { position:fixed; inset:0; z-index:1400; background: rgba(0,0,0,.45); display:flex; align-items:flex-end; }
+    .fb-sheet-card { width:100%; background: var(--surface); border-radius: var(--radius-xl) var(--radius-xl) 0 0; padding: var(--space-5) var(--space-4) var(--space-6); }
+    .fb-sheet-card h3 { margin:0 0 2px; }
+    .fb-sheet-card .fb-actions { margin-top: var(--space-3); }
+    .fb-btn-primary { background: var(--coral); border-color: var(--coral); color:#fff; }
     /* the family, as the card's ground and as the bar down its edge */
     .fb-card.fam-agriculture { background: var(--fam-ag-bg); border-left-color: var(--fam-ag); }
     .fb-card.fam-maintenance { background: var(--fam-mt-bg); border-left-color: var(--fam-mt); }
@@ -827,7 +851,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.26';
+  const CURRENT_VERSION = '0.11.27';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -961,6 +985,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.27', '2026-09-24', 'Swipe a task', 'Swipe right to mark done a task that needs no input (the aqua ✓ dot shows which); a task that needs readings or photos says what and offers to open it. Swipe left for Not done, with a reason (No time by default) and a note — for the Admin and the task\'s own people. Five seconds to undo either.'],
     ['0.11.26', '2026-09-24', 'Harvest under withholding', 'A harvest task on a crop that had a treatment says, in red on the task and at the top of its checklist, the first day it may be harvested.'],
     ['0.11.25', '2026-09-24', 'Daily scouting', 'Traps and plants in one daily round, zone by zone: the trap cards folded (count today, or skip), any number of plant photos with the crop and the part. Photos at full quality; the full files upload after the run, so a slow signal never holds it. The kind of insect is named in the console.'],
     ['0.11.24', '2026-09-24', 'One IPM round', 'The sticky-trap count and the plant checks are one round on Monday, Wednesday and Friday, zone by zone: each zone\'s trap cards under its heading, then its leaf and root checks.'],
@@ -6402,6 +6427,9 @@ function sopOpen() {
         if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
         });
+        else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
+          method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_reason: row.payload.reason, p_note: row.payload.note })
+        });
         else if (row.payload.__upload) {
           // a full photo after its run: to the evidence bucket, then attached to the reading or the observation
           const u = row.payload;
@@ -6499,7 +6527,8 @@ function sopOpen() {
   const posLabel = p => p.position_code || p.label || p.code || p.position_name || p.name || p.position_label || null;
 
   async function loadGroups() {
-    const tasks = (await all('tasks')).filter(t => t.status !== 'cancelled');
+    const tasks = (await all('tasks')).filter(t => t.status !== 'cancelled')
+      .map(t => swipeOverlay.has(t.id) ? { ...t, ...swipeOverlay.get(t.id) } : t);
     const byTask = new Map();
     (await all('positions')).forEach(p => {
       if (!byTask.has(p.task_id)) byTask.set(p.task_id, []);
@@ -6536,9 +6565,11 @@ function sopOpen() {
     for (const g of groups.values()) {
       g.workerIds = new Set(g.members.flatMap(m => [...(who.get(m.id) || [])]));
       const done = g.members.filter(m => m.status === 'done').length;
-      g.status = done === g.members.length ? 'done' : done ? 'partial' : 'open';
-      g.doneCount = done;
-      g.openMinutes = g.members.filter(m => m.status !== 'done').reduce((s, m) => s + num(m.estimated_minutes), 0);
+      const shut = g.members.filter(m => isClosed(m.status)).length;
+      g.status = done === g.members.length ? 'done' : shut === g.members.length ? 'skipped' : shut ? 'partial' : 'open';
+      g.doneCount = shut;
+      g.skip_reason = g.members.find(m => m.status === 'skipped')?.skip_reason || null;
+      g.openMinutes = g.members.filter(m => !isClosed(m.status)).reduce((s, m) => s + num(m.estimated_minutes), 0);
       if (!g.quantity) g.quantity = g.positions.reduce((s, p) => s + num(p.quantity), 0);
       g.positions.sort((a, b) => String(a.zone_name || '').localeCompare(String(b.zone_name || ''), undefined, { numeric: true })
         || String(a.label || '').localeCompare(String(b.label || ''), undefined, { numeric: true }));
@@ -6586,14 +6617,15 @@ function sopOpen() {
     }
     const mine = t => who === 'all' ? true : who === 'none' ? t.workerIds.size === 0 : t.workerIds.has(who);
     const week = groups.filter(t => t.planned_date <= horizon &&
-      (t.planned_date >= today || t.status !== 'done') && mine(t));
+      (t.planned_date >= today || !isClosed(t.status)) && mine(t));
+    await refreshSW();   // what a swipe needs to know about each card (0.11.27)
 
     show('week', 'Tasks', null);
     $('weekSub').textContent = farm ? farm.name : 'Your farm work, day by day.';
     $('empty').classList.toggle('hidden', week.length > 0);
 
     // the one to do now: earliest open task today or overdue
-    const next = week.find(t => t.status !== 'done' && t.planned_date <= today);
+    const next = week.find(t => !isClosed(t.status) && t.planned_date <= today);
     const nx = $('next'); nx.textContent = '';
     if (next) {
       const card = el('div', 'fb-ink' + famClass(next.family));
@@ -6612,7 +6644,7 @@ function sopOpen() {
     week.forEach(t => { if (!byDay.has(t.planned_date)) byDay.set(t.planned_date, []); byDay.get(t.planned_date).push(t); });
     for (const [date, list] of byDay) {
       const sec = el('section', 'fb-day');
-      const open = list.filter(t => t.status !== 'done').length;
+      const open = list.filter(t => !isClosed(t.status)).length;
       const mins = list.reduce((s, t) => s + t.openMinutes, 0);
       sec.append(el('h2', null, `${fmtDay(date)} · ${open} open of ${list.length}` + (open ? ` · ${fmtMin(mins)}` : '')));
       // the morning above a line, the afternoon below it, anytime under a dotted one
@@ -6631,7 +6663,7 @@ function sopOpen() {
   const famClass = f => ' fam-' + String(f || 'agriculture').toLowerCase();
 
   function taskCard(g, late) {
-    const b = el('button', 'fb-card' + famClass(g.family) + (g.status === 'done' ? ' done' : ''));
+    const b = el('button', 'fb-card' + famClass(g.family) + (isClosed(g.status) ? ' done' : ''));
     const body = el('div', 'fb-body');
     body.append(el('div', 'fb-name', g.title));
     const meta = el('div', 'fb-meta');
@@ -6643,10 +6675,182 @@ function sopOpen() {
     b.append(body);
     // only the states worth a word get one; "Open" is what a card already is
     if (g.status === 'done') b.append(el('span', 'fb-chip ok', 'Done'));
+    else if (g.status === 'skipped') b.append(el('span', 'fb-chip skip', 'Not done'));
     else if (g.status === 'partial') b.append(el('span', 'fb-chip', `${g.doneCount}/${g.members.length}`));
     else if (late) b.append(el('span', 'fb-chip late', 'Late'));
-    b.onclick = () => openTask(g.key);
-    return b;
+    // a task that can be finished with a swipe, without any input
+    if (!isClosed(g.status) && g.status !== 'partial' && canSwipeDone(g)) {
+      const d = el('span', 'fb-swipe-dot', '✓'); d.title = 'Swipe right to mark it done'; b.append(d);
+    }
+    b.onclick = () => { if (b.dataset.swiped) { delete b.dataset.swiped; return; } openTask(g.key); };
+    return swipeable(b, g);
+  }
+
+  // ── swipe a task (0.11.27): right = done (no input needed), left = not done ──
+  const isClosed = st => st === 'done' || st === 'skipped';
+  const SW = { sops: new Map(), steps: new Map(), me: null, admin: false };
+  async function refreshSW() {
+    SW.sops = new Map((await all('sops')).map(x => [x.id, x]));
+    SW.steps = new Map();
+    (await all('steps')).forEach(x => { if (!SW.steps.has(x.version_id)) SW.steps.set(x.version_id, []); SW.steps.get(x.version_id).push(x); });
+    SW.me = await getKV('me');
+    SW.admin = (await all('workers')).some(w => w.id === SW.me && w.role === 'farm_admin');
+  }
+  const swipeOverlay = new Map();                   // task id → the state held for the five seconds of Undo
+  const REASONS = [['no_time', 'No time'], ['not_needed', 'Not needed today'], ['blocked', 'Weather or equipment']];
+  const reasonWord = r => (REASONS.find(x => x[0] === r) || [r, r || ''])[1];
+  const INPUT_MODULES = ['harvest', 'scouting', 'ipm_traps'];
+
+  function canSwipeDone(g) {
+    const sop = SW.sops.get(g.sop_id);
+    if (!g.sop_id) return true;                       // a task with no procedure: nothing to fill in
+    if (!sop) return false;
+    if (INPUT_MODULES.includes(sop.attributes?.module)) return false;
+    if (sop.one_task && g.positions.some(isItem)) return false;
+    return sop.validation === 'tick' || !!sop.swipe_done;
+  }
+  // what a task asks for, said in a few words
+  function needsOf(g) {
+    const sop = SW.sops.get(g.sop_id);
+    const m = sop?.attributes?.module;
+    if (m === 'harvest') return 'the weight of each batch';
+    if (m === 'scouting') return 'the trap counts and the plant photos';
+    if (m === 'ipm_traps') return 'a photo and a count for each trap';
+    const steps = SW.steps.get(g.sop_version_id) || [];
+    const readings = steps.filter(x => x.step_type === 'measure' || x.step_type === 'record').length;
+    const photos = steps.filter(x => /photo|video/.test(x.evidence || '')).length;
+    const zones = sop?.one_task ? g.positions.filter(isItem).length : 0;
+    const bits = [readings ? `${readings} reading${readings > 1 ? 's' : ''}` : null, photos ? `${photos} photo${photos > 1 ? 's' : ''}` : null].filter(Boolean);
+    const each = zones > 1 ? ` in each of ${zones} places` : '';
+    return bits.length ? bits.join(' and ') + each : `its checklist (${steps.length} step${steps.length === 1 ? '' : 's'})` + each;
+  }
+  const maySkip = g => SW.admin || (SW.me && g.workerIds.has(SW.me));
+
+  function swipeable(card, g) {
+    const wrap = el('div', 'fb-swipe');
+    wrap.append(el('div', 'fb-swipe-bg left', '✓ Done'), el('div', 'fb-swipe-bg right', 'Not done ✕'), card);
+    let x0 = null, y0 = null, dx = 0, on = false, width = 0;
+    card.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      // away from the screen's edges: those belong to the phone's back gesture
+      if (e.clientX < 24 || e.clientX > window.innerWidth - 24) return;
+      x0 = e.clientX; y0 = e.clientY; dx = 0; on = false; width = wrap.clientWidth;
+    });
+    card.addEventListener('pointermove', e => {
+      if (x0 == null) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!on) {
+        if (Math.abs(mx) < 12) return;
+        if (Math.abs(mx) < Math.abs(my) * 1.5) { x0 = null; return; }   // a scroll, not a swipe
+        on = true; card.setPointerCapture?.(e.pointerId); wrap.classList.add('moving');
+      }
+      dx = mx;
+      card.style.transform = `translateX(${dx}px)`;
+      wrap.classList.toggle('to-right', dx > 0); wrap.classList.toggle('to-left', dx < 0);
+    });
+    const end = () => {
+      if (x0 == null) return;
+      x0 = null;
+      if (!on) return;
+      card.dataset.swiped = '1';
+      setTimeout(() => delete card.dataset.swiped, 400);
+      wrap.classList.remove('moving');
+      const far = Math.abs(dx) > width * 0.35;
+      card.style.transform = '';
+      wrap.classList.remove('to-right', 'to-left');
+      if (!far || isClosed(g.status)) return;
+      if (dx > 0) swipeDone(g); else swipeNotDone(g);
+    };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+    return wrap;
+  }
+
+  function swipeDone(g) {
+    if (g.status === 'partial') { notice('Part of this is done already — open it to finish the rest.', () => openTask(g.key)); return; }
+    if (!canSwipeDone(g)) { notice(`This one needs input: ${needsOf(g)}.`, () => openTask(g.key)); return; }
+    const open = g.members.filter(m => !isClosed(m.status));
+    const now = new Date().toISOString();
+    open.forEach(t => swipeOverlay.set(t.id, { status: 'done', done_at: now }));
+    showWeek();
+    holdForUndo(`Done: ${g.title}`, async () => {
+      const rows = open.map(t => ({ ...t, status: 'done', done_at: now }));
+      open.forEach(t => swipeOverlay.delete(t.id));
+      await putAll('tasks', rows);
+      await queue(open.map(t => ({ __tick: true, client_run_id: 'tick-' + t.id, task_id: t.id, actual_minutes: null })));
+    }, () => { open.forEach(t => swipeOverlay.delete(t.id)); showWeek(); });
+  }
+
+  function swipeNotDone(g) {
+    if (!maySkip(g)) { notice('Only the Admin or the person this task is assigned to can mark it not done.'); return; }
+    // three reasons, No time chosen, and a note
+    const sheet = el('div', 'fb-sheet');
+    const card = el('div', 'fb-sheet-card');
+    card.append(el('h3', null, 'Not done'), el('div', 'fb-meta', g.title));
+    let reason = 'no_time';
+    const row = el('div', 'fb-actions');
+    const btns = REASONS.map(([v, l]) => {
+      const b = el('button', 'fb-btn', l);
+      b.setAttribute('aria-pressed', String(v === reason));
+      b.onclick = () => { reason = v; btns.forEach(([vv, bb]) => bb.setAttribute('aria-pressed', String(vv === reason))); };
+      row.append(b);
+      return [v, b];
+    });
+    const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional)';
+    const acts = el('div', 'fb-actions'); acts.style.justifyContent = 'flex-end'; acts.style.marginTop = 'var(--space-3)';
+    const cancel = el('button', 'fb-btn', 'Cancel');
+    const ok = el('button', 'fb-btn fb-btn-primary', 'Mark not done');
+    acts.append(cancel, ok);
+    card.append(row, note, acts);
+    sheet.append(card);
+    document.body.append(sheet);
+    const close = () => sheet.remove();
+    cancel.onclick = close;
+    sheet.onclick = e => { if (e.target === sheet) close(); };
+    ok.onclick = () => {
+      close();
+      const open = g.members.filter(m => !isClosed(m.status));
+      const text = note.value.trim() || null;
+      open.forEach(t => swipeOverlay.set(t.id, { status: 'skipped', skip_reason: reason, skip_note: text }));
+      showWeek();
+      holdForUndo(`Not done (${reasonWord(reason).toLowerCase()}): ${g.title}`, async () => {
+        const rows = open.map(t => ({ ...t, status: 'skipped', skip_reason: reason, skip_note: text }));
+        open.forEach(t => swipeOverlay.delete(t.id));
+        await putAll('tasks', rows);
+        await queue(open.map(t => ({ __skip: true, client_run_id: 'skip-' + t.id, task_id: t.id, reason, note: text })));
+      }, () => { open.forEach(t => swipeOverlay.delete(t.id)); showWeek(); });
+    };
+  }
+
+  // five seconds to change one's mind; the change is kept at once if the app is put away
+  let pendingSwipe = null;
+  function holdForUndo(label, commit, revert) {
+    if (pendingSwipe) { clearTimeout(pendingSwipe.timer); const p = pendingSwipe; pendingSwipe = null; p.commit().then(() => showWeek()); }
+    let bar = document.getElementById('fb-undo');
+    if (!bar) { bar = el('div', 'fb-undo'); bar.id = 'fb-undo'; document.body.append(bar); }
+    bar.textContent = '';
+    const undo = el('button', 'fb-link', 'Undo');
+    bar.append(el('span', null, label), undo);
+    bar.classList.add('show');
+    const finish = async () => { bar.classList.remove('show'); const p = pendingSwipe; pendingSwipe = null; if (p) { await p.commit(); showWeek(); } };
+    pendingSwipe = { commit, revert, timer: setTimeout(finish, 5000) };
+    undo.onclick = () => { if (!pendingSwipe) return; clearTimeout(pendingSwipe.timer); const p = pendingSwipe; pendingSwipe = null; bar.classList.remove('show'); p.revert(); };
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && pendingSwipe) { clearTimeout(pendingSwipe.timer); const p = pendingSwipe; pendingSwipe = null; document.getElementById('fb-undo')?.classList.remove('show'); p.commit(); }
+  });
+
+  // a short message with an optional Open
+  function notice(text, onOpen) {
+    let bar = document.getElementById('fb-undo');
+    if (!bar) { bar = el('div', 'fb-undo'); bar.id = 'fb-undo'; document.body.append(bar); }
+    if (pendingSwipe) { clearTimeout(pendingSwipe.timer); const p = pendingSwipe; pendingSwipe = null; p.commit().then(() => showWeek()); }
+    bar.textContent = '';
+    bar.append(el('span', null, text));
+    if (onOpen) { const o = el('button', 'fb-link', 'Open'); o.onclick = () => { bar.classList.remove('show'); onOpen(); }; bar.append(o); }
+    bar.classList.add('show', 'info');
+    clearTimeout(bar._t);
+    bar._t = setTimeout(() => bar.classList.remove('show', 'info'), 4500);
   }
 
   // Positions the task covers, one line each: name · quantity · minutes —
@@ -6700,6 +6904,7 @@ function sopOpen() {
     const t = groups.find(x => x.key === key) || groups.find(x => x.id === key);
     if (!t) return;
     const sop = (await all('sops')).find(s => s.id === t.sop_id);
+    await refreshSW();
     const box = $('task'); box.textContent = '';
     const hero = el('div', 'hero');
     hero.append(el('h1', null, t.title));
@@ -6722,7 +6927,10 @@ function sopOpen() {
 
     if (t.positions.length) box.append(positionList(t));
 
-    if (t.status === 'done') {
+    if (t.status === 'skipped') {
+      const m = t.members.find(x => x.status === 'skipped') || {};
+      box.append(el('div', 'config-hint', `Not done — ${reasonWord(m.skip_reason).toLowerCase()}${m.skip_note ? ': ' + m.skip_note : ''}.`));
+    } else if (t.status === 'done') {
       box.append(el('div', 'config-hint', 'Done. Nothing more to do here.'));
     } else if ((sop?.validation || 'checklist') === 'tick') {
       const b = el('button', 'btn btn-primary btn-lg btn-block', 'Mark done');
@@ -6738,6 +6946,20 @@ function sopOpen() {
         (sop?.validation === 'checklist_evidence')
           ? 'This one needs evidence: some steps ask for a photo or a reading.'
           : 'Tick each step as you go. It works offline.'));
+      // a checklist the manager allowed to close with a swipe: the same as a button
+      if (sop?.swipe_done && canSwipeDone(t)) {
+        const q = el('button', 'btn btn-block', 'Mark done without the checklist');
+        q.style.marginTop = 'var(--space-2)';
+        q.onclick = () => markDone(t);
+        box.append(q);
+      }
+    }
+    // "not done", for the Admin and the task's own people — the swipe, as a button
+    if (!isClosed(t.status) && t.status !== 'partial' && maySkip(t)) {
+      const nd = el('button', 'btn btn-block', 'Not done…');
+      nd.style.marginTop = 'var(--space-2)';
+      nd.onclick = () => swipeNotDone(t);
+      box.append(nd);
     }
     show('task', 'Task', showWeek);
   }
