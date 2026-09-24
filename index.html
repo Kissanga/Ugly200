@@ -822,7 +822,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.23';
+  const CURRENT_VERSION = '0.11.24';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -956,6 +956,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.24', '2026-09-24', 'One IPM round', 'The sticky-trap count and the plant checks are one round on Monday, Wednesday and Friday, zone by zone: each zone\'s trap cards under its heading, then its leaf and root checks.'],
     ['0.11.23', '2026-09-24', 'On demand and part time', 'The person selector says on demand instead of casual, and marks part-time people.'],
     ['0.11.22', '2026-09-23', 'No more update loop', 'Update now checks that the new version has reached this connection before reloading, and waits when it has not; a number is offered only once the server has said it twice.'],
     ['0.11.21', '2026-09-23', 'Version log', 'This list, in Settings.'],
@@ -6772,20 +6773,22 @@ function sopOpen() {
     };
     bar.append(toggle);
     box.append(bar);
-    // the IPM trap round: one card per sticky trap of the zone, before the steps
-    if (isTrapRound(sop)) box.append(await trapRound(task, sop));
-    // a harvest task: the weight per batch, before the steps
-    if (isHarvestTask(sop) && task.positions.some(p => p.plan_id)) box.append(await harvestBlock(task));
     // a one_task routine with items (the sumps, the zones): the steps once per
     // item under its heading, every reading kept with its item (FarmBox 0078);
     // any other task with items (maintenance assets): a tick per item, steps once
     run.perItem = !!(sop?.one_task && task.positions.some(isItem));
+    // the IPM trap round on one zone: one card per sticky trap, before the steps
+    if (isTrapRound(sop) && !run.perItem) box.append(await trapRound(task, sop));
+    // a harvest task: the weight per batch, before the steps
+    if (isHarvestTask(sop) && task.positions.some(p => p.plan_id)) box.append(await harvestBlock(task));
     if (run.perItem) {
       run.itemList = task.positions.filter(isItem);
-      run.itemList.forEach(it => {
+      for (const it of run.itemList) {
         box.append(el('div', 'fb-sec fb-item-head', it.label || 'Item'));
+        // the IPM round over every zone (FarmBox 0095): this zone's trap cards, then its steps
+        if (isTrapRound(sop)) box.append(await trapRound(task, sop, it));
         steps.forEach(s => box.append(stepCard(s, it)));
-      });
+      }
     } else {
       if (task.positions.some(isItem)) box.append(itemBlock(task));
       steps.forEach(s => box.append(stepCard(s)));
@@ -6822,13 +6825,18 @@ function sopOpen() {
   const PESTS = [['', 'mostly…'], ['whitefly', 'whitefly'], ['thrips', 'thrips'], ['fungus_gnat', 'fungus gnats'],
                  ['aphid', 'aphids (winged)'], ['leafminer', 'leaf miners'], ['moth', 'moths'], ['other', 'other / mixed']];
 
-  async function trapRound(task, sop) {
+  async function trapRound(task, sop, item = null) {
+    // one zone: the task's own, or (a grouped round, FarmBox 0095) the item's
+    const zoneId = item ? item.area_zone_id : task.zone_id;
+    const systemId = item ? item.area_system_id : task.system_id;
     const traps = (await all('traps')).filter(t => t.active !== false
-      && (t.zone_id === task.zone_id || (t.system_id && t.system_id === task.system_id)))
+      && ((zoneId && t.zone_id === zoneId) || (t.system_id && t.system_id === systemId)))
       .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
     const th = (await getKV('ipm_threshold')) || { watch: 25, over: 50 };
-    run.traps = new Map();
-    run.trapList = traps;
+    if (!run.traps) { run.traps = new Map(); run.trapList = []; run.trapsByItem = new Map(); }
+    const seen = new Set(run.trapList.map(x => x.id));
+    run.trapList.push(...traps.filter(t => !seen.has(t.id)));
+    if (item) run.trapsByItem.set(item.id, traps);
     let draft = null;
     try { draft = await getKV(trapDraftKey(task)); } catch (e) { /* no draft */ }
     const prior = new Map((draft?.traps || []).map(x => [x.trap_id, x]));
@@ -7343,18 +7351,23 @@ function sopOpen() {
 
   async function finishRun() {
     // the trap round: every trap needs its photo and a number before the round can close
-    if (run.traps && run.trapList?.length) {
+    if (run.traps) {
       const undone = [...run.traps.values()].filter(t => t.photo_data == null || t.total == null);
       if (undone.length) {
         $('runHint').textContent = `${undone.length} trap${undone.length > 1 ? 's' : ''} still need a photo and a count.`;
         document.querySelector(`.fb-trap[data-trap="${undone[0].trap_id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      // the photo step of the procedure is answered by the trap cards
-      run.steps.filter(s => /photo/.test(s.evidence || '')).forEach(s => {
-        if (!run.answers.has(s.seq)) run.answers.set(s.seq, { seq: s.seq, step_id: s.id, result: 'ok', note: `${run.traps.size} traps photographed and counted` });
-        if (!(run.media.get(s.seq) || []).length) run.media.set(s.seq, [{ trapEvidence: true }]);
-      });
+      // the procedure's trap-photo step is answered by the trap cards — only that one:
+      // the plant checks of the IPM round need their own photos (FarmBox 0095)
+      const trapSteps = run.steps.filter(s => /photo/.test(s.evidence || '') && /trap/i.test(s.title || ''));
+      const answer = (key, s, n) => {
+        if (!run.answers.has(key)) run.answers.set(key, { seq: s.seq, step_id: s.id, result: 'ok',
+          note: n ? `${n} trap${n > 1 ? 's' : ''} photographed and counted` : 'no sticky trap registered here' });
+        if (!(run.media.get(key) || []).length) run.media.set(key, [{ trapEvidence: true }]);
+      };
+      if (run.perItem) run.itemList.forEach(it => trapSteps.forEach(s => answer(stepKey(s, it), s, (run.trapsByItem?.get(it.id) || []).length)));
+      else if (run.trapList?.length) trapSteps.forEach(s => answer(s.seq, s, run.traps.size));
     }
     // a harvest task: the weights typed above answer the weigh / record steps
     if (run.harvests) {
