@@ -784,6 +784,8 @@
     .fb-cam-shutter { width:74px; height:74px; border-radius:50%; border:5px solid #fff; background:#f4d24a; }
     .fb-cam .fb-btn { color:#fff; border-color:#fff; background:transparent; }
     .fb-trap-counts { margin-top: var(--space-2); }
+    .fb-hold { background: var(--coral-soft); color: var(--coral); border:1px solid var(--coral); border-radius: var(--radius-md);
+      padding: 10px 12px; font-weight:700; font-size: var(--text-sm); margin-bottom: var(--space-3); }
     .fb-photo .fb-shot img { width:96px; height:96px; }
     .fb-photo .fb-actions { margin-top: var(--space-1); }
     .fb-photo .fb-btn { min-height:32px; padding:4px 10px; font-size: var(--text-xs); }
@@ -825,7 +827,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.25';
+  const CURRENT_VERSION = '0.11.26';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -959,6 +961,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.26', '2026-09-24', 'Harvest under withholding', 'A harvest task on a crop that had a treatment says, in red on the task and at the top of its checklist, the first day it may be harvested.'],
     ['0.11.25', '2026-09-24', 'Daily scouting', 'Traps and plants in one daily round, zone by zone: the trap cards folded (count today, or skip), any number of plant photos with the crop and the part. Photos at full quality; the full files upload after the run, so a slow signal never holds it. The kind of insect is named in the console.'],
     ['0.11.24', '2026-09-24', 'One IPM round', 'The sticky-trap count and the plant checks are one round on Monday, Wednesday and Friday, zone by zone: each zone\'s trap cards under its heading, then its leaf and root checks.'],
     ['0.11.23', '2026-09-24', 'On demand and part time', 'The person selector says on demand instead of casual, and marks part-time people.'],
@@ -6702,6 +6705,7 @@ function sopOpen() {
     hero.append(el('h1', null, t.title));
     if (sop?.summary) hero.append(el('p', null, sop.summary));
     box.append(hero);
+    if (holdLine(t)) box.append(el('div', 'fb-hold', holdLine(t)));
 
     const facts = el('div', 'set-group');
     const row = (k, v) => { if (!v) return; const r = el('div', 'set-row');
@@ -6754,6 +6758,10 @@ function sopOpen() {
   // Two levels: the list shows step titles to tick; "Details" on a step opens
   // the instruction, the expected result and what to do if it is not OK.
   let run = null;
+  // a harvest under a treatment's withholding period (FarmBox 0098): said before anything else
+  const holdLine = t => t.withholding_until && t.status !== 'done'
+    ? `Do not harvest before ${new Date(t.withholding_until + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} — a treatment's withholding period. Ask the manager.`
+    : null;
   async function startRun(task, sop) {
     const steps = (await all('steps'))
       .filter(s => s.version_id === task.sop_version_id)
@@ -6775,6 +6783,7 @@ function sopOpen() {
       `${steps.length} steps`, `about ${fmtMin(task.minutes)}`].filter(Boolean).join(' · ')));
 
     const box = $('steps'); box.textContent = '';
+    if (holdLine(task)) box.append(el('div', 'fb-hold', holdLine(task)));
     const bar = el('div', 'fb-runbar');
     const toggle = el('button', 'fb-link', 'Show all details');
     toggle.onclick = () => {
