@@ -98,6 +98,10 @@
     header { position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--space-3) var(--space-4); display: flex; align-items: center; justify-content: space-between; box-shadow: var(--shadow-sm); }
     .logo { display: flex; align-items: center; gap: var(--space-2); }
     .logo-icon { color: var(--primary); flex-shrink: 0; }
+    /* the mark (0.11.30): the console's minimal tile - white sprout, radius 11/36, glyph 20/36 - on aqua */
+    .nb-mark { width: 38px; height: 38px; border-radius: 11.6px; background: linear-gradient(135deg, #3dd8c1 0%, #14a992 100%);
+      display: grid; place-items: center; box-shadow: 0 6px 18px rgba(27,191,168,0.32); }
+    .nb-mark svg { width: 21px; height: 21px; display: block; }
     .logo-text { font-size: var(--text-lg); font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
     .logo-text span { color: var(--primary); }
     .header-actions { display: flex; align-items: center; gap: var(--space-2); }
@@ -828,7 +832,8 @@
 
   </style>
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
   <!-- Launch screens (iPhone): light gradient + nb. mark, made by the splash generator -->
   <link rel="apple-touch-startup-image" media="screen and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/splash-1320x2868.png">
   <link rel="apple-touch-startup-image" media="screen and (device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/splash-1206x2622.png">
@@ -851,7 +856,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.29';
+  const CURRENT_VERSION = '0.11.30';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -985,6 +990,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.30', '2026-09-25', 'A new icon', 'Naked Brain has the console\'s minimal mark on its own aqua: a white sprout on a rounded aqua tile - in the header, on the sign-in cards, on the phone\'s home screen, the Windows taskbar and Start menu, and the launch screen.'],
     ['0.11.29', '2026-09-24', 'Inputs on the card', 'The aqua ✓ dot is gone. A task that needs answers says how many on its card, just before its time ("5 inputs"): a weight per batch for a harvest, else the steps of its checklist, once per zone for a round run zone by zone. A card that says nothing needs no input and can be swiped done.'],
     ['0.11.28', '2026-09-24', 'Undo at the top', 'After a swipe, the Undo bar shows at the top of the screen instead of the bottom, where it covered the quick buttons.'],
     ['0.11.27', '2026-09-24', 'Swipe a task', 'Swipe right to mark done a task that needs no input (the aqua ✓ dot shows which); a task that needs readings or photos says what and offers to open it. Swipe left for Not done, with a reason (No time by default) and a note — for the Admin and the task\'s own people. Five seconds to undo either.'],
@@ -1219,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="passwordGate" class="hidden" role="dialog" aria-modal="true" aria-label="App login">
   <div class="pw-card">
     <div style="text-align:center">
-      <img src="icon-192.png" alt="" style="width:64px;height:64px;border-radius:22.5%;border:2px solid var(--text);box-sizing:border-box;margin:0 auto;display:block">
+      <img src="icon-192.png?v=2" alt="" style="width:64px;height:64px;margin:0 auto;display:block">
       <div style="font-size:var(--text-lg);font-weight:700;margin-top:var(--space-2)">Naked Brain</div>
       <div style="font-size:var(--text-sm);color:var(--text-muted);margin-top:var(--space-1)">Enter your team password to continue</div>
     </div>
@@ -1237,7 +1243,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="authorGate" class="hidden" role="dialog" aria-modal="true" aria-labelledby="authorGateTitle">
   <div class="pw-card">
     <div style="text-align:center">
-      <img src="icon-192.png" alt="" style="width:56px;height:56px;border-radius:22.5%;margin:0 auto var(--space-2);display:block">
+      <img src="icon-192.png?v=2" alt="" style="width:56px;height:56px;margin:0 auto var(--space-2);display:block">
       <div id="authorGateTitle" style="font-size:var(--text-lg);font-weight:700">What's your name?</div>
       <div style="font-size:var(--text-sm);color:var(--text-muted);margin-top:var(--space-1)">It goes on every note you send and every checklist you complete.</div>
     </div>
@@ -1255,7 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- HEADER -->
 <header>
   <div class="logo">
-    <svg class="logo-icon" aria-hidden="true" width="42" height="42" viewBox="0 0 120 120"><rect x="3" y="3" width="114" height="114" rx="25" fill="#1bbfa8" stroke="currentColor" stroke-width="6"/><g transform="translate(60 60) scale(0.82) translate(-69 -59)"><path d="M24 88 V54 a14 14 0 0 1 28 0 V88 M67 30 V88" fill="none" stroke="#121212" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="82" cy="73" r="15" fill="none" stroke="#121212" stroke-width="11"/><circle cx="113" cy="87" r="6.5" fill="#ef6461"/></g></svg>
+    <span class="logo-icon nb-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21v-9"/><path d="M12 12C12 8 9 5 4 5c0 4 3 7 8 7Z"/><path d="M12 10c0-3.5 2.5-6 7-6 0 3.5-2.5 6-7 6Z"/></svg></span>
     <span class="logo-words"><span class="logo-text">Naked <span>Brain</span></span><span class="logo-beta">beta <span id="versionDisplay">0.10.0</span></span></span>
   </div>
   <div class="header-actions">

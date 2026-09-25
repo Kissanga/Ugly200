@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v117';
+const CACHE_NAME = 'ugly200-v118';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
   './icon-512.png',
   './icon-192-maskable.png',
   './icon-512-maskable.png',
+  './apple-touch-icon.png',
   './skins/index.json',
   './skins/naked-farm.json',
   './skins/ocean.json',
