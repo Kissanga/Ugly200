@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Naked Brain",
   "short_name": "Naked Brain",
-  "description": "Record voice notes and send them directly to Notion",
+  "description": "Your day at the FarmBox: the day's tasks and checklists, scouting, harvest and notes.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "./",
