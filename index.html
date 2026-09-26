@@ -866,7 +866,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.35';
+  const CURRENT_VERSION = '0.11.36';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1000,8 +1000,9 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.36', '2026-09-26', 'Working again', 'Version 0.11.34 stopped the app from starting: a line of this very log had an unescaped apostrophe. Fixed.'],
     ['0.11.35', '2026-09-26', 'A shorter description', 'The install description and the guide now say only: Your day at the FarmBox: tasks, checklists and notes.'],
-    ['0.11.34', '2026-09-26', 'Your day at the FarmBox', 'The app's title and description say what it is for now - your day at the FarmBox: the day's tasks and checklists, scouting and harvest, and notes - instead of Voice to Notion.'],
+    ['0.11.34', '2026-09-26', 'Your day at the FarmBox', 'The app\'s title and description say what it is for now - your day at the FarmBox: the day\'s tasks and checklists, scouting and harvest, and notes - instead of Voice to Notion.'],
     ['0.11.33', '2026-09-26', 'The same skin as Naked Heart', 'Naked Brain wears Naked Heart\'s skin: near-black and graphite in dark mode, pale grey and white cards in light mode, the console\'s corners, state colours and task-family colours (Agriculture green, Maintenance blue, Office amber) - with olive where the console has its orange, on the buttons and what is active. The header carries the same wordmark: NAKED, with Brain and the version underneath.'],
     ['0.11.32', '2026-09-26', 'A bigger sprout', 'The sprout fills more of its olive tile (64 % instead of 56 %), a touch higher so the leaves sit in the middle: home screen, taskbar, tab, header, sign-in cards and launch screens.'],
     ['0.11.31', '2026-09-26', 'Olive', 'Naked Brain turns olive: the default skin (Naked Farm v2) has an olive accent with warm neutrals in the light and the dark mode, and the icon is the sprout drawn as a brush on an olive tile, the same shape as the console\'s, which is now called Naked Heart. The user guide follows.'],
