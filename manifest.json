@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Naked Brain",
   "short_name": "Naked Brain",
-  "description": "Your day at the FarmBox: the day's tasks and checklists, scouting, harvest and notes.",
+  "description": "Your day at the FarmBox: tasks, checklists and notes.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "./",
