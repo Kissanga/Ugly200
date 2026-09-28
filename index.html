@@ -708,6 +708,15 @@
       padding: 10px 0 4px; margin-top: 4px; }
     .fb-slot.pm { border-top: 2px solid var(--accent, #788c5d); color: var(--accent, #788c5d); }
     .fb-who { margin: var(--space-3) 0; display:flex; gap: var(--space-2); }
+    /* the clock (0.11.38): in and out from the phone, offline through the outbox */
+    .fb-clock:empty { display: none; }
+    .fb-clock { display:flex; align-items:center; gap: var(--space-3); margin: var(--space-2) 0; padding: 10px 14px;
+      border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+    .fb-clock.on { border-color: var(--success, #2e7d32); background: color-mix(in srgb, var(--success, #2e7d32) 10%, var(--surface)); }
+    .fb-clock .fb-clock-text { flex: 1; min-width: 0; font-size: var(--text-sm); }
+    .fb-clock .fb-clock-text b { display:block; font-size: var(--text-base); }
+    .fb-clock .fb-clock-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); flex: none; }
+    .fb-clock.on .fb-clock-dot { background: var(--success, #2e7d32); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success, #2e7d32) 25%, transparent); }
     .fb-who > * { flex: 1; min-width: 0; }
     /* sister units (0.11.37): one heading per unit inside the day, in the unit's colour */
     .fb-unit { display:flex; align-items:center; gap: 8px; margin: var(--space-3) 0 2px; padding: 6px 10px;
@@ -874,7 +883,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.37';
+  const CURRENT_VERSION = '0.11.38';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1008,6 +1017,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.38', '2026-09-28', 'Clock in and out', 'A card above the day list clocks you in when you start work and out when you leave, with the time worked today. It works without signal: the phone sends it later and never counts it twice. The managers see the hours against the planned tasks in Naked Heart, Tasks, Hours.'],
     ['0.11.37', '2026-09-28', 'Both units in one day', 'FarmLab and FarmBox1 are sister units: the day now lists the work of both, one block per unit in its own colour and mark, each with its morning and afternoon. A menu beside whose tasks shows both units or one. Runs and photos are filed under the unit of the task.'],
     ['0.11.36', '2026-09-26', 'Working again', 'Version 0.11.34 stopped the app from starting: a line of this very log had an unescaped apostrophe. Fixed.'],
     ['0.11.35', '2026-09-26', 'A shorter description', 'The install description and the guide now say only: Your day at the FarmBox: tasks, checklists and notes.'],
@@ -1335,6 +1345,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <!-- my week -->
     <div id="fb-week" class="doc hidden">
       <div class="hero"><h1 id="fb-weekTitle">This week</h1><p id="fb-weekSub">Your farm work, day by day.</p></div>
+      <div id="fb-clock" class="fb-clock"></div>
       <div id="fb-who" class="fb-who"></div>
       <div id="fb-next"></div>
       <div id="fb-days"></div>
@@ -6411,6 +6422,7 @@ function sopOpen() {
       }
       await putAll('workers', d.workers);
       if (d.me) await setKV('me', d.me);
+      if (d.clock && !(await all('outbox')).some(r => r.payload && r.payload.__clock)) await setKV('clock', { ...d.clock, at: Date.now() });
       // sister units (FarmBox 0126): the tasks of every unit of the group come in one sync
       await setKV('sisters', Array.isArray(d.sisters) && d.sisters.length > 1 ? d.sisters : null);
       await putAll('sops', d.sops);
@@ -6462,6 +6474,12 @@ function sopOpen() {
         if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
         });
+        else if (row.payload.__clock) {
+          try {
+            await api('/rest/v1/rpc/clock', { method: 'POST', body: JSON.stringify({ p_farm: farm.id, p_action: row.payload.action,
+                                                                                      p_at: row.payload.at, p_client: row.payload.client_run_id }) });
+          } catch (e) { if (!/not clocked in|seven days|not one of this farm/.test(String(e.message || e))) throw e; }
+        }
         else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_reason: row.payload.reason, p_note: row.payload.note })
         });
@@ -6640,6 +6658,7 @@ function sopOpen() {
     const me = await getKV('me');
     let who = await getKV('who');
     if (!who || (who !== 'all' && who !== 'none' && !workers.some(w => w.id === who))) who = workers.some(w => w.id === me) ? me : 'all';
+    await paintClock(me);
     const whoBox = $('who'); whoBox.textContent = '';
     if (workers.length) {
       const sel = el('select', 'fb-who-sel');
@@ -6725,6 +6744,34 @@ function sopOpen() {
       days.append(sec);
     }
     paintFoot();
+  }
+
+  // ── the clock (FarmBox 0134): clock in when you arrive, out when you leave ──
+  // The state shows at once; the outbox sends it when there is signal, with its
+  // own id, so sending it twice never counts twice.
+  const hm = m => `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, '0')}`;
+  async function paintClock(me) {
+    const box = $('clock'); if (!box) return;
+    box.textContent = ''; box.className = 'fb-clock';
+    if (!me) return;                           // not one of the farm's people: no clock
+    const c = (await getKV('clock')) || {};
+    const open = c.open;
+    const since = open ? new Date(open.clock_in) : null;
+    const today = Number(c.today_minutes || 0) + (open && c.at ? (Date.now() - c.at) / 60000 : 0);
+    if (open) box.classList.add('on');
+    const text = el('div', 'fb-clock-text');
+    text.append(el('b', null, open ? `Clocked in since ${since.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not clocked in'),
+                el('span', null, today >= 1 ? `${hm(today)} today` : open ? 'Just started' : 'Clock in when you start work'));
+    const btn = el('button', 'btn btn-sm ' + (open ? '' : 'btn-primary'), open ? 'Clock out' : 'Clock in');
+    btn.onclick = async () => {
+      const action = open ? 'out' : 'in';
+      const at = new Date().toISOString();
+      await setKV('clock', { open: action === 'in' ? { clock_in: at } : null, today_minutes: today, at: Date.now() });
+      await queue([{ __clock: true, client_run_id: `clk-${action}-${Date.now()}`, action, at }]);
+      showToast(action === 'in' ? 'Clocked in' : `Clocked out · ${hm(today)} today`, 'success');
+      paintClock(me);
+    };
+    box.append(el('span', 'fb-clock-dot'), text, btn);
   }
 
   // The family is the card's colour, not a word: Agriculture green, Maintenance
