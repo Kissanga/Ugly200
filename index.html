@@ -880,6 +880,40 @@
     .fb-sc-n { font-size: 11px; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #0d2b27; }
     .fb-sc-n.nok { background: var(--coral); color: #fff; }
     .fb-sc-add { margin: var(--space-3) 0; }
+    /* 0.11.50: tabs with progress, the trap list, the code sheet */
+    .fb-sc-tab { flex-direction: column; gap: 0; line-height: 1.15; }
+    .fb-sc-sub { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+    .fb-sc-tab[aria-pressed="true"] .fb-sc-sub { color: inherit; }
+    .fb-sc-tab.off { border-style: dashed; color: var(--text-muted); }
+    .fb-sc-help { flex: 0 0 auto; min-width: 44px; font-size: var(--text-base); }
+    .fb-tl-zone { margin: var(--space-3) 0 4px; font-size: var(--text-xs); font-weight: 700; color: var(--text-muted); text-transform: none; }
+    .fb-tl-item { border-bottom: 1px solid var(--border); }
+    .fb-tl-line { display: flex; align-items: stretch; }
+    .fb-tl-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 12px 4px; min-height: 48px; font: inherit;
+      background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; }
+    .fb-tl-code { font-family: ui-monospace, monospace; font-weight: 800; min-width: 52px; }
+    .fb-tl-text { flex: 1; min-width: 0; color: var(--text-muted); font-size: var(--text-sm); }
+    .fb-tl-act { color: var(--text-muted); }
+    .fb-tl-more { flex: none; min-width: 48px; font: inherit; font-size: var(--text-lg); background: none; border: 0; color: var(--text-muted); cursor: pointer; }
+    .fb-tl-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; box-sizing: border-box; }
+    .fb-tl-dot.todo { border: 2px solid var(--text-muted); }
+    .fb-tl-dot.half { border: 3px solid #f0a020; border-right-color: transparent; border-bottom-color: transparent; transform: rotate(-45deg); }
+    .fb-tl-dot.ask { border: 3px dashed #f0a020; }
+    .fb-tl-dot.green { background: var(--success); }
+    .fb-tl-dot.orange { background: #f0a020; }
+    .fb-tl-dot.red { background: var(--coral); }
+    .fb-tl-dot.start { background: var(--text-muted); }
+    .fb-tl-dot.x { background: none; border: 2px solid var(--border); position: relative; }
+    .fb-tl-dot.x::after { content: '×'; position: absolute; inset: -5px 0 0; text-align: center; font-size: 13px; color: var(--text-muted); }
+    .fb-tl-menu { padding: 0 4px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .fb-tl-menu .fb-btn[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
+    .fb-tl-item .fb-sc-card { margin: 0 0 12px; }
+    .fb-codesheet { display: flex; flex-direction: column; gap: 10px; }
+    .fb-codesheet-img { width: 100%; max-height: 34vh; object-fit: contain; border-radius: var(--radius-md); background: var(--surface-offset); }
+    .fb-codesheet-code { width: 100%; font-family: ui-monospace, monospace; font-weight: 800; font-size: 28px; text-align: center; text-transform: uppercase; }
+    .fb-codesheet-picks .fb-btn { min-height: 34px; padding: 4px 10px; font-family: ui-monospace, monospace; font-size: var(--text-xs); }
+    .fb-sc-outcome { align-items: center; }
+    .fb-sc-outcome .fb-btn.no { flex: none; min-width: 120px; }
     .fb-trap-head { align-items: center; }
     .fb-trap-head .fb-sc-code { width: 92px; }
     .fb-trap-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: var(--space-2) 0; }
@@ -930,7 +964,7 @@
     .fb-sc-ai { margin-top: var(--space-2); padding: 8px 10px; border-radius: var(--radius-md); font-size: var(--text-sm);
       background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-left: 3px solid var(--accent); }
     .fb-sc-ai::before { content: '✦ AI · '; font-weight: 800; }
-    .fb-sc-outcome .fb-btn { flex: 1; min-height: 52px; font-size: var(--text-base); }
+    .fb-sc-outcome .fb-btn { min-height: 48px; font-size: var(--text-base); }
     .fb-measure canvas { touch-action: none; }
     .fb-measure-bar { flex-wrap: wrap; gap: 8px; justify-content: center; }
     /* the day list (0.11.40): earlier days folded with a red dot, days ahead closed until opened */
@@ -976,7 +1010,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.49';
+  const CURRENT_VERSION = '0.11.50';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1110,6 +1144,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.50', '2026-09-29', 'A clearer scouting screen', 'The tabs say how far along each section is (Traps 5 of 12, Health 2 photos, Growth off today) and a greyed tab still opens. Traps is the list of the unit traps by zone: a ring to do, half a ring with one side left, the colour when done; tap one to photograph it, tap a done one for its counts; the dots mark one taken down or out of reach. A card not in the list: Scan, then one sheet asks which trap it is and goes straight to the other side. One finish bar: Not OK (with why), or All OK and finish. The long explanations are behind the question mark.'],
     ['0.11.49', '2026-09-29', 'Insects sized on the grid', 'The insects on a trap are now sized against the card printed 23 mm grid, measured in each photo, instead of assuming a 25 cm card: the old way read FarmLab cards about 30 percent small, so insects were sized a class too big. Tilted or partly cropped cards still measure right; without a visible grid the card length is used as before.'],
     ['0.11.48', '2026-09-29', 'Measure on a ruler or tape', 'A growth photo with a ruler or tape measure instead of the scale card can be measured: tap two marks on the tape far apart, say the centimetres between them, then tap the two ends of the fruit as usual. The AI note reads sizes against a ruler or tape too.'],
     ['0.11.47', '2026-09-29', 'Handwritten trap codes', 'The phone finds the handwritten position on the card: it wipes the printed grid, keeps the pen strokes, reads that one line at a few sizes until two readings agree, and matches it to the traps of the unit (digits for the zone and the metres, letters for the row); a reading close to a trap but not sure proposes nothing. About 2 seconds a trap. If it cannot, Read with AI sends the photo to the AI to read it, only when pressed. How the scouting works says how to write the code.'],
@@ -7320,9 +7355,9 @@ function sopOpen() {
 
     const head = $('runHead'); head.textContent = '';
     head.append(el('h1', null, task.title));
-    head.append(el('p', null, [task.zone_name || task.area,
+    head.append(el('p', null, (isScouting(sop) ? [task.area || task.zone_name, `about ${fmtMin(task.minutes)}`] : [task.zone_name || task.area,
       task.positions.length > 1 ? `${task.positions.length} positions` : (task.positions[0]?.label || null),
-      `${steps.length} steps`, `about ${fmtMin(task.minutes)}`].filter(Boolean).join(' · ')));
+      `${steps.length} steps`, `about ${fmtMin(task.minutes)}`]).filter(Boolean).join(' · ')));
 
     const box = $('steps'); box.textContent = '';
     if (holdLine(task)) box.append(el('div', 'fb-hold', holdLine(task)));
@@ -7796,9 +7831,12 @@ function sopOpen() {
     const unlike = code => traps.every(t => codeDistance(code, canon(shortCode(t.code))) >= 1.5);
     const agreed = () => [...known.values()].some(t => t.n >= 2) || (!known.size && [...fresh.values()].some(t => t.n >= 2 && unlike(t.f.code)));
     const TRIES = [[28, '7'], [36, '7'], [48, '7'], [28, '13'], [36, '13'], [48, '13']];
+    // at most eight readings in all: a card the reader cannot make out must not keep it busy for the next one
+    let tries = 0;
     try {
       for (const L of findWriting(canvas, cardColour(canvas))) {
         for (const [h, psm] of TRIES) {
+          if (++tries > 8) break;
           const r = await one(atHeight(L.line, h), psm);
           if (!r.text) continue;
           reads.push({ ...r, box: L.box }); vote(reads[reads.length - 1]);
@@ -7925,17 +7963,26 @@ function sopOpen() {
     if (!shown(sc.tab)) sc.tab = (SC_TABS.find(([k]) => shown(k)) || SC_TABS[1])[0];
     if (navigator.onLine && shown('trap')) ocr().catch(() => {});   // warm the text reader while the person walks to the first trap
 
+    // 0.11.50 (owner: "the scouting task window is a little bit confusing"): the tabs say how far along each
+    // section is (a section not due today stays, greyed, and opens on a tap); the long explanations sit behind ?;
+    // Traps is the unit's list of traps; a new card is confirmed in one sheet that goes straight to its other
+    // side; one finish bar — Not OK, or All OK · finish.
     const box = el('div', 'fb-sc');
-    box.append(howItWorks());
+    const how = howItWorks(); how.open = true; how.classList.add('hidden');
+    box.append(how);
     const tabs = el('div', 'fb-sc-tabs');
     const panes = {};
     const tabBtns = {};
     SC_TABS.forEach(([k, label]) => {
       const b = el('button', 'fb-sc-tab'); b.type = 'button';
-      b.onclick = () => { sc.tab = k; paintTabs(); saveScDraft(); };
+      b.onclick = () => { if (!shown(k)) sc.extra.add(k); sc.tab = k; paintTabs(); saveScDraft(); };
       tabBtns[k] = b; tabs.append(b);
       panes[k] = el('div', 'fb-sc-pane');
     });
+    const help = el('button', 'fb-sc-tab fb-sc-help', '?'); help.type = 'button';
+    help.setAttribute('aria-label', 'How the scouting works'); help.setAttribute('aria-pressed', 'false');
+    help.onclick = () => { const open = how.classList.toggle('hidden') === false; help.setAttribute('aria-pressed', String(open)); if (open) how.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    tabs.append(help);
     // the sections not due today, to open by hand
     const more = el('div', 'fb-sc-more');
     const paintMore = () => {
@@ -7949,20 +7996,25 @@ function sopOpen() {
         more.append(b);
       });
     };
-    box.append(tabs, more, ...SC_TABS.map(([k]) => panes[k]));
+    box.append(tabs, ...SC_TABS.map(([k]) => panes[k]));
     const count = k => [...sc.photos.values()].filter(p => p.section === k).length;
+    const photoOf = t => [...sc.photos.values()].find(p => p.section === 'trap' && p.trap_id === t.id) || null;
+    const trapDone = t => { const p = photoOf(t); return (p && SIDES.every(([k]) => p.sides?.[k])) || (!p && sc.status.has(t.id)); };
+    const tabSub = (k, n) => {
+      if (!shown(k)) return 'off today';
+      if (k === 'trap') return traps.length ? `${traps.filter(trapDone).length} of ${traps.length}` : n ? `${n} photographed` : 'first round';
+      return n ? `${n} photo${n === 1 ? '' : 's'}` : 'none yet';
+    };
     let paintTabs = function () {
       SC_TABS.forEach(([k, label]) => {
-        const n = count(k);
-        tabBtns[k].textContent = '';
-        tabBtns[k].append(el('span', null, label));
-        if (n) tabBtns[k].append(el('b', 'fb-sc-n', String(n)));
-        tabBtns[k].setAttribute('aria-pressed', String(sc.tab === k));
-        tabBtns[k].classList.toggle('hidden', !shown(k));
+        const b = tabBtns[k];
+        b.textContent = '';
+        b.append(el('span', null, label), el('small', 'fb-sc-sub', tabSub(k, count(k))));
+        b.setAttribute('aria-pressed', String(sc.tab === k));
+        b.classList.toggle('off', !shown(k));
         panes[k].classList.toggle('hidden', sc.tab !== k);
       });
-      paintMore();
-      $('finish').textContent = run.edit ? 'Save the changes' : 'Finish';
+      $('finish').textContent = run.edit ? 'Save the changes' : sc.outcome === 'nok' ? 'Finish · not OK' : 'All OK · finish';
     };
 
     // one hidden picker for the gallery, used by every section
@@ -8062,17 +8114,72 @@ function sopOpen() {
                   trap_id: forTrap?.id || null, code: forTrap ? shortCode(forTrap.code) : null, code_text: forTrap ? shortCode(forTrap.code) : '',
                   code_source: forTrap ? 'list' : null, code_ok: !!forTrap };
       sc.photos.set(p.ref, p);
-      const card = photoCard(p);
-      lists.trap.prepend(card);
+      const card = cardOf(p);
       paintTabs(); paintCoverage(); saveScDraft();
       if (forTrap) { askOtherSide(p, card); return; }
-      card._codeState?.('reading the code…');
-      try {
-        const r = await readTrapCode(got.canvas, traps);
+      codeSheet(p, card, got.canvas);
+    }
+    // A card not in the list: which trap is it? The reader's proposal (or the AI's, or a pick from the traps not
+    // photographed yet) in one sheet; Yes confirms it and opens the camera for the other side at once.
+    function codeSheet(p, card, canvas) {
+      const sheet = el('div', 'fb-sheet');
+      const box = el('div', 'fb-sheet-card fb-codesheet');
+      const missing = SIDES.find(([k]) => !p.sides?.[k]);
+      const first = p.sides?.[Object.keys(p.sides || {})[0]];
+      const img = el('img', 'fb-codesheet-img'); img.src = first?.thumb || ''; img.alt = '';
+      const inp = el('input', 'fb-num fb-codesheet-code'); inp.type = 'text'; inp.placeholder = '1B6';
+      inp.setAttribute('autocapitalize', 'characters'); inp.setAttribute('autocomplete', 'off'); inp.spellcheck = false;
+      inp.setAttribute('aria-label', 'The position written on the card');
+      const what = el('div', 'fb-meta', 'Reading the code…');
+      const yes = el('button', 'fb-btn fb-btn-primary', missing ? `Yes — now the ${missing[1].toLowerCase()}` : 'Yes'); yes.type = 'button';
+      const ai = el('button', 'fb-btn fb-ai', '✦ Read with AI'); ai.type = 'button';
+      const later = el('button', 'fb-link', 'Later'); later.type = 'button';
+      let touched = false, reading = true, source = 'text';
+      const paintWhat = () => {
+        const v = canon(inp.value), pc = parseTrapCode(v);
+        if (!v) what.textContent = reading ? 'Reading the code…' : (p.code_read ? `Read "${p.code_read}" — write the position` : 'Write the position on the card, like 1B6');
+        else if (!pc.ok) what.textContent = 'Write it like 1B6: zone, row, metres';
+        else what.textContent = traps.find(t => shortCode(t.code) === pc.code) ? 'A trap of the list' : `New trap · ${pc.n} · row ${pc.row} · ${pc.metres} m`;
+      };
+      inp.oninput = () => { const v = inp.value.toUpperCase().replace(/\s/g, ''); if (v !== inp.value) inp.value = v; touched = true; source = 'typed'; paintWhat(); };
+      const todo = traps.filter(t => !photoOf(t) && !sc.status.has(t.id)).slice(0, 18);
+      const picks = el('div', 'fb-actions fb-codesheet-picks');
+      todo.forEach(t => { const b = el('button', 'fb-btn', shortCode(t.code)); b.type = 'button';
+        b.onclick = () => { inp.value = shortCode(t.code); touched = true; source = 'list'; paintWhat(); }; picks.append(b); });
+      const close = () => sheet.remove();
+      yes.onclick = () => {
+        const pc = parseTrapCode(canon(inp.value));
+        if (!pc.ok) { showToast('Write the position on the card, like 1B6', 'error'); inp.focus(); return; }
+        setTrapCode(p, pc.code, source); p.code_ok = true; sc.open.delete(p.ref);     // confirmed: it folds like any trap
+        close(); card._paintTrap?.(); paintTabs(); paintCoverage(); saveScDraft(); askOtherSide(p, card);
+      };
+      later.onclick = () => { if (canon(inp.value)) setTrapCode(p, canon(inp.value), source); close(); card._paintTrap?.(); paintCoverage(); saveScDraft(); };
+      ai.onclick = async () => {
+        if (!navigator.onLine) { showToast('Reading with the AI needs a connection', 'error'); return; }
+        ai.disabled = true; ai.textContent = '✦ Reading…';
+        try {
+          const image = await photoBase64(first);
+          if (!image) throw new Error('this photo is not on the phone any more');
+          const r = await api('/functions/v1/photo-note', { method: 'POST', body: JSON.stringify({ farm_id: task.farm_id || farm.id, kind: 'code', image,
+            context: { codes: traps.map(x => shortCode(x.code)), read: p.code_read || null } }) });
+          if (!r?.ok) throw new Error(r?.error || 'no answer');
+          const seen = canon(r.ai?.code_seen), m = seen && traps.length ? matchCode([seen], traps) : null, f = m ? null : coerceCode(seen);
+          if (m || f) { inp.value = shortCode((m || f).code); touched = true; source = 'ai'; }
+          else showToast(seen ? `The AI read "${seen}" — not a position; type it` : 'The AI could not read a position on this card', 'error');
+          paintWhat();
+        } catch (e) { showToast('Read with AI: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); }
+        ai.disabled = false; ai.textContent = '✦ Read with AI';
+      };
+      const row = el('div', 'fb-actions'); row.append(yes, ai, later);
+      box.append(el('h3', null, 'Which trap is this?'), img, inp, what);
+      if (todo.length) box.append(el('div', 'fb-meta', 'Or one not photographed yet:'), picks);
+      box.append(row);
+      sheet.append(box); document.body.append(sheet);
+      readTrapCode(canvas, traps).then(r => {
         p.code_read = r.text || null;
-        if (!p.code_ok) { if (r.trap) setTrapCode(p, shortCode(r.trap.code), 'text'); else if (r.fresh) setTrapCode(p, r.fresh.code, 'text'); }
-      } catch (e) { console.warn('text reader', e); }
-      card._paintTrap?.(); paintCoverage(); saveScDraft();
+        const v = r.trap ? shortCode(r.trap.code) : r.fresh ? shortCode(r.fresh.code) : '';
+        if (!touched && v) { inp.value = v; source = 'text'; }
+      }).catch(e => console.warn('text reader', e)).finally(() => { reading = false; paintWhat(); saveScDraft(); });
     }
     async function addSide(p, side, card, fromGallery) {
       let f = null;
@@ -8386,7 +8493,10 @@ function sopOpen() {
           img.onclick = () => { if (p.full instanceof Blob) measurePhoto(p, paintMs); };
         }
         note.placeholder = p.section === 'growth' ? 'Note (optional)' : 'What you see (optional)';
-        acts.append(aiButton(p, card, aiBox), drop);
+        const more = el('button', 'fb-link', '⋯'); more.type = 'button'; more.setAttribute('aria-label', 'More');
+        drop.classList.add('hidden');
+        more.onclick = () => drop.classList.toggle('hidden');
+        acts.append(aiButton(p, card, aiBox), more, drop);
         card.append(note, acts, aiBox);
       }
       return card;
@@ -8405,62 +8515,137 @@ function sopOpen() {
     };
     // Traps
     const cover = el('div', 'fb-sc-cover');
+    // one row per trap: a ring to do, half a ring with one side missing, its colour when done; the details
+    // (both sides, counts, AI note, Replaced, note) open under the row
+    const cardEls = new Map();
+    const cardOf = p => { let c = cardEls.get(p.ref); if (!c) { c = photoCard(p); cardEls.set(p.ref, c); } return c; };
+    // the zone names come with the task: one item per zone (FarmBox 0095), its zone on area_zone_id
+    const zoneName = new Map(task.positions.filter(x => x.area_zone_id).map(x => [x.area_zone_id, x.label || x.zone_name]));
+    sc.open = new Set(); sc.menu = null;
+    sc.reveal = ref => { if (sc.photos.get(ref)?.section === 'trap') { sc.open.add(ref); paintCoverage(); } };
+    const shortLevel = p => {
+      const rs = SIDES.map(([k]) => sideRate(p, k)).filter(Boolean);
+      if (rs.length) { const r = Math.round(rs.reduce((a, x) => a + x.rate, 0) * 10) / 10, tone = toneOf(r); return `${r} a day · ${{ red: 'high', orange: 'watch', green: 'low' }[tone]}`; }
+      const n = SIDES.map(([k]) => p.sides?.[k]?.total).filter(x => x != null).reduce((a, x) => a + x, 0);
+      return `${n} on the card · the count starts`;
+    };
+    function trapMenu(t) {
+      const m = el('div', 'fb-tl-menu');
+      const st = sc.status.get(t.id);
+      const row = el('div', 'fb-actions');
+      const cam = el('button', 'fb-btn', '📷 Photograph'); cam.type = 'button'; cam.onclick = () => { sc.menu = null; shoot('trap', t); };
+      const gal = el('button', 'fb-btn', '🖼'); gal.type = 'button'; gal.setAttribute('aria-label', 'From the gallery'); gal.onclick = () => { sc.menu = null; shoot('trap', t, true); };
+      const down = el('button', 'fb-btn', 'Taken down'); down.type = 'button'; down.title = 'Replaced or removed: this card leaves the list';
+      down.setAttribute('aria-pressed', String(st?.status === 'taken_down'));
+      down.onclick = () => { st?.status === 'taken_down' ? sc.status.delete(t.id) : sc.status.set(t.id, { status: 'taken_down' }); paintTabs(); paintCoverage(); saveScDraft(); };
+      const far = el('button', 'fb-btn', 'Can’t reach it today'); far.type = 'button';
+      far.setAttribute('aria-pressed', String(st?.status === 'unreachable'));
+      far.onclick = () => { st?.status === 'unreachable' ? sc.status.delete(t.id) : sc.status.set(t.id, { status: 'unreachable', note: '' }); paintTabs(); paintCoverage(); saveScDraft();
+        lists.trap.querySelector('.fb-tl-menu .fb-note')?.focus(); };
+      row.append(cam, gal, down, far); m.append(row);
+      if (st?.status === 'unreachable') {
+        const note = el('input', 'fb-note'); note.type = 'text'; note.value = st.note || ''; note.placeholder = 'Why? (the manager is told)';
+        note.oninput = () => { st.note = note.value; saveScDraft(); };
+        m.append(note);
+      }
+      return m;
+    }
+    function trapRow(t, p) {
+      const wrap = el('div', 'fb-tl-item');
+      const line = el('div', 'fb-tl-line');
+      const r = el('button', 'fb-tl-row'); r.type = 'button';
+      const st = t && !p ? sc.status.get(t.id) : null;
+      const miss = p ? SIDES.find(([k]) => !p.sides?.[k]) : null;
+      const tone = p && !miss ? (trapLevel(p).tone || 'start') : '';
+      const dot = el('span', 'fb-tl-dot ' + (st ? 'x' : !p ? 'todo' : !p.code_ok ? 'ask' : miss ? 'half' : tone));
+      const code = p ? (p.code_ok ? p.code : (p.code ? p.code + '?' : '?')) : shortCode(t.code);
+      const text = st ? (st.status === 'taken_down' ? 'taken down' : `can’t reach${st.note ? ': ' + st.note : ' — say why'}`)
+        : !p ? 'to do'
+        : !p.code_ok ? (p.code ? `is it ${p.code}? tap to confirm` : 'which trap? tap to write it')
+        : miss ? `${miss[1].toLowerCase()} left` : shortLevel(p);
+      r.append(dot, el('b', 'fb-tl-code', code), el('span', 'fb-tl-text', text), el('span', 'fb-tl-act', !p ? '📷' : sc.open.has(p.ref) ? '▴' : '▾'));
+      r.setAttribute('aria-label', `Trap ${code}: ${text}`);
+      line.append(r);
+      if (p) {
+        if (!p.code_ok) sc.open.add(p.ref);
+        r.onclick = () => { sc.open.has(p.ref) ? sc.open.delete(p.ref) : sc.open.add(p.ref); paintCoverage(); };
+        if (miss && p.code_ok) { const go = el('button', 'fb-tl-more', '📷'); go.type = 'button'; go.setAttribute('aria-label', `Photograph the ${miss[1].toLowerCase()} of trap ${code}`);
+          go.onclick = () => addSide(p, miss[0], cardOf(p)); line.append(go); }
+        wrap.append(line);
+        if (sc.open.has(p.ref)) wrap.append(cardOf(p));
+      } else {
+        r.onclick = () => (st ? (sc.menu = t.id, paintCoverage()) : shoot('trap', t));
+        const more = el('button', 'fb-tl-more', '⋯'); more.type = 'button'; more.setAttribute('aria-label', `More for trap ${code}`);
+        more.onclick = () => { sc.menu = sc.menu === t.id ? null : t.id; paintCoverage(); };
+        line.append(more); wrap.append(line);
+        if (sc.menu === t.id) wrap.append(trapMenu(t));
+      }
+      return wrap;
+    }
     function paintCoverage() {
       cover.textContent = '';
-      if (!traps.length) {
-        const n = [...sc.photos.values()].filter(x => x.section === 'trap').length;
-        cover.append(el('div', 'fb-hold fb-sc-first', 'First round: photograph every trap. Each one is added from the position written on its card — 1B6 = zone 1, row B, 6 m from the corridor. The count starts today; the colour comes with the next photo.'),
-                     el('div', 'fb-sec', `${n} trap${n === 1 ? '' : 's'} photographed`));
-        return;
+      const photosT = [...sc.photos.values()].filter(x => x.section === 'trap').sort((a, b) => String(b.taken_at).localeCompare(String(a.taken_at)));
+      if (!traps.length && !photosT.length)
+        cover.append(el('div', 'fb-hold fb-sc-first', 'First round: photograph every trap. Each is added from the position on its card — 1B6 = zone 1, row B, 6 m from the corridor. The count starts today; the colour comes with the next photo.'));
+      lists.trap.textContent = '';
+      const loose = photosT.filter(p => !p.trap_id || !traps.some(t => t.id === p.trap_id));
+      if (loose.length) {
+        lists.trap.append(el('div', 'fb-tl-zone', traps.length ? 'New cards' : 'Photographed today'));
+        loose.forEach(p => lists.trap.append(trapRow(null, p)));
       }
-      const done = new Set([...sc.photos.values()].filter(x => x.section === 'trap' && x.trap_id).map(x => x.trap_id));
-      const half = [...sc.photos.values()].filter(x => x.section === 'trap' && SIDES.some(([k]) => !x.sides?.[k])).length;
-      cover.append(el('div', 'fb-sec', `${done.size} of ${traps.length} traps today` + (half ? ` · ${half} waiting for the other side` : '')));
-      const rest = traps.filter(t => !done.has(t.id));
-      if (rest.length) {
-        const row = el('div', 'fb-actions');
-        rest.slice(0, 40).forEach(t => { const b = el('button', 'fb-btn fb-sc-todo', shortCode(t.code)); b.type = 'button'; b.title = 'Photograph trap ' + shortCode(t.code); b.onclick = () => shoot('trap', t); row.append(b); });
-        cover.append(row);
+      const groups = new Map();
+      traps.forEach(t => { const z = zoneName.get(t.zone_id) || `Zone ${parseTrapCode(t.code).n || '?'}`; if (!groups.has(z)) groups.set(z, []); groups.get(z).push(t); });
+      for (const [z, ts] of groups) {
+        const done = ts.filter(trapDone).length;
+        lists.trap.append(el('div', 'fb-tl-zone', `${z} · ${done} of ${ts.length}`));
+        ts.forEach(t => lists.trap.append(trapRow(t, photoOf(t))));
       }
+      paintTabs();
     }
     const missedLine = k => sc.missed[k] ? el('div', 'fb-hold fb-sc-missed', `Not done ${/^(Yesterday|Today|Tomorrow)$/.test(fmtDay(sc.missed[k])) ? fmtDay(sc.missed[k]).toLowerCase() : 'on ' + fmtDay(sc.missed[k])} — due today.`) : '';
-    lists.trap = el('div');
-    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph each trap on one side, square-on, with its position in the picture (1B6). The phone reads the position — confirm it or correct it — then opens the camera for the other side. Each side is counted; correct the numbers if they are wrong. A new position is added by itself. After changing a card press Replaced. The colour is new insects a day, both sides together.'),
-                      addBar('trap', 'Trap photo'), cover, lists.trap);
+    lists.trap = el('div', 'fb-tl');
+    const scan = el('div', 'fb-actions fb-sc-add');
+    const scanBtn = el('button', 'btn btn-primary', traps.length ? '📷 Scan a trap not in the list' : '📷 Scan a trap'); scanBtn.type = 'button';
+    scanBtn.title = 'The phone reads the position written on the card';
+    const scanGal = el('button', 'fb-btn', '🖼'); scanGal.type = 'button'; scanGal.title = 'From the gallery'; scanGal.setAttribute('aria-label', 'Trap photo from the gallery');
+    scanBtn.onclick = () => shoot('trap'); scanGal.onclick = () => shoot('trap', null, true);
+    scan.append(scanBtn, scanGal);
+    panes.trap.append(missedLine('trap'),
+      el('div', 'config-hint', traps.length ? 'Tap a trap to photograph it: one side, then the other. Tap a done trap for its counts.' : 'Photograph every card: the phone reads its position and adds it.'),
+      cover, lists.trap, scan);
     // Plant health
     lists.health = el('div');
-    panes.health.append(el('div', 'config-hint', 'Anything that looks wrong: spots, mould, wilting, damage, pests on the plant. Write where (3B8 = zone 3, row B, 8 m from the corridor) or use the GPS.'),
-                        addBar('health', 'Plant photo'), lists.health);
+    panes.health.append(el('div', 'config-hint', 'Anything that looks wrong on a plant. Say where (3B8) or use the GPS.'),
+                        addBar('health', 'Add a plant photo'), lists.health);
     // Growth
     lists.growth = el('div');
-    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit and leaves with the scale card beside them, flat and at the same distance — or a ruler or tape along them. Tap a photo to measure it.'),
-                        addBar('growth', 'Growth photo'), lists.growth);
+    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit or leaf beside the scale card, or a ruler or tape along it. Tap the photo to measure.'),
+                        addBar('growth', 'Add a growth photo'), lists.growth);
     // the end, under every tab, just above Finish: OK / Not OK and a note (0.11.43)
     const fin = el('div', 'fb-sc-end');
     box.append(fin);
     sc.shoot = shoot;
-    const sum = el('div', 'fb-sec');
     const okRow = el('div', 'fb-actions fb-sc-outcome');
-    const ok = el('button', 'fb-btn', 'OK'); ok.type = 'button';
     const nok = el('button', 'fb-btn no', 'Not OK'); nok.type = 'button';
     const outNote = el('input', 'fb-note'); outNote.type = 'text'; outNote.value = sc.outcomeNote || '';
+    const finHint = el('span', 'fb-meta');
     const paintOutcome = () => {
-      ok.setAttribute('aria-pressed', String(sc.outcome === 'ok'));
       nok.setAttribute('aria-pressed', String(sc.outcome === 'nok'));
-      outNote.placeholder = sc.outcome === 'nok' ? 'What is not OK? (the manager is told)' : 'Note (optional)';
-      sum.textContent = 'Today · ' + SC_TABS.filter(([k]) => shown(k)).map(([k, l]) => `${l} ${count(k)}`).join(' · ');
+      nok.textContent = sc.outcome === 'nok' ? 'Not OK ✓' : 'Not OK';
+      outNote.classList.toggle('hidden', sc.outcome !== 'nok');
+      outNote.placeholder = 'What is not OK? (the manager is told)';
+      finHint.textContent = sc.outcome === 'nok' ? 'Say why, then Finish. Tap Not OK again to undo.' : 'Something wrong in the greenhouse? Tap Not OK.';
     };
-    ok.onclick = () => { sc.outcome = 'ok'; paintOutcome(); saveScDraft(); };
-    nok.onclick = () => { sc.outcome = 'nok'; paintOutcome(); saveScDraft(); outNote.focus(); };
+    nok.onclick = () => { sc.outcome = sc.outcome === 'nok' ? null : 'nok'; paintTabs(); saveScDraft(); if (sc.outcome === 'nok') outNote.focus(); };
     outNote.oninput = () => { sc.outcomeNote = outNote.value; saveScDraft(); };
-    okRow.append(ok, nok);
-    fin.append(sum, el('div', 'config-hint', 'Is everything in order? Not OK tells the manager at once — say why.'), okRow, outNote);
+    okRow.append(nok, finHint);
+    fin.append(okRow, outNote);
     const repaintTabs = paintTabs;
     paintTabs = () => { repaintTabs(); paintOutcome(); };
 
     // the photos already taken (a draft, or a scouting being edited), newest on top
     [...sc.photos.values()].sort((a, b) => String(a.taken_at).localeCompare(String(b.taken_at)))
-      .forEach(p => lists[p.section]?.prepend(photoCard(p)));
+      .forEach(p => { if (p.section === 'trap') cardOf(p); else lists[p.section]?.prepend(photoCard(p)); });
     paintCoverage(); paintTabs();
     return box;
   }
@@ -8473,14 +8658,14 @@ function sopOpen() {
     d.append(el('summary', null, 'How the scouting works'));
     const list = el('ol');
     [
-      ['Today\u2019s sections are the tabs.', 'Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day; any other can be opened with + under the tabs.'],
+      ['Today\u2019s sections are the tabs.', 'Each tab says how far along it is. Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day; a tab that says off today still opens on a tap.'],
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
       ['Writing the position.', 'On each card, in black permanent marker: capitals about 2 cm high, on one line, apart from each other, on a clear part of the card (1B6, no dashes). Write it on both sides. If the phone cannot read it, press Read with AI or type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal.'],
-      ['Finish.', 'OK or Not OK (with why) at the bottom, then Finish: the phone says what is still missing and, on a trap day, asks about the traps not photographed.'],
+      ['Finish.', 'All OK · finish at the bottom, or Not OK first (with why): the phone says what is still missing and, on a trap day, asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
       ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
     ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), document.createTextNode(t)); list.append(li); });
     d.append(list);
@@ -8628,7 +8813,7 @@ function sopOpen() {
       if (tab === 'end') { document.querySelector('.fb-sc-end')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
       sc.tab = tab;
       document.querySelector(`.fb-sc-tab:nth-child(${SC_TABS.findIndex(x => x[0] === tab) + 1})`)?.click();
-      if (ref) document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (ref) { sc.reveal?.(ref); document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     };
     if (sc.due?.trap && !trapsP.length)
       return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
@@ -8647,13 +8832,14 @@ function sopOpen() {
     }
     const lost = plants.find(p => !placed(p));
     if (lost) return stop(lost.section, 'A photo has no position — write it (3B8) or use the GPS.', lost.ref);
-    if (!sc.outcome) return stop('end', 'Choose OK or Not OK.');
+    if (!sc.outcome) sc.outcome = 'ok';                              // All OK · finish
     if (sc.outcome === 'nok' && !String(sc.outcomeNote || '').trim()) return stop('end', 'Say what is not OK — the manager is told.');
     // the traps of the list not photographed on a trap day: taken down, forgotten, or out of reach (0146)
     const photographed = new Set(trapsP.map(p => p.trap_id).filter(Boolean));
     const missing = !run.edit && sc.due?.trap ? sc.traps.filter(t => !photographed.has(t.id)) : [];
     const open = missing.filter(t => { const x = sc.status.get(t.id); return !x || (x.status === 'unreachable' && !String(x.note || '').trim()); });
-    if (open.length) { $('runHint').textContent = ''; return missingTraps(missing); }
+    // only the ones still open: a trap already marked in its row (0.11.50) is not asked about again
+    if (open.length) { $('runHint').textContent = ''; return missingTraps(open); }
 
     $('finish').disabled = true;
     $('runHint').textContent = 'Saving…';
