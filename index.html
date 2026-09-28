@@ -1020,7 +1020,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.53';
+  const CURRENT_VERSION = '0.11.54';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1154,6 +1154,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.54', '2026-09-29', 'The code read in the header first', 'The phone first looks for the trap code in the plain band at the top of the card, above the grid, where nothing has to be wiped, so a code written with a fine pen keeps its strokes; the rest of the card only if nothing is found there. How the scouting works says where to write it: the blue side, top band, clear of the holes.'],
     ['0.11.53', '2026-09-29', 'The phone measures the fruit or leaf', 'When a scale is known (the card found, or the scale set on a ruler) the phone outlines the fruit or leaf framed in the middle of the photo and gives its length and its diameter or width, on the phone, free, also offline after the first time. Tap the photo to see the outline; Re-measure and a tap on the right object if it took another. The AI estimate stays on its button.'],
     ['0.11.52', '2026-09-29', 'Sizes on plant health, photos that zoom', 'A plant-health photo looks for the scale card too and says Scale detected; measure with two taps, or press Estimate the size for the AI to read the fruit or leaf against it. Tap any scouting photo, trap sides included, to see it full screen: pinch or double-tap to zoom, drag to move, and Measure from there.'],
     ['0.11.51', '2026-09-29', 'The AI reads a code the phone cannot', 'When Scan a trap finds no position on a card and there is signal, the AI reads the handwritten code by itself and fills it in; it stays a proposal until you press Yes, and never replaces what you typed or picked. Every other AI note is still only when pressed.'],
@@ -7689,7 +7690,9 @@ function sopOpen() {
   // and read at three sizes in two line modes (the reader does best with letters ~28 px tall; read
   // one by one, single letters came back empty); each reading is bent into the shape of a position
   // (zone digits · row letters · metre digits) and the readings vote.
-  function findWriting(canvas, colour) {
+  // opts.head: only the card's header band (its top quarter, above the grid: no printed lines there, so nothing is
+  // wiped and a pen's thin strokes stay whole — 0.11.54, the owner writes the code in the same clear spot from now on)
+  function findWriting(canvas, colour, opts = {}) {
     const W = canvas.width, H = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
     const blue = colour === 'blue';
     const isCard = i => { const r = d[i], g = d[i + 1], b = d[i + 2];
@@ -7702,19 +7705,39 @@ function sopOpen() {
       const q = (a, p) => a[Math.min(a.length - 1, Math.floor(a.length * p))];
       x0 = q(xs, 0.02); x1 = q(xs, 0.98); y0 = q(ys, 0.02); y1 = q(ys, 0.98);
     }
+    const ppm = Math.max(x1 - x0 + 1, y1 - y0 + 1) / 250;              // a 25 cm card, near enough to size letters
+    if (opts.head) {
+      // the header ends at the first printed grid line: the first row, past the top tenth, dark across most of the card
+      const cw = x1 - x0 + 1, lim = y0 + Math.round(0.4 * (y1 - y0));
+      let cut = y0 + Math.round(0.27 * (y1 - y0));
+      for (let y = y0 + Math.round(0.1 * (y1 - y0)); y < lim; y++) {
+        let dark = 0;
+        for (let x = x0; x <= x1; x += 2) { const i = (y * W + x) * 4; if (!isCard(i) && 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 105) dark++; }
+        if (dark * 2 > 0.6 * cw) { cut = y - Math.round(0.01 * (y1 - y0)); break; }
+      }
+      y1 = cut;
+    }
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-    const ppm = Math.max(bw, bh) / 250;                               // a 25 cm card, near enough to size letters
     const mask = new Uint8Array(bw * bh);
+    // ink: in the header, anything well darker than the card itself (a thin pen stroke blends into the card's colour and
+    // would pass for card); elsewhere dark and not card-coloured
+    let inkBelow = 105;
+    if (opts.head) {
+      const ls = [];
+      for (let y = 0; y < bh; y += 3) for (let x = 0; x < bw; x += 3) { const i = ((y + y0) * W + x + x0) * 4; if (isCard(i)) ls.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]); }
+      ls.sort((a, b) => a - b);
+      if (ls.length > 50) inkBelow = 0.62 * ls[ls.length >> 1];
+    }
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
       const i = ((y + y0) * W + x + x0) * 4, lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      if (!isCard(i) && lum < 105) mask[y * bw + x] = 1;
+      if (opts.head ? lum < inkBelow : (!isCard(i) && lum < 105)) mask[y * bw + x] = 1;
     }
     // the printed grid: a line under 0.8 mm thick, at any tilt (a marker stroke is 1.5 mm and more). A pixel
     // goes when its run of dark across or down is that thin — where the grid crosses a letter the letter stays
     const thin = Math.max(3, Math.round(0.8 * ppm)), hr = new Uint16Array(bw * bh), vr = new Uint16Array(bw * bh);
     for (let y = 0; y < bh; y++) { let s = -1; for (let x = 0; x <= bw; x++) { const on = x < bw && mask[y * bw + x]; if (on && s < 0) s = x; if (!on && s >= 0) { for (let k = s; k < x; k++) hr[y * bw + k] = x - s; s = -1; } } }
     for (let x = 0; x < bw; x++) { let s = -1; for (let y = 0; y <= bh; y++) { const on = y < bh && mask[y * bw + x]; if (on && s < 0) s = y; if (!on && s >= 0) { for (let k = s; k < y; k++) vr[k * bw + x] = y - s; s = -1; } } }
-    for (let i = 0; i < mask.length; i++) if (mask[i] && Math.min(hr[i], vr[i]) <= thin) mask[i] = 0;
+    if (!opts.head) for (let i = 0; i < mask.length; i++) if (mask[i] && Math.min(hr[i], vr[i]) <= thin) mask[i] = 0;
     // shapes (8-neighbour), each pixel labelled
     const lab = new Int32Array(bw * bh), stack = new Int32Array(bw * bh), shapes = [];
     for (let p = 0; p < bw * bh; p++) {
@@ -7735,7 +7758,7 @@ function sopOpen() {
       shapes.push({ id, n: cnt, x: mnx, y: mny, w: mxx - mnx + 1, h: mxy - mny + 1 });
     }
     const lines = [];
-    for (const vertical of [false, true]) {
+    for (const vertical of opts.head ? [false] : [false, true]) {
       // a letter: 5–45 mm along the line's height, a stroke rather than a blob
       const T = s => vertical ? { a: s.y, b: s.x, la: s.h, lb: s.w } : { a: s.x, b: s.y, la: s.w, lb: s.h };
       const cand = shapes.filter(s => {
@@ -7844,18 +7867,23 @@ function sopOpen() {
     const unlike = code => traps.every(t => codeDistance(code, canon(shortCode(t.code))) >= 1.5);
     const agreed = () => [...known.values()].some(t => t.n >= 2) || (!known.size && [...fresh.values()].some(t => t.n >= 2 && unlike(t.f.code)));
     const TRIES = [[28, '7'], [36, '7'], [48, '7'], [28, '13'], [36, '13'], [48, '13']];
-    // at most eight readings in all: a card the reader cannot make out must not keep it busy for the next one
+    // at most six readings in all: a card the reader cannot make out must not keep it busy (the AI reads it next).
+    // The header band first (the code's usual spot, nothing wiped), then the whole card.
     let tries = 0;
+    const colour = cardColour(canvas);
     try {
-      for (const L of findWriting(canvas, cardColour(canvas))) {
-        for (const [h, psm] of TRIES) {
-          if (++tries > 8) break;
-          const r = await one(atHeight(L.line, h), psm);
-          if (!r.text) continue;
-          reads.push({ ...r, box: L.box }); vote(reads[reads.length - 1]);
+      for (const pass of [{ head: true }, {}]) {
+        for (const L of findWriting(canvas, colour, pass)) {
+          for (const [h, psm] of TRIES) {
+            if (++tries > 6) break;
+            const r = await one(atHeight(L.line, h), psm);
+            if (!r.text) continue;
+            reads.push({ ...r, box: L.box }); vote(reads[reads.length - 1]);
+            if (agreed()) break;
+          }
           if (agreed()) break;
         }
-        if (agreed()) break;
+        if (agreed() || tries > 6) break;
       }
     } catch (e) { console.warn('writing finder', e); }
     const top = m => [...m.values()].sort((x, y) => y.v - x.v)[0] || null;
@@ -8734,7 +8762,7 @@ function sopOpen() {
     [
       ['Today\u2019s sections are the tabs.', 'Each tab says how far along it is. Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day; a tab that says off today still opens on a tap.'],
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
-      ['Writing the position.', 'On each card, in black permanent marker: capitals about 2 cm high, on one line, apart from each other, on a clear part of the card (1B6, no dashes). Write it on both sides. If the phone cannot read it, press Read with AI or type it.'],
+      ['Writing the position.', 'Always the same spot: on the blue side, in the plain band at the top, above the three holes and at least 1 cm from the edge, clear of the holes and the hanging wire. Black marker, capitals about 1 cm high, on one line, a little apart (1B6, no dashes). Photograph the blue side first. A trap of the list is never read: tap it in the list. If a new card is not read, the AI reads it or you type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
