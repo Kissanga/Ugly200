@@ -1010,7 +1010,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.50';
+  const CURRENT_VERSION = '0.11.51';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1144,6 +1144,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.51', '2026-09-29', 'The AI reads a code the phone cannot', 'When Scan a trap finds no position on a card and there is signal, the AI reads the handwritten code by itself and fills it in; it stays a proposal until you press Yes, and never replaces what you typed or picked. Every other AI note is still only when pressed.'],
     ['0.11.50', '2026-09-29', 'A clearer scouting screen', 'The tabs say how far along each section is (Traps 5 of 12, Health 2 photos, Growth off today) and a greyed tab still opens. Traps is the list of the unit traps by zone: a ring to do, half a ring with one side left, the colour when done; tap one to photograph it, tap a done one for its counts; the dots mark one taken down or out of reach. A card not in the list: Scan, then one sheet asks which trap it is and goes straight to the other side. One finish bar: Not OK (with why), or All OK and finish. The long explanations are behind the question mark.'],
     ['0.11.49', '2026-09-29', 'Insects sized on the grid', 'The insects on a trap are now sized against the card printed 23 mm grid, measured in each photo, instead of assuming a 25 cm card: the old way read FarmLab cards about 30 percent small, so insects were sized a class too big. Tilted or partly cropped cards still measure right; without a visible grid the card length is used as before.'],
     ['0.11.48', '2026-09-29', 'Measure on a ruler or tape', 'A growth photo with a ruler or tape measure instead of the scale card can be measured: tap two marks on the tape far apart, say the centimetres between them, then tap the two ends of the fruit as usual. The AI note reads sizes against a ruler or tape too.'],
@@ -8121,6 +8122,9 @@ function sopOpen() {
     }
     // A card not in the list: which trap is it? The reader's proposal (or the AI's, or a pick from the traps not
     // photographed yet) in one sheet; Yes confirms it and opens the camera for the other side at once.
+    // 0.11.51 (owner: "ok for 2"): when the phone's reader finds no position and there is signal, the AI reads the
+    // code by itself — the one exception to "AI only when pressed", for this small read and nothing else; what it
+    // reads is still a proposal until Yes.
     function codeSheet(p, card, canvas) {
       const sheet = el('div', 'fb-sheet');
       const box = el('div', 'fb-sheet-card fb-codesheet');
@@ -8134,10 +8138,11 @@ function sopOpen() {
       const yes = el('button', 'fb-btn fb-btn-primary', missing ? `Yes — now the ${missing[1].toLowerCase()}` : 'Yes'); yes.type = 'button';
       const ai = el('button', 'fb-btn fb-ai', '✦ Read with AI'); ai.type = 'button';
       const later = el('button', 'fb-link', 'Later'); later.type = 'button';
-      let touched = false, reading = true, source = 'text';
+      let touched = false, reading = true, asking = false, source = 'text';
       const paintWhat = () => {
         const v = canon(inp.value), pc = parseTrapCode(v);
-        if (!v) what.textContent = reading ? 'Reading the code…' : (p.code_read ? `Read "${p.code_read}" — write the position` : 'Write the position on the card, like 1B6');
+        if (!v) what.textContent = reading ? 'Reading the code…' : asking ? 'Asking the AI to read it…'
+          : (p.code_read ? `Read "${p.code_read}" — write the position` : 'Write the position on the card, like 1B6');
         else if (!pc.ok) what.textContent = 'Write it like 1B6: zone, row, metres';
         else what.textContent = traps.find(t => shortCode(t.code) === pc.code) ? 'A trap of the list' : `New trap · ${pc.n} · row ${pc.row} · ${pc.metres} m`;
       };
@@ -8154,9 +8159,11 @@ function sopOpen() {
         close(); card._paintTrap?.(); paintTabs(); paintCoverage(); saveScDraft(); askOtherSide(p, card);
       };
       later.onclick = () => { if (canon(inp.value)) setTrapCode(p, canon(inp.value), source); close(); card._paintTrap?.(); paintCoverage(); saveScDraft(); };
-      ai.onclick = async () => {
-        if (!navigator.onLine) { showToast('Reading with the AI needs a connection', 'error'); return; }
-        ai.disabled = true; ai.textContent = '✦ Reading…';
+      // auto: asked by the sheet itself — it never overwrites what the person typed or picked, and says a failure quietly
+      const askAi = async auto => {
+        if (!navigator.onLine) { if (!auto) showToast('Reading with the AI needs a connection', 'error'); return; }
+        if (asking) return;
+        asking = true; ai.disabled = true; ai.textContent = '✦ Reading…'; paintWhat();
         try {
           const image = await photoBase64(first);
           if (!image) throw new Error('this photo is not on the phone any more');
@@ -8164,22 +8171,29 @@ function sopOpen() {
             context: { codes: traps.map(x => shortCode(x.code)), read: p.code_read || null } }) });
           if (!r?.ok) throw new Error(r?.error || 'no answer');
           const seen = canon(r.ai?.code_seen), m = seen && traps.length ? matchCode([seen], traps) : null, f = m ? null : coerceCode(seen);
-          if (m || f) { inp.value = shortCode((m || f).code); touched = true; source = 'ai'; }
-          else showToast(seen ? `The AI read "${seen}" — not a position; type it` : 'The AI could not read a position on this card', 'error');
-          paintWhat();
-        } catch (e) { showToast('Read with AI: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); }
-        ai.disabled = false; ai.textContent = '✦ Read with AI';
+          if ((m || f) && !(auto && touched)) { inp.value = shortCode((m || f).code); touched = !auto; source = 'ai'; }
+          else if (!(m || f) && !auto) showToast(seen ? `The AI read "${seen}" — not a position; type it` : 'The AI could not read a position on this card', 'error');
+          else if (!(m || f) && seen) p.code_read = seen;
+        } catch (e) { if (!auto) showToast('Read with AI: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); else console.warn('AI code read', e); }
+        asking = false; ai.disabled = false; ai.textContent = '✦ Read with AI'; paintWhat();
       };
+      ai.onclick = () => askAi(false);
       const row = el('div', 'fb-actions'); row.append(yes, ai, later);
       box.append(el('h3', null, 'Which trap is this?'), img, inp, what);
       if (todo.length) box.append(el('div', 'fb-meta', 'Or one not photographed yet:'), picks);
       box.append(row);
       sheet.append(box); document.body.append(sheet);
+      let found = false;
       readTrapCode(canvas, traps).then(r => {
         p.code_read = r.text || null;
         const v = r.trap ? shortCode(r.trap.code) : r.fresh ? shortCode(r.fresh.code) : '';
+        if (v) found = true;
         if (!touched && v) { inp.value = v; source = 'text'; }
-      }).catch(e => console.warn('text reader', e)).finally(() => { reading = false; paintWhat(); saveScDraft(); });
+      }).catch(e => console.warn('text reader', e)).finally(() => {
+        reading = false; paintWhat(); saveScDraft();
+        // nothing found, nothing typed, the sheet still open: the AI reads it
+        if (!found && !touched && sheet.isConnected) askAi(true);
+      });
     }
     async function addSide(p, side, card, fromGallery) {
       let f = null;
@@ -8664,7 +8678,7 @@ function sopOpen() {
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
-      ['AI note.', 'Only when you press it, one photo at a time; it needs signal.'],
+      ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
       ['Finish.', 'All OK · finish at the bottom, or Not OK first (with why): the phone says what is still missing and, on a trap day, asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
       ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
     ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), document.createTextNode(t)); list.append(li); });
