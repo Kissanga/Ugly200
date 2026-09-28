@@ -872,6 +872,14 @@
     .fb-sc-n { font-size: 11px; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #0d2b27; }
     .fb-sc-n.nok { background: var(--coral); color: #fff; }
     .fb-sc-add { margin: var(--space-3) 0; }
+    .fb-sc-end { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+    .fb-sc-first { font-weight: 600; }
+    .fb-missing { max-height: 80vh; overflow-y: auto; }
+    .fb-miss-row { padding: 10px 0; border-top: 1px solid var(--border); }
+    .fb-miss-code { font-family: ui-monospace, monospace; font-weight: 800; font-size: var(--text-base); }
+    .fb-miss-row .fb-actions { margin-top: 6px; align-items: center; }
+    .fb-miss-row .fb-btn[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
+    .fb-btn[disabled] { opacity: .45; }
     .fb-sc-more { display:flex; align-items:center; gap: 10px; flex-wrap: wrap; margin: -6px 0 var(--space-2); font-size: var(--text-xs); color: var(--text-muted); }
     .fb-sc-more .fb-link { padding: 4px 0; }
     .fb-sc-missed { font-weight: 600; }
@@ -945,7 +953,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.42';
+  const CURRENT_VERSION = '0.11.43';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1079,6 +1087,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.43', '2026-09-29', 'Traps by the code on the card', 'A trap is known by the code written on its card: position and the day it was hung, 1B6D0101 = zone 1, row B, 6 m, hung 1 January (the full year may be added). The first round just asks to photograph every trap, and a new card is added by itself from its code. At Finish, the traps not photographed on a trap day are listed: Taken down, Forgot (photograph it now) or Cannot reach it today with a reason for the manager. The Finish tab is gone: OK, Not OK and the note sit just above the Finish button.'],
     ['0.11.42', '2026-09-29', 'Scouting sections on their days', 'The daily scouting shows only the sections due that day: Traps on Monday, Wednesday and Friday, Growth on Tuesday and Thursday, Plant health every working day (the days are set on the procedure in the console). A holiday moves them to the next working day, and a trap or growth day that was missed comes back the next day. The others can still be opened by hand under the tabs. At least one trap photo only on a trap day.'],
     ['0.11.41', '2026-09-29', 'Lens, close-up and zoom in the camera', 'The camera inside the app has a lens button (the next back lens: on many phones the ultra-wide one focuses closest), a Close-up button (focus as near as the lens can, for small insects and eggs) and a zoom slider with 1x and 2x. Each shows only where the phone offers it, and the choice is remembered for traps, plant health and growth separately.'],
     ['0.11.40', '2026-09-29', 'Scouting in four sections; edit a done task', 'The daily scouting is Traps, Plant health, Growth and Finish, filled in any order. Trap photos: at least one, the code read off the card, the count with a green, orange or red colour for the new insects a week, a note and Replaced. Plant health and growth photos carry the position (3B8) or the GPS; a growth photo finds the printed scale card and sizes are measured on it with two taps. An AI note under any photo, only when its button is pressed. Finish: OK, or Not OK with a note that tells the manager. The task list folds the earlier days (a red dot when something was left undone), keeps today open and the days ahead closed; a done task can be opened and edited. Settings: upload photos on Wi-Fi only, or Wi-Fi and mobile data.'],
@@ -7463,7 +7472,7 @@ function sopOpen() {
   const PARTS = [['leaf', 'Leaf'], ['fruit', 'Fruit'], ['root', 'Root'], ['stem', 'Stem'], ['whole', 'Whole plant'], ['other', 'Other']];
   const GROWTH_PARTS = [['fruit', 'Fruit'], ['leaf', 'Leaf'], ['whole', 'Whole plant']];
   const MEASURE_WHAT = [['diameter', 'Diameter'], ['length', 'Length'], ['width', 'Width'], ['height', 'Height']];
-  const SC_TABS = [['trap', 'Traps'], ['health', 'Plant health'], ['growth', 'Growth'], ['finish', 'Finish']];
+  const SC_TABS = [['trap', 'Traps'], ['health', 'Plant health'], ['growth', 'Growth']];   // OK / Not OK sit above Finish (0.11.43)
   const scDraftKey = task => 'scout2:' + (task.key || task.id);
   let scDraftTimer = null;
   function saveScDraft() {
@@ -7473,7 +7482,7 @@ function sopOpen() {
     scDraftTimer = setTimeout(async () => {
       try {
         await setKV(scDraftKey(r.task), { saved: Date.now(), tab: r.sc.tab, outcome: r.sc.outcome, outcomeNote: r.sc.outcomeNote,
-          lastPos: r.sc.lastPos, extra: [...r.sc.extra], photos: [...r.sc.photos.values()] });
+          lastPos: r.sc.lastPos, extra: [...r.sc.extra], status: [...r.sc.status], photos: [...r.sc.photos.values()] });
       } catch (e) { console.warn('scouting draft not saved', e); }
     }, 250);
   }
@@ -7550,11 +7559,51 @@ function sopOpen() {
     }
     return d[a.length][b.length];
   }
+  // A trap's code (FarmBox 0146): where it hangs and the day it was hung — 1B6D0101 or 1B6D01012026 = zone
+  // (or bay) 1, row B, 6 m from the corridor, hung 1 January. The short date takes the latest year not in
+  // the future. An old code without a date (3B8) still works. The same rule as app.parse_trap_code.
+  function parseTrapCode(raw, today = new Date()) {
+    const v = String(raw || '').toUpperCase().replace(/[\s\-_.·/]/g, '');
+    const m = /^([0-9]+)([A-Z]+)([0-9]+(?:,[0-9]+)?)(?:D([0-9]{2})([0-9]{2})([0-9]{4})?)?$/.exec(v);
+    if (!m) return { ok: false, code: v };
+    const spot = m[1] + m[2] + m[3];
+    let hung = null;
+    if (m[4]) {
+      const dd = +m[4], mm = +m[5], lim = new Date(today.getTime() + 864e5);
+      const mk = y => { const d = new Date(y, mm - 1, dd, 12); return d.getMonth() === mm - 1 && d.getDate() === dd ? d : null; };
+      let d = mk(m[6] ? +m[6] : today.getFullYear());
+      if (!d) return { ok: false, code: v, why: 'that date is not a real day' };
+      if (!m[6] && d > lim) d = mk(today.getFullYear() - 1);
+      if (!d || d > lim) return { ok: false, code: v, why: 'that date is in the future' };
+      hung = d;
+    }
+    const full = hung ? 'D' + String(hung.getDate()).padStart(2, '0') + String(hung.getMonth() + 1).padStart(2, '0') + hung.getFullYear() : '';
+    return { ok: true, code: spot + full, spot, n: m[1], row: m[2], metres: m[3].replace(',', '.'), hung };
+  }
+  const shortCode = c => String(c || '').replace(/^(.*D\d{4})\d{4}$/, '$1');         // 1B6D01012026 → 1B6D0101
+  const hungWords = h => h ? new Date(h).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+  // what the text reader saw, bent into a code: digits where digits belong, letters where letters do
+  const TO_DIGIT = { O: '0', Q: '0', D: '0', I: '1', L: '1', S: '5', B: '8', Z: '2', G: '6', T: '7' };
+  const TO_LETTER = { '0': 'O', '1': 'I', '5': 'S', '8': 'B', '2': 'Z', '6': 'G', '7': 'T' };
+  function coerceCode(raw) {
+    const s0 = canon(raw);
+    const dig = x => [...x].map(c => /\d/.test(c) ? c : TO_DIGIT[c] || '?').join('');
+    const let_ = x => [...x].map(c => /[A-Z]/.test(c) ? c : TO_LETTER[c] || '?').join('');
+    for (let zl = 1; zl <= 2; zl++) for (let rl = 1; rl <= 2; rl++) for (let ml = 1; ml <= 2; ml++) {
+      const z = dig(s0.slice(0, zl)), r = let_(s0.slice(zl, zl + rl)), mt = dig(s0.slice(zl + rl, zl + rl + ml)), rest = s0.slice(zl + rl + ml);
+      if (z.length < zl || r.length < rl || mt.length < ml || /\?/.test(z + r + mt)) continue;
+      if (!rest || !/^[D0O]/.test(rest) || ![5, 9].includes(rest.length)) continue;     // a new card carries its date
+      const p = parseTrapCode(z + r + mt + 'D' + dig(rest.slice(1)));
+      if (p.ok) return p;
+    }
+    return null;
+  }
   function matchCode(words, traps) {
     const w = words.map(canon).filter(x => x.length >= 1);
     const cands = new Set();
     w.forEach((x, i) => { cands.add(x); if (w[i + 1]) cands.add(x + w[i + 1]); if (w[i + 2]) cands.add(x + w[i + 1] + w[i + 2]); });
-    const scored = traps.map(t => ({ trap: t, d: Math.min(Infinity, ...[...cands].filter(c => c.length >= 2).map(c => codeDistance(c, canon(t.code)))) }))
+    const forms = t => [...new Set([canon(t.code), canon(shortCode(t.code))])];
+    const scored = traps.map(t => ({ trap: t, d: Math.min(Infinity, ...[...cands].filter(c => c.length >= 2).flatMap(c => forms(t).map(f => codeDistance(c, f)))) }))
       .sort((a, b) => a.d - b.d);
     // one wrong character is enough when no other code is near; up to one and a half when every other code is far off
     const gap = scored[1] ? scored[1].d - scored[0].d : Infinity;
@@ -7566,7 +7615,11 @@ function sopOpen() {
     const { data } = await w.recognize(scaleCanvas(canvas, 1400));
     const words = (data.words || []).map(x => x.text).filter(Boolean);
     const list = words.length ? words : String(data.text || '').split(/\s+/);
-    return { text: canon(list.join(' ')).slice(0, 24), trap: matchCode(list, traps) };
+    const known = traps.length ? matchCode(list, traps) : null;
+    // not a card of the list: the first word (or two joined) that makes a dated code is a new card
+    let fresh = null;
+    if (!known) for (const c of [...list, ...list.slice(0, -1).map((x, i) => x + list[i + 1])]) { fresh = coerceCode(c); if (fresh) break; }
+    return { text: canon(list.join(' ')).slice(0, 24), trap: known, fresh };
   }
 
   // ── the AI note on one photo, only when pressed ─────────────────────────
@@ -7589,6 +7642,17 @@ function sopOpen() {
     return [a.summary, a.stage ? `Stage: ${a.stage}.` : '', sizes ? `Sizes: ${sizes}.` : '', a.recommendation].filter(Boolean).join(' ');
   }
 
+  function cardColour(canvas) {
+    const W = canvas.width, H = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+    let y = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4 * 7) {
+      const r = d[i], g = d[i + 1], bl = d[i + 2];
+      if (r > 140 && g > 110 && bl < 120 && r - bl > 60 && g - bl > 40) y++;
+      else if (bl > 110 && bl > r + 40 && bl > g + 10) b++;
+    }
+    return b > y ? 'blue' : 'yellow';
+  }
+
   // ── the screen ──────────────────────────────────────────────────────────
   async function scoutSections(task, sop, detail) {
     const traps = (await all('traps')).filter(t => t.active !== false && (!t.farm_id || !task.farm_id || t.farm_id === task.farm_id))
@@ -7596,16 +7660,16 @@ function sopOpen() {
     const th = (await getKV('ipm_threshold')) || { watch: 25, over: 50 };
     const trapById = new Map(traps.map(t => [t.id, t]));
     const crops = [...new Map(task.positions.flatMap(p => Array.isArray(p.crops) ? p.crops : []).map(c => [c.id, c])).values()];
-    const sc = run.sc = { tab: 'trap', photos: new Map(), outcome: null, outcomeNote: '', lastPos: '', traps, th, extra: new Set() };
+    const sc = run.sc = { tab: 'trap', photos: new Map(), outcome: null, outcomeNote: '', lastPos: '', traps, th, extra: new Set(), status: new Map() };
     let draft = null;
     try { draft = await getKV(scDraftKey(task)); } catch (e) { /* none */ }
     if (draft && Date.now() - (draft.saved || 0) < 24 * 3600000) {
       (draft.photos || []).forEach(p => sc.photos.set(p.ref, p));
       Object.assign(sc, { tab: draft.tab || 'trap', outcome: draft.outcome || null, outcomeNote: draft.outcomeNote || '', lastPos: draft.lastPos || '',
-                          extra: new Set(draft.extra || []) });
+                          extra: new Set(draft.extra || []), status: new Map(draft.status || []) });
     } else if (detail) {
       // editing a scouting already sent: what the server holds
-      (detail.traps || []).forEach((r, i) => sc.photos.set('tr-' + i, { ref: 'tr-' + i, section: 'trap', trap_id: r.trap_id, taken_at: r.read_at,
+      (detail.traps || []).forEach((r, i) => sc.photos.set('tr-' + i, { ref: 'tr-' + i, section: 'trap', trap_id: r.trap_id, code: r.code, code_text: shortCode(r.code), taken_at: r.read_at,
         thumb: r.photo_data, photo_path: r.photo_path, total: r.total, algo_total: r.algo_total, counts: r.counts, corrected: r.corrected,
         algorithm: r.algorithm, confidence: r.confidence, replaced: r.replaced, note: r.notes || '', code_read: r.code_read,
         code_source: r.code_source || 'list', gps: r.gps, ai: r.ai, week_rate: r.week_rate, orig_total: r.total }));
@@ -7637,9 +7701,9 @@ function sopOpen() {
       if (prev && (!lastDone[k] || lastDone[k] < prev.planned_date)) { sc.due[k] = true; sc.missed[k] = prev.planned_date; }
     }
     [...sc.photos.values()].forEach(p => { if (!sc.due[p.section]) sc.extra.add(p.section); });
-    const shown = k => k === 'finish' || !!sc.due[k] || sc.extra.has(k);
-    if (!shown(sc.tab)) sc.tab = SC_TABS.find(([k]) => shown(k))[0];
-    if (navigator.onLine && traps.length && shown('trap')) ocr().catch(() => {});   // warm the text reader while the person walks to the first trap
+    const shown = k => !!sc.due[k] || sc.extra.has(k);
+    if (!shown(sc.tab)) sc.tab = (SC_TABS.find(([k]) => shown(k)) || SC_TABS[1])[0];
+    if (navigator.onLine && shown('trap')) ocr().catch(() => {});   // warm the text reader while the person walks to the first trap
 
     const box = el('div', 'fb-sc');
     const tabs = el('div', 'fb-sc-tabs');
@@ -7666,20 +7730,19 @@ function sopOpen() {
     };
     box.append(tabs, more, ...SC_TABS.map(([k]) => panes[k]));
     const count = k => [...sc.photos.values()].filter(p => p.section === k).length;
-    function paintTabs() {
+    let paintTabs = function () {
       SC_TABS.forEach(([k, label]) => {
-        const n = k === 'finish' ? null : count(k);
+        const n = count(k);
         tabBtns[k].textContent = '';
         tabBtns[k].append(el('span', null, label));
         if (n) tabBtns[k].append(el('b', 'fb-sc-n', String(n)));
-        if (k === 'finish' && sc.outcome) tabBtns[k].append(el('b', 'fb-sc-n ' + sc.outcome, sc.outcome === 'ok' ? 'OK' : 'NOK'));
         tabBtns[k].setAttribute('aria-pressed', String(sc.tab === k));
         tabBtns[k].classList.toggle('hidden', !shown(k));
         panes[k].classList.toggle('hidden', sc.tab !== k);
       });
       paintMore();
       $('finish').textContent = run.edit ? 'Save the changes' : 'Finish';
-    }
+    };
 
     // one hidden picker for the gallery, used by every section
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.style.display = 'none';
@@ -7712,9 +7775,10 @@ function sopOpen() {
       const c1600 = scaleCanvas(big.canvas, 1600);
       big = null;
       if (section === 'trap') {
-        Object.assign(p, { trap_id: forTrap?.id || null, code_source: forTrap ? 'list' : null, replaced: false });
+        Object.assign(p, { trap_id: forTrap?.id || null, code: forTrap?.code || null, code_text: forTrap ? shortCode(forTrap.code) : '',
+                           code_source: forTrap ? 'list' : null, replaced: false, colour: forTrap?.colour || cardColour(c1600) });
         try {
-          const r = countInsects(c1600, forTrap || { colour: 'yellow' });
+          const r = countInsects(c1600, forTrap || { colour: p.colour });
           Object.assign(p, { counts: r.counts, total: r.total, algo_total: r.total, algorithm: r.algorithm, confidence: r.confidence, corrected: false });
         } catch (e) { p.total = null; }
       } else {
@@ -7727,16 +7791,31 @@ function sopOpen() {
       lists[section].prepend(card);
       paintTabs(); paintCoverage(); saveScDraft();
       if (section !== 'trap' && await gpsAllowed()) { const g = await getGps(); if (g) { p.gps = g; card._paintPos?.(); saveScDraft(); } }
-      if (section === 'trap' && !p.trap_id && traps.length) {
+      if (section === 'trap' && !p.code) {
         card._codeState?.('reading the code…');
         try {
           const r = await readTrapCode(c1600, traps);
           p.code_read = r.text || null;
-          if (r.trap && !p.trap_id) { p.trap_id = r.trap.id; p.code_source = 'text'; recount(p, c1600); }
+          if (!p.code && r.trap) { setTrapCode(p, shortCode(r.trap.code), 'text'); recount(p, c1600); }
+          else if (!p.code && r.fresh) setTrapCode(p, shortCode(r.fresh.code), 'text');
         } catch (e) { console.warn('text reader', e); }
         card._paintTrap?.(); paintCoverage(); saveScDraft();
       }
     }
+    // the code of a trap photo: a card of the list (known), or a new card from its code — added, no question (0146)
+    function setTrapCode(p, text, source) {
+      p.code_text = String(text || '').toUpperCase().replace(/\s/g, '');
+      const pc = parseTrapCode(p.code_text);
+      if (!pc.ok) { p.code = null; p.trap_id = null; p.hung = null; p.code_why = pc.why || null; return; }
+      const known = traps.find(t => t.code === pc.code) || (!pc.hung ? null : traps.find(t => shortCode(t.code) === shortCode(pc.code)));
+      p.code = known ? known.code : pc.code; p.trap_id = known ? known.id : null;
+      p.hung = pc.hung ? pc.hung.toISOString().slice(0, 10) : null; p.code_why = null;
+      if (source) p.code_source = source;
+    }
+    const codeWords = p => {
+      const pc = parseTrapCode(p.code || '');
+      return pc.ok ? `${pc.n} · row ${pc.row} · ${pc.metres} m${pc.hung ? ' · hung ' + hungWords(pc.hung) : ''}` : '';
+    };
     // a card of a known size and colour counts better: count again once the trap is known
     function recount(p, canvas) {
       const t = trapById.get(p.trap_id);
@@ -7754,12 +7833,15 @@ function sopOpen() {
         if (t.last_read_at && t.last_total != null) { since = new Date(t.last_read_at); fresh = t.last_replaced ? p.total : Math.max(0, p.total - t.last_total); }
         else if (t.installed_at) since = new Date(t.installed_at + 'T08:00:00');
         if (since) rate = Math.round(fresh / Math.max(0.5, (new Date(p.taken_at) - since) / 86400000) * 7 * 10) / 10;
+      } else if (p.hung) {                                             // a new card: everything on it since it was hung
+        since = new Date(p.hung + 'T08:00:00');
+        rate = Math.round(p.total / Math.max(0.5, (new Date(p.taken_at) - since) / 86400000) * 7 * 10) / 10;
       }
       const v = rate ?? p.total;
       const tone = v >= th.over ? 'red' : v >= th.watch ? 'orange' : 'green';
       const word = { red: 'high', orange: 'watch', green: 'low' }[tone];
       const text = rate != null
-        ? (since ? `+${fresh} since ${since.toLocaleDateString(undefined, { weekday: 'short' })} · ${Math.round(rate)} a week · ${word}` : `${Math.round(rate)} a week · ${word}`)
+        ? (since ? `+${fresh} since ${(new Date(p.taken_at) - since) < 6 * 864e5 ? since.toLocaleDateString(undefined, { weekday: 'short' }) : since.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${Math.round(rate)} a week · ${word}` : `${Math.round(rate)} a week · ${word}`)
         : `${p.total} on the card · ${word}`;
       return { tone, text };
     }
@@ -7773,7 +7855,7 @@ function sopOpen() {
         try {
           const t = trapById.get(p.trap_id);
           const context = p.section === 'trap'
-            ? { trap_code: t?.code || null, colour: t?.colour || 'yellow', size: t?.width_cm ? `${t.width_cm} × ${t.height_cm} cm` : null, count: p.total, codes: traps.map(x => x.code), note: p.note || null }
+            ? { trap_code: p.code || null, colour: t?.colour || p.colour || 'yellow', size: t?.width_cm ? `${t.width_cm} × ${t.height_cm} cm` : null, count: p.total, codes: traps.map(x => shortCode(x.code)), note: p.note || null }
             : { part: p.part, position: p.pos_code || null, note: p.note || null, scale_found: !!p.px_per_mm,
                 crop: crops.find(c => c.id === p.crop_id)?.name || null, crops: crops.map(c => c.name) };
           const image = await photoBase64(p);
@@ -7781,9 +7863,10 @@ function sopOpen() {
           const r = await api('/functions/v1/photo-note', { method: 'POST', body: JSON.stringify({ farm_id: task.farm_id || farm.id, kind: p.section, image, context }) });
           if (!r?.ok) throw new Error(r?.error || 'no answer');
           p.ai = r.ai;
-          if (p.section === 'trap' && !p.trap_id && r.ai.code_seen) {
-            const m = matchCode([r.ai.code_seen], traps);
-            if (m) { p.trap_id = m.id; p.code_source = 'ai'; card._paintTrap?.(); paintCoverage(); }
+          if (p.section === 'trap' && !p.code && r.ai.code_seen) {
+            const m = traps.length ? matchCode([r.ai.code_seen], traps) : null;
+            const f = m ? null : coerceCode(r.ai.code_seen);
+            if (m || f) { setTrapCode(p, shortCode((m || f).code), 'ai'); card._paintTrap?.(); paintCoverage(); }
           }
           box.textContent = aiText(p); box.classList.remove('hidden');
           saveScDraft();
@@ -7853,24 +7936,22 @@ function sopOpen() {
       drop.onclick = () => { if (!confirm('Remove this photo?')) return; sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
 
       if (p.section === 'trap') {
-        const sel = el('select', 'fb-num fb-sc-code'); sel.setAttribute('aria-label', 'Which trap');
+        const sel = el('input', 'fb-num fb-sc-code'); sel.type = 'text'; sel.placeholder = '1B6D0101';
+        sel.setAttribute('autocapitalize', 'characters'); sel.setAttribute('autocomplete', 'off'); sel.spellcheck = false;
+        sel.setAttribute('aria-label', 'The code written on the card');
+        if (traps.length) { const dl = el('datalist'); dl.id = 'fb-trapcodes-' + p.ref; traps.forEach(t => { const o = el('option'); o.value = shortCode(t.code); dl.append(o); }); sel.setAttribute('list', dl.id); side.append(dl); }
         const src = el('span', 'fb-chip');
         const num = el('input', 'fb-num'); num.type = 'number'; num.min = '0'; num.step = '1'; num.setAttribute('aria-label', 'Insects on the card');
         const said = el('span', 'fb-chip');
         const lvl = el('div', 'fb-sc-level');
-        const fillSel = () => {
-          sel.textContent = '';
-          const o0 = el('option', null, traps.length ? 'Which trap?' : 'No trap registered'); o0.value = ''; sel.append(o0);
-          const used = new Set([...sc.photos.values()].filter(x => x.section === 'trap' && x.ref !== p.ref).map(x => x.trap_id));
-          traps.forEach(t => { const o = el('option', null, t.code + (used.has(t.id) ? ' ✓' : '')); o.value = t.id; sel.append(o); });
-          sel.value = p.trap_id || '';
-        };
         card._codeState = text => { src.textContent = text; src.className = 'fb-chip'; };
         card._paintTrap = () => {
-          fillSel();
-          src.textContent = !p.trap_id ? (p.code_read ? `read "${p.code_read}" — choose` : 'choose the trap')
-            : p.code_source === 'text' ? 'read from the card' : p.code_source === 'ai' ? 'read by the AI' : 'chosen';
-          src.className = 'fb-chip' + (p.trap_id ? ' ok' : ' late');
+          if (document.activeElement !== sel) sel.value = p.code_text || '';
+          const how = p.code_source === 'text' ? ' · read from the card' : p.code_source === 'ai' ? ' · read by the AI' : '';
+          src.textContent = !p.code_text ? (p.code_read ? `read "${p.code_read}" — write the code` : 'write the code on the card')
+            : !p.code ? (p.code_why || 'write it like 1B6D0101')
+            : p.trap_id ? 'known trap' + how : `new trap · ${codeWords(p)}${how}`;
+          src.className = 'fb-chip' + (p.code ? ' ok' : ' late');
           num.value = p.total == null ? '' : String(p.total);
           said.textContent = p.algo_total != null ? (p.total !== p.algo_total ? `phone said ${p.algo_total}` : 'counted by the phone') : '';
           const l = level(p);
@@ -7878,7 +7959,8 @@ function sopOpen() {
           lvl.className = 'fb-sc-level ' + (l ? l.tone : '');
           card.dataset.tone = l ? l.tone : '';
         };
-        sel.onchange = () => { p.trap_id = sel.value || null; p.code_source = 'list'; card._paintTrap(); paintCoverage(); saveScDraft(); };
+        sel.oninput = () => { const v = sel.value.toUpperCase().replace(/\s/g, ''); if (v !== sel.value) sel.value = v;
+                              setTrapCode(p, v, 'typed'); card._paintTrap(); paintCoverage(); saveScDraft(); };
         num.oninput = () => { const n = parseInt(num.value, 10); p.total = isNaN(n) ? null : n; p.corrected = p.algo_total != null && p.total !== p.algo_total; card._paintTrap(); saveScDraft(); };
         const l1 = el('div', 'fb-actions'); l1.append(sel, src);
         const l2 = el('div', 'fb-actions'); l2.append(el('span', 'fb-trap-lbl', 'Insects'), num, said);
@@ -7938,19 +8020,24 @@ function sopOpen() {
     const cover = el('div', 'fb-sc-cover');
     function paintCoverage() {
       cover.textContent = '';
-      if (!traps.length) { cover.append(el('div', 'config-hint', 'No sticky trap is registered for this unit — add them in the console (Pest & diseases › Traps…).')); return; }
+      if (!traps.length) {
+        const n = [...sc.photos.values()].filter(x => x.section === 'trap').length;
+        cover.append(el('div', 'fb-hold fb-sc-first', 'First round: photograph every trap. Each card is added from the code written on it — 1B6D0101 = zone 1, row B, 6 m from the corridor, hung 1 January.'),
+                     el('div', 'fb-sec', `${n} trap${n === 1 ? '' : 's'} photographed`));
+        return;
+      }
       const done = new Set([...sc.photos.values()].filter(x => x.section === 'trap' && x.trap_id).map(x => x.trap_id));
       cover.append(el('div', 'fb-sec', `${done.size} of ${traps.length} traps today`));
       const rest = traps.filter(t => !done.has(t.id));
       if (rest.length) {
         const row = el('div', 'fb-actions');
-        rest.slice(0, 40).forEach(t => { const b = el('button', 'fb-btn fb-sc-todo', t.code); b.type = 'button'; b.title = 'Photograph trap ' + t.code; b.onclick = () => shoot('trap', t); row.append(b); });
+        rest.slice(0, 40).forEach(t => { const b = el('button', 'fb-btn fb-sc-todo', shortCode(t.code)); b.type = 'button'; b.title = 'Photograph trap ' + shortCode(t.code); b.onclick = () => shoot('trap', t); row.append(b); });
         cover.append(row);
       }
     }
     const missedLine = k => sc.missed[k] ? el('div', 'fb-hold fb-sc-missed', `Not done ${/^(Yesterday|Today|Tomorrow)$/.test(fmtDay(sc.missed[k])) ? fmtDay(sc.missed[k]).toLowerCase() : 'on ' + fmtDay(sc.missed[k])} — due today.`) : '';
     lists.trap = el('div');
-    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph the traps you check — at least one — square-on, the code written on the card in the picture. The phone reads the code and counts; correct either if it is wrong. The colour is the new insects a week.'),
+    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph every trap, square-on, the code written on the card in the picture (1B6D0101). The phone reads the code and counts; correct either if it is wrong. A new card is added by itself. The colour is the new insects a week.'),
                       addBar('trap', 'Trap photo'), cover, lists.trap);
     // Plant health
     lists.health = el('div');
@@ -7960,8 +8047,10 @@ function sopOpen() {
     lists.growth = el('div');
     panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit and leaves with the scale card beside them, flat and at the same distance. Tap a photo to measure it on the card.'),
                         addBar('growth', 'Growth photo'), lists.growth);
-    // Finish
-    const fin = panes.finish;
+    // the end, under every tab, just above Finish: OK / Not OK and a note (0.11.43)
+    const fin = el('div', 'fb-sc-end');
+    box.append(fin);
+    sc.shoot = shoot;
     const sum = el('div', 'fb-sec');
     const okRow = el('div', 'fb-actions fb-sc-outcome');
     const ok = el('button', 'fb-btn', 'OK'); ok.type = 'button';
@@ -7971,20 +8060,20 @@ function sopOpen() {
       ok.setAttribute('aria-pressed', String(sc.outcome === 'ok'));
       nok.setAttribute('aria-pressed', String(sc.outcome === 'nok'));
       outNote.placeholder = sc.outcome === 'nok' ? 'What is not OK? (the manager is told)' : 'Note (optional)';
-      sum.textContent = SC_TABS.filter(([k]) => k !== 'finish' && shown(k)).map(([k, l]) => `${l} ${count(k)}`).join(' · ');
-      paintTabs();
+      sum.textContent = 'Today · ' + SC_TABS.filter(([k]) => shown(k)).map(([k, l]) => `${l} ${count(k)}`).join(' · ');
     };
     ok.onclick = () => { sc.outcome = 'ok'; paintOutcome(); saveScDraft(); };
     nok.onclick = () => { sc.outcome = 'nok'; paintOutcome(); saveScDraft(); outNote.focus(); };
     outNote.oninput = () => { sc.outcomeNote = outNote.value; saveScDraft(); };
     okRow.append(ok, nok);
     fin.append(sum, el('div', 'config-hint', 'Is everything in order? Not OK tells the manager at once — say why.'), okRow, outNote);
-    tabBtns.finish.addEventListener('click', paintOutcome);
+    const repaintTabs = paintTabs;
+    paintTabs = () => { repaintTabs(); paintOutcome(); };
 
     // the photos already taken (a draft, or a scouting being edited), newest on top
     [...sc.photos.values()].sort((a, b) => String(a.taken_at).localeCompare(String(b.taken_at)))
       .forEach(p => lists[p.section]?.prepend(photoCard(p)));
-    paintCoverage(); paintOutcome();
+    paintCoverage(); paintTabs();
     return box;
   }
 
@@ -8041,6 +8130,56 @@ function sopOpen() {
     draw(); paintBar();
   }
 
+  // The traps of the list not photographed today, before the scouting closes: Taken down (replaced or
+  // removed — it leaves the list; a new card is simply photographed), Forgot (photograph it now), or
+  // Can't reach it today with a reason, which goes to the manager.
+  function missingTraps(missing) {
+    const sc = run.sc;
+    const sheet = el('div', 'fb-sheet');
+    const card = el('div', 'fb-sheet-card fb-missing');
+    card.append(el('h3', null, `${missing.length} trap${missing.length === 1 ? '' : 's'} not photographed today`),
+                el('div', 'config-hint', 'Every trap is checked on a trap day. For each one:'));
+    const cont = el('button', 'fb-btn fb-btn-primary', 'Continue');
+    const ready = () => missing.every(t => { const x = sc.status.get(t.id); return x && (x.status === 'taken_down' || String(x.note || '').trim()); });
+    const paintCont = () => { cont.disabled = !ready(); };
+    missing.forEach(t => {
+      const row = el('div', 'fb-miss-row');
+      const pc = parseTrapCode(t.code);
+      row.append(el('div', 'fb-miss-code', shortCode(t.code)), el('div', 'fb-meta', pc.ok ? `${pc.n} · row ${pc.row} · ${pc.metres} m` : ''));
+      const acts = el('div', 'fb-actions');
+      const down = el('button', 'fb-btn', 'Taken down'); down.type = 'button';
+      down.title = 'Replaced or removed: this card leaves the list';
+      const forgot = el('button', 'fb-btn', 'Forgot — photograph it'); forgot.type = 'button';
+      const far = el('button', 'fb-link', 'Can’t reach it today'); far.type = 'button';
+      const note = el('input', 'fb-note hidden'); note.type = 'text'; note.placeholder = 'Why? (the manager is told)';
+      const paint = () => {
+        const x = sc.status.get(t.id);
+        down.setAttribute('aria-pressed', String(x?.status === 'taken_down'));
+        note.classList.toggle('hidden', x?.status !== 'unreachable');
+        far.textContent = x?.status === 'unreachable' ? 'Can’t reach it today ✓' : 'Can’t reach it today';
+        paintCont();
+      };
+      down.onclick = () => { sc.status.set(t.id, { status: 'taken_down' }); paint(); saveScDraft(); };
+      far.onclick = () => { sc.status.set(t.id, { status: 'unreachable', note: sc.status.get(t.id)?.note || '' }); paint(); note.focus(); saveScDraft(); };
+      note.value = sc.status.get(t.id)?.note || '';
+      note.oninput = () => { sc.status.set(t.id, { status: 'unreachable', note: note.value }); paintCont(); saveScDraft(); };
+      forgot.onclick = () => { sc.status.delete(t.id); saveScDraft(); sheet.remove(); sc.tab = 'trap'; document.querySelector('.fb-sc-tab')?.click(); sc.shoot?.('trap', t); };
+      acts.append(down, forgot, far);
+      row.append(acts, note);
+      card.append(row);
+      paint();
+    });
+    const back = el('button', 'fb-btn', 'Back'); back.type = 'button';
+    back.onclick = () => sheet.remove();
+    cont.onclick = () => { if (!ready()) return; sheet.remove(); finishScouting(); };
+    const bar = el('div', 'fb-actions'); bar.style.justifyContent = 'flex-end'; bar.style.marginTop = 'var(--space-3)';
+    bar.append(back, cont);
+    card.append(bar);
+    sheet.append(card);
+    document.body.append(sheet);
+    paintCont();
+  }
+
   // ── finishing a scouting ────────────────────────────────────────────────
   async function finishScouting() {
     const sc = run.sc;
@@ -8048,28 +8187,32 @@ function sopOpen() {
     const trapsP = photos.filter(p => p.section === 'trap');
     const plants = photos.filter(p => p.section !== 'trap');
     const stop = (tab, text, ref) => {
+      $('runHint').textContent = text;
+      if (tab === 'end') { document.querySelector('.fb-sc-end')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
       sc.tab = tab;
       document.querySelector(`.fb-sc-tab:nth-child(${SC_TABS.findIndex(x => x[0] === tab) + 1})`)?.click();
-      $('runHint').textContent = text;
       if (ref) document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
-    if (sc.traps.length && sc.due?.trap && !trapsP.length) return stop('trap', 'Take at least one trap photo — the traps are due today.');
-    const noCode = trapsP.find(p => !p.trap_id);
-    if (noCode) return stop('trap', 'A trap photo has no trap yet — choose it under the photo.', noCode.ref);
+    if (sc.due?.trap && !trapsP.length)
+      return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
+    const noCode = trapsP.find(p => !p.code);
+    if (noCode) return stop('trap', 'A trap photo has no code — write the code on the card (1B6D0101).', noCode.ref);
     const noNum = trapsP.find(p => p.total == null);
     if (noNum) return stop('trap', 'A trap photo has no count — type the number of insects.', noNum.ref);
     const seen = new Map();
     for (const p of trapsP) {
-      if (seen.has(p.trap_id)) {
-        const code = sc.traps.find(t => t.id === p.trap_id)?.code || '';
-        return stop('trap', `Trap ${code} has two photos — remove one.`, p.ref);
-      }
-      seen.set(p.trap_id, p);
+      if (seen.has(p.code)) return stop('trap', `Trap ${shortCode(p.code)} has two photos — remove one.`, p.ref);
+      seen.set(p.code, p);
     }
     const lost = plants.find(p => !placed(p));
     if (lost) return stop(lost.section, 'A photo has no position — write it (3B8) or use the GPS.', lost.ref);
-    if (!sc.outcome) return stop('finish', 'Choose OK or Not OK.');
-    if (sc.outcome === 'nok' && !String(sc.outcomeNote || '').trim()) return stop('finish', 'Say what is not OK — the manager is told.');
+    if (!sc.outcome) return stop('end', 'Choose OK or Not OK.');
+    if (sc.outcome === 'nok' && !String(sc.outcomeNote || '').trim()) return stop('end', 'Say what is not OK — the manager is told.');
+    // the traps of the list not photographed on a trap day: taken down, forgotten, or out of reach (0146)
+    const photographed = new Set(trapsP.map(p => p.trap_id).filter(Boolean));
+    const missing = !run.edit && sc.due?.trap ? sc.traps.filter(t => !photographed.has(t.id)) : [];
+    const open = missing.filter(t => { const x = sc.status.get(t.id); return !x || (x.status === 'unreachable' && !String(x.note || '').trim()); });
+    if (open.length) { $('runHint').textContent = ''; return missingTraps(missing); }
 
     $('finish').disabled = true;
     $('runHint').textContent = 'Saving…';
@@ -8085,7 +8228,8 @@ function sopOpen() {
       outcome: sc.outcome, outcome_note: String(sc.outcomeNote || '').trim() || null,
       steps: step ? [{ seq: step.seq, step_id: step.id, result: sc.outcome === 'ok' ? 'ok' : 'nok', note: String(sc.outcomeNote || '').trim() || null,
                        media: [], recorded_at: finished }] : [],
-      traps: trapsP.map(p => ({ trap_id: p.trap_id, code: trapById.get(p.trap_id)?.code || null, photo_data: p.thumb || null, photo_path: p.photo_path || null,
+      trap_status: missing.map(t => ({ trap_id: t.id, status: sc.status.get(t.id).status, note: sc.status.get(t.id).note || null })),
+      traps: trapsP.map(p => ({ trap_id: p.trap_id, code: p.code, colour: p.colour || null, photo_data: p.thumb || null, photo_path: p.photo_path || null,
         counts: p.counts || {}, total: p.total ?? 0, algo_total: p.algo_total ?? null, algorithm: p.algorithm || null, confidence: p.confidence ?? null,
         corrected: !!p.corrected, replaced: !!p.replaced, notes: p.note || null, read_at: p.taken_at, code_read: p.code_read || null,
         code_source: p.code_source || null, gps: p.gps || null, ai: p.ai || null })),
@@ -8094,7 +8238,7 @@ function sopOpen() {
         pos_code: parsePos(p.pos_code) ? p.pos_code : null, gps: p.gps || null, measures: p.measures || [], px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
     };
     const uploads = photos.filter(p => p.full instanceof Blob && !p.photo_path)
-      .map(p => p.section === 'trap' ? { kind: 'trap', ref: trapById.get(p.trap_id)?.code, blob: p.full } : { kind: 'observation', ref: p.ref, blob: p.full })
+      .map(p => p.section === 'trap' ? { kind: 'trap', ref: p.code, blob: p.full } : { kind: 'observation', ref: p.ref, blob: p.full })
       .filter(u => u.ref);
     run.task.members.forEach(m => { if (m.id === t.id) { m.status = 'done'; m.done_at = m.done_at || finished; } });
     await putAll('tasks', run.task.members.filter(m => m.id === t.id));
