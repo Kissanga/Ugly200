@@ -976,7 +976,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.46';
+  const CURRENT_VERSION = '0.11.47';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1110,6 +1110,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.47', '2026-09-29', 'Handwritten trap codes', 'The phone finds the handwritten position on the card: it wipes the printed grid, keeps the pen strokes, reads that one line at a few sizes until two readings agree, and matches it to the traps of the unit (digits for the zone and the metres, letters for the row); a reading close to a trap but not sure proposes nothing. About 2 seconds a trap. If it cannot, Read with AI sends the photo to the AI to read it, only when pressed. How the scouting works says how to write the code.'],
     ['0.11.46', '2026-09-29', 'A sharper camera', 'Tap the picture to focus there; the shutter focuses once more before it fires. Focus: auto or by hand, with a near to far slider, in place of Close-up. The photo is taken at the largest size up to 4000 px. A blurred photo asks whether to retake. Phone camera opens the phone camera app itself, with its macro and its sharpening.'],
     ['0.11.45', '2026-09-29', 'Two-sided traps, the code confirmed', 'Every trap is one card with a yellow side and a blue side. The phone reads the position and asks to confirm it or correct it; once confirmed the camera opens for the other side, without reading the code again. Each side is counted and has its own AI note; the trap colour is both sides together, in new insects a day.'],
     ['0.11.44', '2026-09-29', 'Trap positions, insects a day', 'A trap card carries only its position (1B6 = zone 1, row B, 6 m); the app keeps each card start itself, from Replaced or when the count drops hard. The colour is new insects a day since the photo before, so a card change keeps the curve going; the first photo of a trap starts the count. A How the scouting works panel at the top of the scouting explains the tabs, working in parallel and Finish.'],
@@ -7627,16 +7628,202 @@ function sopOpen() {
     if (!scored.length || !((scored[0].d <= 1 && gap >= 0.5) || (scored[0].d <= 1.5 && gap >= 1.25))) return null;
     return scored[0].trap;
   }
-  async function readTrapCode(canvas, traps) {
+  // ── the handwritten code (0.11.47, owner: "the text detection of id in traps looks not working …
+  // the trap id is written by hand in capital letters") ──────────────────────────────────────────
+  // Reading the whole photo made the text reader wade through the grid, the insects and the card's
+  // edge for loose words, and a marker code was lost among them. So the code is found first: the
+  // printed grid lines are wiped (anything thinner than 0.8 mm), what is left is split into shapes,
+  // and a letter is a shape 5–45 mm tall that is a stroke, not a solid blob (an insect is solid and
+  // under 9 mm). Letters standing side by side on one line (or one above the other, for a code
+  // written down the card) are the code. The line is redrawn black on white, its own strokes only,
+  // and read at three sizes in two line modes (the reader does best with letters ~28 px tall; read
+  // one by one, single letters came back empty); each reading is bent into the shape of a position
+  // (zone digits · row letters · metre digits) and the readings vote.
+  function findWriting(canvas, colour) {
+    const W = canvas.width, H = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+    const blue = colour === 'blue';
+    const isCard = i => { const r = d[i], g = d[i + 1], b = d[i + 2];
+      return blue ? (b > 110 && b > r + 40 && b > g + 10) : (r > 140 && g > 110 && b < 120 && r - b > 60 && g - b > 40); };
+    const xs = [], ys = []; let n = 0;
+    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (isCard((y * W + x) * 4) && ++n % 7 === 0) { xs.push(x); ys.push(y); }
+    let x0 = 0, y0 = 0, x1 = W - 1, y1 = H - 1;
+    if (xs.length > 50) {
+      xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+      const q = (a, p) => a[Math.min(a.length - 1, Math.floor(a.length * p))];
+      x0 = q(xs, 0.02); x1 = q(xs, 0.98); y0 = q(ys, 0.02); y1 = q(ys, 0.98);
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const ppm = Math.max(bw, bh) / 250;                               // a 25 cm card, near enough to size letters
+    const mask = new Uint8Array(bw * bh);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      const i = ((y + y0) * W + x + x0) * 4, lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      if (!isCard(i) && lum < 105) mask[y * bw + x] = 1;
+    }
+    // the printed grid: a line under 0.8 mm thick, at any tilt (a marker stroke is 1.5 mm and more). A pixel
+    // goes when its run of dark across or down is that thin — where the grid crosses a letter the letter stays
+    const thin = Math.max(3, Math.round(0.8 * ppm)), hr = new Uint16Array(bw * bh), vr = new Uint16Array(bw * bh);
+    for (let y = 0; y < bh; y++) { let s = -1; for (let x = 0; x <= bw; x++) { const on = x < bw && mask[y * bw + x]; if (on && s < 0) s = x; if (!on && s >= 0) { for (let k = s; k < x; k++) hr[y * bw + k] = x - s; s = -1; } } }
+    for (let x = 0; x < bw; x++) { let s = -1; for (let y = 0; y <= bh; y++) { const on = y < bh && mask[y * bw + x]; if (on && s < 0) s = y; if (!on && s >= 0) { for (let k = s; k < y; k++) vr[k * bw + x] = y - s; s = -1; } } }
+    for (let i = 0; i < mask.length; i++) if (mask[i] && Math.min(hr[i], vr[i]) <= thin) mask[i] = 0;
+    // shapes (8-neighbour), each pixel labelled
+    const lab = new Int32Array(bw * bh), stack = new Int32Array(bw * bh), shapes = [];
+    for (let p = 0; p < bw * bh; p++) {
+      if (!mask[p] || lab[p]) continue;
+      const id = shapes.length + 1; let sp = 0, cnt = 0, mnx = bw, mxx = 0, mny = bh, mxy = 0;
+      stack[sp++] = p; lab[p] = id;
+      while (sp) {
+        const q = stack[--sp]; cnt++;
+        const qx = q % bw, qy = (q - qx) / bw;
+        if (qx < mnx) mnx = qx; if (qx > mxx) mxx = qx; if (qy < mny) mny = qy; if (qy > mxy) mxy = qy;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = qx + dx, ny = qy + dy;
+          if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+          const r = ny * bw + nx;
+          if (mask[r] && !lab[r]) { lab[r] = id; stack[sp++] = r; }
+        }
+      }
+      shapes.push({ id, n: cnt, x: mnx, y: mny, w: mxx - mnx + 1, h: mxy - mny + 1 });
+    }
+    const lines = [];
+    for (const vertical of [false, true]) {
+      // a letter: 5–45 mm along the line's height, a stroke rather than a blob
+      const T = s => vertical ? { a: s.y, b: s.x, la: s.h, lb: s.w } : { a: s.x, b: s.y, la: s.w, lb: s.h };
+      const cand = shapes.filter(s => {
+        const t = T(s), fill = s.n / (s.w * s.h), thin = Math.max(s.w, s.h) >= 3 * Math.min(s.w, s.h);
+        return t.lb >= 5 * ppm && t.lb <= 45 * ppm && t.la <= 40 * ppm && (fill <= 0.62 || thin) && s.n >= 20;
+      }).map(s => ({ s, ...T(s) }));
+      // pieces of one letter (a broken stroke) stand over each other along the line
+      cand.sort((u, v) => u.a - v.a);
+      const chars = [];
+      for (const c of cand) {
+        const prev = chars.find(ch => Math.min(ch.a + ch.la, c.a + c.la) - Math.max(ch.a, c.a) > 0.6 * Math.min(ch.la, c.la)
+                                       && Math.min(ch.b + ch.lb, c.b + c.lb) - Math.max(ch.b, c.b) > -0.3 * Math.max(ch.lb, c.lb));
+        if (prev) { const a = Math.min(prev.a, c.a), b = Math.min(prev.b, c.b);
+          prev.la = Math.max(prev.a + prev.la, c.a + c.la) - a; prev.lb = Math.max(prev.b + prev.lb, c.b + c.lb) - b; prev.a = a; prev.b = b; prev.ids.push(c.s.id); }
+        else chars.push({ a: c.a, b: c.b, la: c.la, lb: c.lb, ids: [c.s.id] });
+      }
+      chars.sort((u, v) => u.a - v.a);
+      // letters on one line: overlapping across the line, of a like height, close along it
+      const used = new Set();
+      for (let i = 0; i < chars.length; i++) {
+        if (used.has(i)) continue;
+        const g = [chars[i]]; used.add(i);
+        for (let j = i + 1; j < chars.length; j++) {
+          if (used.has(j)) continue;
+          const last = g[g.length - 1], c = chars[j];
+          const over = Math.min(last.b + last.lb, c.b + c.lb) - Math.max(last.b, c.b);
+          const ratio = c.lb / last.lb, gap = c.a - (last.a + last.la);
+          if (over >= 0.45 * Math.min(last.lb, c.lb) && ratio > 0.45 && ratio < 2.2 && gap <= 1.1 * Math.max(last.lb, c.lb)) { g.push(c); used.add(j); }
+        }
+        if (g.length >= 2 && g.length <= 8) {
+          const hs = g.map(c => c.lb).sort((a, b) => a - b);
+          lines.push({ vertical, chars: g, score: Math.min(g.length, 6) * hs[hs.length >> 1] - (g.length > 6 ? 50 : 0) });
+        }
+      }
+    }
+    lines.sort((a, b) => b.score - a.score);
+    // redraw black on white, the letter's own pixels only, turned to read left to right
+    const draw = (ids, a0, b0, la, lb, vertical, turn) => {
+      const set = new Set(ids), k = 64 / lb, pad = 18;
+      const c = document.createElement('canvas');
+      c.width = Math.round(la * k) + 2 * pad; c.height = 64 + 2 * pad;
+      const cx = c.getContext('2d', { willReadFrequently: true });
+      const img = cx.createImageData(c.width, c.height); img.data.fill(255);
+      for (let v = 0; v < c.height; v++) for (let u = 0; u < c.width; u++) {
+        const A = a0 + (u - pad) / k, B = b0 + (v - pad) / k;
+        // across the card as it is; written down the card (tops to the right) turned back a quarter;
+        // written up the card (tops to the left) turned the other way
+        let X, Y;
+        if (!vertical) { X = A; Y = B; }
+        else if (!turn) { Y = A; X = 2 * b0 + lb - B; }
+        else { X = B; Y = 2 * a0 + la - A; }
+        X = Math.round(X); Y = Math.round(Y);
+        if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue;
+        if (set.has(lab[Y * bw + X])) { const o = (v * c.width + u) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = 0; }
+      }
+      cx.putImageData(img, 0, 0);
+      return c;
+    };
+    const out = [];
+    for (const L of lines.slice(0, 2)) {
+      const a0 = L.chars[0].a, a1 = Math.max(...L.chars.map(c => c.a + c.la));
+      const b0 = Math.min(...L.chars.map(c => c.b)), b1 = Math.max(...L.chars.map(c => c.b + c.lb));
+      for (const turn of L.vertical ? [false, true] : [false]) {
+        out.push({
+          line: draw(L.chars.flatMap(c => c.ids), a0, b0, a1 - a0, b1 - b0, L.vertical, turn),
+          box: L.vertical ? { x: (b0 + x0) / W, y: (a0 + y0) / H, w: (b1 - b0) / W, h: (a1 - a0) / H }
+                          : { x: (a0 + x0) / W, y: (b0 + y0) / H, w: (a1 - a0) / W, h: (b1 - b0) / H },
+        });
+      }
+    }
+    return out;
+  }
+  const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', DIGITS = '0123456789', LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let ocrBusy = Promise.resolve();
+  function readTrapCode(canvas, traps) {
+    const job = ocrBusy.then(() => readTrapCodeNow(canvas, traps));
+    ocrBusy = job.catch(() => {});
+    return job;
+  }
+  // the drawn line (letters 64 px tall, 18 px margin) at another letter height
+  function atHeight(c, h) {
+    const pad = Math.round(h * 0.6), k = h / 64, o = document.createElement('canvas');
+    o.width = Math.round((c.width - 36) * k) + 2 * pad; o.height = h + 2 * pad;
+    const x = o.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, o.width, o.height); x.imageSmoothingQuality = 'high';
+    x.drawImage(c, 18, 18, c.width - 36, 64, pad, pad, o.width - 2 * pad, h);
+    return o;
+  }
+  async function readTrapCodeNow(canvas, traps) {
     const w = await ocr();
-    const { data } = await w.recognize(scaleCanvas(canvas, 1400));
-    const words = (data.words || []).map(x => x.text).filter(Boolean);
-    const list = words.length ? words : String(data.text || '').split(/\s+/);
-    const known = traps.length ? matchCode(list, traps) : null;
-    // not a card of the list: the first word (or two joined) that makes a position is a new card
-    let fresh = null;
-    if (!known) for (const c of [...list, ...list.slice(0, -1).map((x, i) => x + list[i + 1])]) { fresh = coerceCode(c); if (fresh) break; }
-    return { text: canon(list.join(' ')).slice(0, 24), trap: known, fresh };
+    const one = async (img, psm) => {
+      await w.setParameters({ tessedit_pageseg_mode: psm, tessedit_char_whitelist: ALNUM });
+      const { data } = await w.recognize(img);
+      return { text: canon(data.text), conf: data.confidence || 0 };
+    };
+    // the readings vote — for a trap of the unit, and for the position they spell — and the reading
+    // stops as soon as two agree (a reading takes about a second on a phone; six of them would be slow)
+    const reads = [], known = new Map(), fresh = new Map();
+    const vote = r => {
+      const m = traps.length ? matchCode([r.text], traps) : null;
+      if (m) { const t = known.get(m.id) || { trap: m, v: 0, n: 0, box: r.box }; t.v += 1 + r.conf / 100; t.n++; known.set(m.id, t); }
+      const f = coerceCode(r.text);
+      if (f) { const t = fresh.get(f.code) || { f, v: 0, n: 0, box: r.box }; t.v += 1 + r.conf / 100; t.n++; fresh.set(f.code, t); }
+    };
+    // two readings agreeing on a new position stop the reading only when it is unlike every trap of the unit:
+    // "1Z6" beside 1B6 and 1E6 is a trap misread, not a new card, and the other sizes may still settle it
+    const unlike = code => traps.every(t => codeDistance(code, canon(shortCode(t.code))) >= 1.5);
+    const agreed = () => [...known.values()].some(t => t.n >= 2) || (!known.size && [...fresh.values()].some(t => t.n >= 2 && unlike(t.f.code)));
+    const TRIES = [[28, '7'], [36, '7'], [48, '7'], [28, '13'], [36, '13'], [48, '13']];
+    try {
+      for (const L of findWriting(canvas, cardColour(canvas))) {
+        for (const [h, psm] of TRIES) {
+          const r = await one(atHeight(L.line, h), psm);
+          if (!r.text) continue;
+          reads.push({ ...r, box: L.box }); vote(reads[reads.length - 1]);
+          if (agreed()) break;
+        }
+        if (agreed()) break;
+      }
+    } catch (e) { console.warn('writing finder', e); }
+    const top = m => [...m.values()].sort((x, y) => y.v - x.v)[0] || null;
+    let K = top(known), F = top(fresh);
+    // a trap of the unit, unless the readings clearly spell another position (a new card)
+    if (K && F && F.f.code !== shortCode(K.trap.code) && F.v > 2 * K.v) K = null;
+    // near a trap of the unit but not settled on one: no proposal — the person picks it or presses Read with AI
+    if (!K && F && traps.length && !unlike(F.f.code)) F = null;
+    let list = [];
+    if (!reads.length) {
+      // no writing found: the whole photo, sparse words, as before
+      await w.setParameters({ tessedit_pageseg_mode: '11', tessedit_char_whitelist: ALNUM });
+      const { data } = await w.recognize(scaleCanvas(canvas, 1400));
+      const words = (data.words || []).map(x => x.text).filter(Boolean);
+      list = words.length ? words : String(data.text || '').split(/\s+/);
+      const m = traps.length ? matchCode(list, traps) : null;
+      if (m) K = { trap: m, box: null };
+      if (!K) for (const c of [...list, ...list.slice(0, -1).map((x, i) => x + list[i + 1])]) { const f = coerceCode(c); if (f) { F = { f, box: null }; break; } }
+    }
+    const seen = (reads.slice().sort((x, y) => y.conf - x.conf)[0]?.text) || canon(list.join(' '));
+    return { text: seen.slice(0, 24), trap: K?.trap || null, fresh: K ? null : F?.f || null, box: (K || F)?.box || null };
   }
 
   // ── the AI note on one photo, only when pressed ─────────────────────────
@@ -7936,7 +8123,29 @@ function sopOpen() {
       if (traps.length) { const dl = el('datalist'); dl.id = 'fb-trapcodes-' + p.ref; traps.forEach(t => { const o = el('option'); o.value = shortCode(t.code); dl.append(o); }); sel.setAttribute('list', dl.id); head.append(dl); }
       const ok = el('button', 'fb-btn fb-btn-primary', '✓ Confirm'); ok.type = 'button';
       const src = el('span', 'fb-chip');
-      head.append(el('span', 'fb-trap-lbl', 'Trap'), sel, ok, src);
+      const aiCode = el('button', 'fb-btn fb-ai', '✦ Read with AI'); aiCode.type = 'button';
+      aiCode.title = 'Send this photo to the AI to read the handwritten position (needs signal)';
+      aiCode.onclick = async () => {
+        if (!navigator.onLine) { showToast('Reading with the AI needs a connection', 'error'); return; }
+        const S = p.sides?.yellow?.full || p.sides?.yellow?.thumb ? p.sides.yellow : p.sides?.blue;
+        if (!S) { showToast('Photograph the card first', 'error'); return; }
+        aiCode.disabled = true; aiCode.textContent = '✦ Reading…';
+        try {
+          const image = await photoBase64(S);
+          if (!image) throw new Error('this photo is not on the phone any more');
+          const r = await api('/functions/v1/photo-note', { method: 'POST', body: JSON.stringify({ farm_id: task.farm_id || farm.id, kind: 'code', image,
+            context: { codes: traps.map(x => shortCode(x.code)), read: p.code_read || null } }) });
+          if (!r?.ok) throw new Error(r?.error || 'no answer');
+          const seen = canon(r.ai?.code_seen);
+          const m = seen && traps.length ? matchCode([seen], traps) : null;
+          const f = m ? null : coerceCode(seen);
+          if (m || f) { setTrapCode(p, shortCode((m || f).code), 'ai'); p.code_read = seen; }
+          else { p.code_read = seen || p.code_read; showToast(seen ? `The AI read "${seen}" — not a position; type it` : 'The AI could not read a position on this card', 'error'); }
+          card._paintTrap(); paintCoverage(); saveScDraft();
+        } catch (e) { showToast('Read with AI: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); }
+        aiCode.disabled = false; aiCode.textContent = '✦ Read with AI';
+      };
+      head.append(el('span', 'fb-trap-lbl', 'Trap'), sel, ok, src, aiCode);
       const sidesBox = el('div', 'fb-trap-sides');
       const total = el('div', 'fb-sc-level');
       const note = el('input', 'fb-note'); note.type = 'text'; note.value = p.note || ''; note.placeholder = 'Note (optional): torn, wet, missing…';
@@ -7960,6 +8169,7 @@ function sopOpen() {
           : p.trap_id ? 'known trap' : `new trap · ${codeWords(p)}`;
         src.className = 'fb-chip' + (p.code && p.code_ok ? ' ok' : ' late');
         ok.classList.toggle('hidden', !p.code || !!p.code_ok);
+        aiCode.classList.toggle('hidden', !!p.code_ok || !(p.sides?.yellow || p.sides?.blue));
         sidesBox.textContent = '';
         SIDES.forEach(([k, label]) => sidesBox.append(sideBlock(p, k, label, card, paintTotal)));
         paintTotal();
@@ -8261,6 +8471,7 @@ function sopOpen() {
     [
       ['Today\u2019s sections are the tabs.', 'Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day; any other can be opened with + under the tabs.'],
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
+      ['Writing the position.', 'On each card, in black permanent marker: capitals about 2 cm high, on one line, apart from each other, on a clear part of the card (1B6, no dashes). Write it on both sides. If the phone cannot read it, press Read with AI or type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure.'],
