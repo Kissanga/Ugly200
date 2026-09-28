@@ -838,6 +838,15 @@
     .fb-cam-bar { display:flex; align-items:center; justify-content:space-around; padding:14px 16px 22px; background:#000; }
     .fb-cam-shutter { width:74px; height:74px; border-radius:50%; border:5px solid #fff; background:#f4d24a; }
     .fb-cam .fb-btn { color:#fff; border-color:#fff; background:transparent; }
+    /* lens, close-up and zoom (0.11.41): only what the phone offers */
+    .fb-cam-ctl { background:#000; display:flex; flex-direction:column; gap:10px; padding:10px 16px 0; }
+    .fb-cam-ctl:empty { display:none; }
+    .fb-cam-tools { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    .fb-cam .fb-btn[aria-pressed="true"] { background:#f4d24a; border-color:#f4d24a; color:#2b2400; }
+    .fb-cam-zoom { display:flex; align-items:center; gap:10px; color:#fff; }
+    .fb-cam-zoom input[type=range] { flex:1; accent-color:#f4d24a; }
+    .fb-cam-zval { min-width:38px; font-weight:800; font-variant-numeric: tabular-nums; }
+    .fb-cam .fb-cam-q { min-height:34px; padding:4px 10px; }
     .fb-trap-counts { margin-top: var(--space-2); }
     .fb-hold { background: var(--coral-soft); color: var(--coral); border:1px solid var(--coral); border-radius: var(--radius-md);
       padding: 10px 12px; font-weight:700; font-size: var(--text-sm); margin-bottom: var(--space-3); }
@@ -933,7 +942,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.40';
+  const CURRENT_VERSION = '0.11.41';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1067,6 +1076,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.41', '2026-09-29', 'Lens, close-up and zoom in the camera', 'The camera inside the app has a lens button (the next back lens: on many phones the ultra-wide one focuses closest), a Close-up button (focus as near as the lens can, for small insects and eggs) and a zoom slider with 1x and 2x. Each shows only where the phone offers it, and the choice is remembered for traps, plant health and growth separately.'],
     ['0.11.40', '2026-09-29', 'Scouting in four sections; edit a done task', 'The daily scouting is Traps, Plant health, Growth and Finish, filled in any order. Trap photos: at least one, the code read off the card, the count with a green, orange or red colour for the new insects a week, a note and Replaced. Plant health and growth photos carry the position (3B8) or the GPS; a growth photo finds the printed scale card and sizes are measured on it with two taps. An AI note under any photo, only when its button is pressed. Finish: OK, or Not OK with a note that tells the manager. The task list folds the earlier days (a red dot when something was left undone), keeps today open and the days ahead closed; a done task can be opened and edited. Settings: upload photos on Wi-Fi only, or Wi-Fi and mobile data.'],
     ['0.11.39', '2026-09-28', 'Checklist photos kept', 'The answers, notes and photos of an open checklist are kept on the phone as you go. If Android closes the app while the camera is open, the checklist comes back as you left it, photos included.'],
     ['0.11.38', '2026-09-28', 'Clock in and out', 'A card above the day list clocks you in when you start work and out when you leave, with the time worked today. It works without signal: the phone sends it later and never counts it twice. The managers see the hours against the planned tasks in Naked Heart, Tasks, Hours.'],
@@ -7637,7 +7647,7 @@ function sopOpen() {
         : 'Close and in focus: the part that looks wrong';
       let f = null;
       if (!fromGallery) {
-        const r = await takeTrapPhoto(forTrap?.code || '', hint);
+        const r = await takeTrapPhoto(forTrap?.code || '', hint, section);
         if (r === 'cancel') return;
         f = r;
       }
@@ -8219,7 +8229,7 @@ function sopOpen() {
       await gotCanvas(scaleCanvas(big.canvas, 1600));
     };
     btn.onclick = async () => {
-      const r = await takeTrapPhoto(t.code);
+      const r = await takeTrapPhoto(t.code, null, 'trap');
       if (r === 'cancel') return;
       if (!r) { pick.click(); return; }                          // no camera here: the phone's own
       await gotFile(r);
@@ -8307,25 +8317,123 @@ function sopOpen() {
   // FULL_PX on the long side (about 15 px/mm on a trap card — beyond that the lens, not
   // the pixels, limits the detail, and a 50 MP file can push the app out of memory)
   const FULL_PX = 4000, FULL_Q = 0.9;
-  function takeTrapPhoto(code, hintText) {
+  // Lens, close-up and zoom (0.11.41, owner: "open the camera in macro mode"). A web app cannot
+  // press the Macro button of the phone's own camera app; it can pick another back lens (on many
+  // phones the ultra-wide is the macro one — some makers hide it from every app but their own),
+  // ask the lens to focus as near as it can, and zoom. Each control shows only where the phone
+  // offers it, and the choice is remembered on this phone for each kind of photo (traps, plant
+  // health, growth), so the close-up can stay on for plant health alone.
+  const camPrefKey = p => 'fb_cam_' + (p || 'other');
+  const camPref = p => { try { return JSON.parse(localStorage.getItem(camPrefKey(p)) || '{}') || {}; } catch (e) { return {}; } };
+  const saveCamPref = (p, v) => { try { localStorage.setItem(camPrefKey(p), JSON.stringify(v)); } catch (e) {} };
+  const lensName = (d, i) => {
+    const l = String(d?.label || '');
+    if (/ultra ?wide/i.test(l)) return 'Ultra-wide';
+    if (/macro/i.test(l)) return 'Macro';
+    if (/tele/i.test(l)) return 'Tele';
+    if (/dual|triple/i.test(l)) return 'Auto';
+    return i === 0 ? 'Main' : `Lens ${i + 1}`;
+  };
+  const fmtZoom = v => (Math.round(Number(v) * 10) / 10) + '×';
+  const canCloseUp = caps => !!(caps.focusDistance && caps.focusDistance.max > caps.focusDistance.min && (caps.focusMode || []).includes('manual'));
+
+  function takeTrapPhoto(code, hintText, purpose = 'trap') {
     return new Promise(async resolve => {
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
+      const pref = camPref(purpose);
+      const openCam = deviceId => navigator.mediaDevices.getUserMedia({ audio: false, video: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+        width: { ideal: 4096 }, height: { ideal: 3072 } } });
       let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } }, audio: false });
-      } catch (e) { console.warn('camera refused', e); return resolve(null); }
+      try { stream = await openCam(pref.deviceId); }
+      catch (e) {
+        if (!pref.deviceId) { console.warn('camera refused', e); return resolve(null); }
+        try { stream = await openCam(null); } catch (e2) { console.warn('camera refused', e2); return resolve(null); }
+      }
+      // the back lenses, now that the camera is allowed (the browser hides their names before)
+      let lenses = [];
+      try { lenses = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && /back|rear|environment/i.test(d.label)); }
+      catch (e) { /* none listed */ }
+
       const ov = el('div', 'fb-cam');
       const video = document.createElement('video');
       video.autoplay = true; video.playsInline = true; video.muted = true; video.srcObject = stream;
       const hint = el('div', 'fb-cam-hint', hintText || `Trap ${code} — square-on, the whole card and its code in the picture`);
+      const ctl = el('div', 'fb-cam-ctl');
       const bar = el('div', 'fb-cam-bar');
       const cancel = el('button', 'fb-btn', 'Cancel');
       const shutter = el('button', 'fb-cam-shutter'); shutter.setAttribute('aria-label', 'Take the photo');
       bar.append(cancel, shutter);
-      ov.append(video, hint, bar);
+      ov.append(video, hint, ctl, bar);
       document.body.append(ov);
+      const track = () => stream.getVideoTracks()[0];
+      const remember = () => saveCamPref(purpose, pref);
       const stop = () => { try { stream.getTracks().forEach(x => x.stop()); } catch (e) {} ov.remove(); };
+
+      // the remembered zoom and close-up, on whichever lens is open
+      async function applyPrefs() {
+        const t = track(), caps = t.getCapabilities?.() || {};
+        const adv = {};
+        if (caps.zoom && pref.zoom) adv.zoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, pref.zoom));
+        if (pref.closeup && canCloseUp(caps)) { adv.focusMode = 'manual'; adv.focusDistance = caps.focusDistance.min; }
+        if (Object.keys(adv).length) { try { await t.applyConstraints({ advanced: [adv] }); } catch (e) { console.warn('camera settings', e); } }
+      }
+      function paintTools() {
+        ctl.textContent = '';
+        const t = track(), caps = t.getCapabilities?.() || {}, set = t.getSettings?.() || {};
+        const row = el('div', 'fb-cam-tools');
+        if (lenses.length > 1) {
+          const i = Math.max(0, lenses.findIndex(d => d.deviceId === set.deviceId));
+          const b = el('button', 'fb-btn', `⟳ ${lensName(lenses[i], i)} · ${i + 1}/${lenses.length}`);
+          b.title = 'Switch to the next back lens — on many phones the ultra-wide one focuses closest';
+          b.onclick = () => switchTo(lenses[(i + 1) % lenses.length].deviceId);
+          row.append(b);
+        }
+        if (canCloseUp(caps)) {
+          const b = el('button', 'fb-btn', 'Close-up');
+          b.setAttribute('aria-pressed', String(!!pref.closeup));
+          b.title = 'Focus as near as this lens can — for small insects and eggs';
+          b.onclick = async () => {
+            pref.closeup = !pref.closeup; remember();
+            b.setAttribute('aria-pressed', String(pref.closeup));
+            const back = (caps.focusMode || []).includes('continuous') ? 'continuous' : 'single-shot';
+            try { await t.applyConstraints({ advanced: [pref.closeup ? { focusMode: 'manual', focusDistance: caps.focusDistance.min } : { focusMode: back }] }); }
+            catch (e) { console.warn('close-up', e); }
+          };
+          row.append(b);
+        }
+        if (row.children.length) ctl.append(row);
+        if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+          const z = el('div', 'fb-cam-zoom');
+          const max = Math.min(caps.zoom.max, 10);
+          const r = el('input'); r.type = 'range'; r.min = String(caps.zoom.min); r.max = String(max); r.step = String(caps.zoom.step || 0.1);
+          r.value = String(set.zoom ?? caps.zoom.min); r.setAttribute('aria-label', 'Zoom');
+          const lab = el('span', 'fb-cam-zval', fmtZoom(r.value));
+          const setZoom = v => {
+            r.value = String(v); lab.textContent = fmtZoom(v); pref.zoom = Number(v); remember();
+            t.applyConstraints({ advanced: [{ zoom: Number(v) }] }).catch(e => console.warn('zoom', e));
+          };
+          r.oninput = () => setZoom(r.value);
+          z.append(lab, r);
+          [1, 2].filter(v => v >= caps.zoom.min && v <= max).forEach(v => {
+            const q = el('button', 'fb-btn fb-cam-q', v + '×'); q.onclick = () => setZoom(v); z.append(q);
+          });
+          ctl.append(z);
+        }
+      }
+      async function switchTo(id) {
+        try { stream.getTracks().forEach(x => x.stop()); } catch (e) {}
+        try { stream = await openCam(id); }
+        catch (e) {
+          showToast('That lens could not be opened', 'error');
+          try { stream = await openCam(null); } catch (e2) { stop(); return resolve(null); }
+        }
+        video.srcObject = stream;
+        pref.deviceId = track().getSettings?.().deviceId || id; pref.zoom = null; remember();
+        await applyPrefs(); paintTools();
+      }
+      await applyPrefs(); paintTools();
+
       cancel.onclick = () => { stop(); resolve('cancel'); };
       // the full photo: the camera's own still where the browser offers it
       // (ImageCapture, Chrome on Android), else the preview frame at its size
@@ -8333,7 +8441,7 @@ function sopOpen() {
         shutter.disabled = true;
         let blob = null;
         try {
-          if (window.ImageCapture) blob = await new ImageCapture(stream.getVideoTracks()[0]).takePhoto();
+          if (window.ImageCapture) blob = await new ImageCapture(track()).takePhoto();
         } catch (e) { console.warn('takePhoto', e); }
         if (!blob) {
           const w = video.videoWidth, h = video.videoHeight;
