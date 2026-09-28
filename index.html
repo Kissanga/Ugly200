@@ -976,7 +976,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.47';
+  const CURRENT_VERSION = '0.11.48';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1110,6 +1110,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.48', '2026-09-29', 'Measure on a ruler or tape', 'A growth photo with a ruler or tape measure instead of the scale card can be measured: tap two marks on the tape far apart, say the centimetres between them, then tap the two ends of the fruit as usual. The AI note reads sizes against a ruler or tape too.'],
     ['0.11.47', '2026-09-29', 'Handwritten trap codes', 'The phone finds the handwritten position on the card: it wipes the printed grid, keeps the pen strokes, reads that one line at a few sizes until two readings agree, and matches it to the traps of the unit (digits for the zone and the metres, letters for the row); a reading close to a trap but not sure proposes nothing. About 2 seconds a trap. If it cannot, Read with AI sends the photo to the AI to read it, only when pressed. How the scouting works says how to write the code.'],
     ['0.11.46', '2026-09-29', 'A sharper camera', 'Tap the picture to focus there; the shutter focuses once more before it fires. Focus: auto or by hand, with a near to far slider, in place of Close-up. The photo is taken at the largest size up to 4000 px. A blurred photo asks whether to retake. Phone camera opens the phone camera app itself, with its macro and its sharpening.'],
     ['0.11.45', '2026-09-29', 'Two-sided traps, the code confirmed', 'Every trap is one card with a yellow side and a blue side. The phone reads the position and asks to confirm it or correct it; once confirmed the camera opens for the other side, without reading the code again. Each side is counted and has its own AI note; the trap colour is both sides together, in new insects a day.'],
@@ -8004,7 +8005,7 @@ function sopOpen() {
       } else {
         Object.assign(p, { pos_code: sc.lastPos || '', part: section === 'growth' ? 'fruit' : 'leaf', measures: [],
                            crop_id: crops.length === 1 ? crops[0].id : null });
-        if (section === 'growth') { const s = findScale(c1600); if (s) p.px_per_mm = Math.round(s.ppm * (p.full_w / c1600.width) * 1000) / 1000; }
+        if (section === 'growth') { const s = findScale(c1600); if (s) { p.px_per_mm = Math.round(s.ppm * (p.full_w / c1600.width) * 1000) / 1000; p.scale_source = 'card'; } }
       }
       sc.photos.set(p.ref, p);
       const card = photoCard(p);
@@ -8275,7 +8276,7 @@ function sopOpen() {
           const t = trapById.get(p.trap_id);
           const context = p.section === 'trap'
             ? { trap_code: p.code || null, colour: t?.colour || p.colour || 'yellow', size: t?.width_cm ? `${t.width_cm} × ${t.height_cm} cm` : null, count: p.total, codes: traps.map(x => shortCode(x.code)), note: p.note || null }
-            : { part: p.part, position: p.pos_code || null, note: p.note || null, scale_found: !!p.px_per_mm,
+            : { part: p.part, position: p.pos_code || null, note: p.note || null, scale_found: !!p.px_per_mm, scale_source: p.scale_source || null,
                 crop: crops.find(c => c.id === p.crop_id)?.name || null, crops: crops.map(c => c.name) };
           const image = await photoBase64(p);
           if (!image) throw new Error('this photo is not on the phone any more');
@@ -8365,21 +8366,23 @@ function sopOpen() {
           const ms = el('div', 'fb-actions fb-sc-measures');
           const paintMs = () => {
             ms.textContent = '';
-            ms.append(el('span', 'fb-chip' + (p.px_per_mm ? ' ok' : ' late'), p.px_per_mm ? 'scale card found' : 'no scale card seen'));
+            ms.append(el('span', 'fb-chip' + (p.px_per_mm ? ' ok' : ' late'),
+              !p.px_per_mm ? 'no scale card seen' : p.scale_source === 'ruler' ? 'scale set on the ruler' : 'scale card found'));
             (p.measures || []).forEach((m, i) => {
               const c = el('button', 'fb-btn', `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
               c.onclick = () => { p.measures.splice(i, 1); paintMs(); saveScDraft(); };
               ms.append(c);
             });
-            if (p.px_per_mm && p.full instanceof Blob) {
-              const go = el('button', 'fb-btn', '📏 Measure'); go.type = 'button';
+            if (p.full instanceof Blob) {
+              const go = el('button', 'fb-btn', p.px_per_mm ? '📏 Measure' : '📏 Measure on a ruler or tape'); go.type = 'button';
+              go.title = p.px_per_mm ? 'Tap the two ends of what you measure' : 'No scale card: tap two marks on the ruler or tape, say how far apart they are, then measure';
               go.onclick = () => measurePhoto(p, paintMs);
               ms.append(go);
             }
           };
           paintMs();
           card.append(ms);
-          img.onclick = () => { if (p.px_per_mm && p.full instanceof Blob) measurePhoto(p, paintMs); };
+          img.onclick = () => { if (p.full instanceof Blob) measurePhoto(p, paintMs); };
         }
         note.placeholder = p.section === 'growth' ? 'Note (optional)' : 'What you see (optional)';
         acts.append(aiButton(p, card, aiBox), drop);
@@ -8429,7 +8432,7 @@ function sopOpen() {
                         addBar('health', 'Plant photo'), lists.health);
     // Growth
     lists.growth = el('div');
-    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit and leaves with the scale card beside them, flat and at the same distance. Tap a photo to measure it on the card.'),
+    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit and leaves with the scale card beside them, flat and at the same distance — or a ruler or tape along them. Tap a photo to measure it.'),
                         addBar('growth', 'Growth photo'), lists.growth);
     // the end, under every tab, just above Finish: OK / Not OK and a note (0.11.43)
     const fin = el('div', 'fb-sc-end');
@@ -8474,7 +8477,7 @@ function sopOpen() {
       ['Writing the position.', 'On each card, in black permanent marker: capitals about 2 cm high, on one line, apart from each other, on a clear part of the card (1B6, no dashes). Write it on both sides. If the phone cannot read it, press Read with AI or type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
-      ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure.'],
+      ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal.'],
       ['Finish.', 'OK or Not OK (with why) at the bottom, then Finish: the phone says what is still missing and, on a trap day, asks about the traps not photographed.'],
       ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
@@ -8483,47 +8486,74 @@ function sopOpen() {
     return d;
   }
 
-  // ── measuring on the scale card: two taps = one size ────────────────────
+  // ── measuring: two taps = one size ─────────────────────────────────────
+  // On the scale card the phone knows the scale already. Without one (0.11.48, owner's tape-measure photos:
+  // "not dimensions collected"), the scale is set first on a ruler or tape in the photo: tap two marks far
+  // apart (0 and 30), say how many centimetres lie between them, and every size after is read against that.
   async function measurePhoto(p, done) {
     let bmp;
     try { bmp = await createImageBitmap(p.full, { resizeWidth: 1600, resizeQuality: 'medium' }); }
     catch (e) { showToast('This photo could not be opened', 'error'); return; }
-    const ppm = p.px_per_mm * (bmp.width / p.full_w);
+    let ppm = p.px_per_mm ? p.px_per_mm * (bmp.width / p.full_w) : null;
+    let calibrating = !ppm;
     const ov = el('div', 'fb-cam fb-measure');
     const cv = document.createElement('canvas');
-    const hint = el('div', 'fb-cam-hint', 'Tap the two ends of what you measure');
+    const hint = el('div', 'fb-cam-hint', '');
     const bar = el('div', 'fb-cam-bar fb-measure-bar');
     const close = el('button', 'fb-btn', 'Done');
     ov.append(cv, hint, bar);
     document.body.append(ov);
     const fit = () => {
       const W = ov.clientWidth, H = ov.clientHeight - 120;
-      const s = Math.min(W / bmp.width, H / bmp.height);
-      cv.width = Math.round(bmp.width * s); cv.height = Math.round(bmp.height * s);
+      const k = Math.min(W / bmp.width, H / bmp.height);
+      cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
       cv.style.margin = '40px auto 0'; cv.style.display = 'block';
-      return s;
+      return k;
     };
     const s = fit();
-    let a = null, b = null;
+    let a = null, b = null, saved = '';
+    const idle = () => calibrating
+      ? 'No scale card: tap two marks on the ruler or tape, far apart — like 0 and 30'
+      : (saved || 'Tap the two ends of what you measure');
     const draw = () => {
       const g = cv.getContext('2d');
       g.drawImage(bmp, 0, 0, cv.width, cv.height);
-      g.lineWidth = 3; g.strokeStyle = '#ffeb3b'; g.fillStyle = '#ffeb3b';
+      g.lineWidth = 3; const col = calibrating ? '#ff4fb0' : '#ffeb3b'; g.strokeStyle = col; g.fillStyle = col;
       for (const q of [a, b].filter(Boolean)) { g.beginPath(); g.arc(q.x * s, q.y * s, 7, 0, 7); g.fill(); }
       if (a && b) { g.beginPath(); g.moveTo(a.x * s, a.y * s); g.lineTo(b.x * s, b.y * s); g.stroke(); }
     };
     const paintBar = () => {
       bar.textContent = '';
-      if (a && b) {
+      if (calibrating && a && b) {
+        hint.textContent = 'How far apart are the two marks?';
+        const cm = el('input', 'fb-num'); cm.type = 'number'; cm.min = '0.5'; cm.step = '0.5'; cm.inputMode = 'decimal';
+        cm.value = String(p.scale_cm || 10); cm.setAttribute('aria-label', 'Centimetres between the two marks');
+        const set = el('button', 'fb-btn fb-btn-primary', 'Set the scale'); set.type = 'button';
+        set.onclick = () => {
+          const v = parseFloat(String(cm.value).replace(',', '.'));
+          const px = Math.hypot(b.x - a.x, b.y - a.y);
+          if (!(v > 0) || px < 20) { showToast('Tap two marks further apart and give the centimetres between them', 'error'); return; }
+          ppm = px / (v * 10);
+          p.px_per_mm = Math.round(ppm * (p.full_w / bmp.width) * 1000) / 1000; p.scale_source = 'ruler'; p.scale_cm = v;
+          calibrating = false; a = b = null; saved = `Scale set: ${v} cm on the ruler. Now tap the two ends of what you measure.`;
+          draw(); paintBar(); saveScDraft();
+        };
+        bar.append(cm, el('span', 'fb-cam-end', 'cm'), set);
+      } else if (!calibrating && a && b) {
         const mm = Math.round(Math.hypot(b.x - a.x, b.y - a.y) / ppm);
         hint.textContent = `${mm} mm — what is it?`;
         MEASURE_WHAT.forEach(([v, l]) => {
           const k = el('button', 'fb-btn', l); k.type = 'button';
-          k.onclick = () => { p.measures = [...(p.measures || []), { what: v, mm }]; a = b = null; draw(); paintBar(); saveScDraft();
-            hint.textContent = `Saved: ${l.toLowerCase()} ${mm} mm. Tap two more points, or Done.`; };
+          k.onclick = () => { p.measures = [...(p.measures || []), { what: v, mm, scale: p.scale_source || 'card' }]; a = b = null;
+            saved = `Saved: ${l.toLowerCase()} ${mm} mm. Tap two more points, or Done.`; draw(); paintBar(); saveScDraft(); };
           bar.append(k);
         });
-      } else if (!a) hint.textContent = hint.textContent.startsWith('Saved') ? hint.textContent : 'Tap the two ends of what you measure';
+      } else hint.textContent = idle();
+      if (!calibrating && p.scale_source === 'ruler') {
+        const again = el('button', 'fb-link', 'Set the scale again'); again.type = 'button';
+        again.onclick = () => { calibrating = true; a = b = null; saved = ''; draw(); paintBar(); };
+        bar.append(again);
+      }
       bar.append(close);
     };
     cv.onclick = e => {
