@@ -1,4 +1,6 @@
-const CACHE_NAME = 'ugly200-v127';
+const CACHE_NAME = 'ugly200-v128';
+// the scouting's text reader (Tesseract.js from jsDelivr, 0.11.40): kept across releases for offline days
+const LIB_CACHE = 'fb-lib-v1';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -30,7 +32,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE_NAME && k !== LIB_CACHE).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -45,6 +47,15 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const { request } = e;
   const url = new URL(request.url);
+
+  // the text reader's files (script, worker, wasm core, language data) from jsDelivr: cache-first, versioned URLs
+  if (url.hostname === 'cdn.jsdelivr.net' && request.method === 'GET') {
+    e.respondWith(caches.open(LIB_CACHE).then(cache => cache.match(request).then(hit => hit || fetch(request).then(res => {
+      if (res && res.status === 200) cache.put(request, res.clone());
+      return res;
+    }))));
+    return;
+  }
 
   // Let external API calls (Groq, Notion proxy) go straight to network
   if (!url.origin.startsWith(self.location.origin)) return;
