@@ -872,6 +872,12 @@
     .fb-sc-n { font-size: 11px; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #0d2b27; }
     .fb-sc-n.nok { background: var(--coral); color: #fff; }
     .fb-sc-add { margin: var(--space-3) 0; }
+    .fb-how { margin: 0 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+    .fb-how > summary { cursor: pointer; padding: 10px 14px; font-weight: 700; font-size: var(--text-sm); list-style: none; }
+    .fb-how > summary::-webkit-details-marker { display: none; }
+    .fb-how > summary::before { content: 'ⓘ '; color: var(--accent); }
+    .fb-how ol { margin: 0; padding: 0 16px 12px 34px; font-size: var(--text-sm); line-height: 1.45; }
+    .fb-how li { margin: 6px 0; }
     .fb-sc-end { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
     .fb-sc-first { font-weight: 600; }
     .fb-missing { max-height: 80vh; overflow-y: auto; }
@@ -953,7 +959,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.43';
+  const CURRENT_VERSION = '0.11.44';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1087,6 +1093,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.44', '2026-09-29', 'Trap positions, insects a day', 'A trap card carries only its position (1B6 = zone 1, row B, 6 m); the app keeps each card start itself, from Replaced or when the count drops hard. The colour is new insects a day since the photo before, so a card change keeps the curve going; the first photo of a trap starts the count. A How the scouting works panel at the top of the scouting explains the tabs, working in parallel and Finish.'],
     ['0.11.43', '2026-09-29', 'Traps by the code on the card', 'A trap is known by the code written on its card: position and the day it was hung, 1B6D0101 = zone 1, row B, 6 m, hung 1 January (the full year may be added). The first round just asks to photograph every trap, and a new card is added by itself from its code. At Finish, the traps not photographed on a trap day are listed: Taken down, Forgot (photograph it now) or Cannot reach it today with a reason for the manager. The Finish tab is gone: OK, Not OK and the note sit just above the Finish button.'],
     ['0.11.42', '2026-09-29', 'Scouting sections on their days', 'The daily scouting shows only the sections due that day: Traps on Monday, Wednesday and Friday, Growth on Tuesday and Thursday, Plant health every working day (the days are set on the procedure in the console). A holiday moves them to the next working day, and a trap or growth day that was missed comes back the next day. The others can still be opened by hand under the tabs. At least one trap photo only on a trap day.'],
     ['0.11.41', '2026-09-29', 'Lens, close-up and zoom in the camera', 'The camera inside the app has a lens button (the next back lens: on many phones the ultra-wide one focuses closest), a Close-up button (focus as near as the lens can, for small insects and eggs) and a zoom slider with 1x and 2x. Each shows only where the phone offers it, and the choice is remembered for traps, plant health and growth separately.'],
@@ -7559,42 +7566,32 @@ function sopOpen() {
     }
     return d[a.length][b.length];
   }
-  // A trap's code (FarmBox 0146): where it hangs and the day it was hung — 1B6D0101 or 1B6D01012026 = zone
-  // (or bay) 1, row B, 6 m from the corridor, hung 1 January. The short date takes the latest year not in
-  // the future. An old code without a date (3B8) still works. The same rule as app.parse_trap_code.
-  function parseTrapCode(raw, today = new Date()) {
+  // A trap's code (FarmBox 0147): where it hangs — 1B6 = zone (or bay) 1, row B, 6 m from the corridor.
+  // One trap per position, whatever card hangs there; the app keeps each card's start itself (the first
+  // photo, Replaced, or the count falling hard). A date written after a D on an older card is dropped.
+  function parseTrapCode(raw) {
     const v = String(raw || '').toUpperCase().replace(/[\s\-_.·/]/g, '');
-    const m = /^([0-9]+)([A-Z]+)([0-9]+(?:,[0-9]+)?)(?:D([0-9]{2})([0-9]{2})([0-9]{4})?)?$/.exec(v);
+    const m = /^([0-9]+)([A-Z]+)([0-9]+(?:,[0-9]+)?)(?:D[0-9]{4}(?:[0-9]{4})?)?$/.exec(v);
     if (!m) return { ok: false, code: v };
     const spot = m[1] + m[2] + m[3];
-    let hung = null;
-    if (m[4]) {
-      const dd = +m[4], mm = +m[5], lim = new Date(today.getTime() + 864e5);
-      const mk = y => { const d = new Date(y, mm - 1, dd, 12); return d.getMonth() === mm - 1 && d.getDate() === dd ? d : null; };
-      let d = mk(m[6] ? +m[6] : today.getFullYear());
-      if (!d) return { ok: false, code: v, why: 'that date is not a real day' };
-      if (!m[6] && d > lim) d = mk(today.getFullYear() - 1);
-      if (!d || d > lim) return { ok: false, code: v, why: 'that date is in the future' };
-      hung = d;
-    }
-    const full = hung ? 'D' + String(hung.getDate()).padStart(2, '0') + String(hung.getMonth() + 1).padStart(2, '0') + hung.getFullYear() : '';
-    return { ok: true, code: spot + full, spot, n: m[1], row: m[2], metres: m[3].replace(',', '.'), hung };
+    return { ok: true, code: spot, spot, n: m[1], row: m[2], metres: m[3].replace(',', '.') };
   }
-  const shortCode = c => String(c || '').replace(/^(.*D\d{4})\d{4}$/, '$1');         // 1B6D01012026 → 1B6D0101
-  const hungWords = h => h ? new Date(h).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
-  // what the text reader saw, bent into a code: digits where digits belong, letters where letters do
+  const shortCode = c => String(c || '').replace(/D\d{4}(?:\d{4})?$/, '');
+  // what the text reader saw, bent into a position: digits where digits belong, letters where letters do
   const TO_DIGIT = { O: '0', Q: '0', D: '0', I: '1', L: '1', S: '5', B: '8', Z: '2', G: '6', T: '7' };
   const TO_LETTER = { '0': 'O', '1': 'I', '5': 'S', '8': 'B', '2': 'Z', '6': 'G', '7': 'T' };
   function coerceCode(raw) {
-    const s0 = canon(raw);
+    const s0 = canon(raw).replace(/D\d{4}(?:\d{4})?$/, '');
+    if (s0.length < 3 || s0.length > 6) return null;
     const dig = x => [...x].map(c => /\d/.test(c) ? c : TO_DIGIT[c] || '?').join('');
     const let_ = x => [...x].map(c => /[A-Z]/.test(c) ? c : TO_LETTER[c] || '?').join('');
-    for (let zl = 1; zl <= 2; zl++) for (let rl = 1; rl <= 2; rl++) for (let ml = 1; ml <= 2; ml++) {
-      const z = dig(s0.slice(0, zl)), r = let_(s0.slice(zl, zl + rl)), mt = dig(s0.slice(zl + rl, zl + rl + ml)), rest = s0.slice(zl + rl + ml);
-      if (z.length < zl || r.length < rl || mt.length < ml || /\?/.test(z + r + mt)) continue;
-      if (!rest || !/^[D0O]/.test(rest) || ![5, 9].includes(rest.length)) continue;     // a new card carries its date
-      const p = parseTrapCode(z + r + mt + 'D' + dig(rest.slice(1)));
-      if (p.ok) return p;
+    for (let zl = 1; zl <= 2; zl++) for (let rl = 1; rl <= 2; rl++) {
+      const ml = s0.length - zl - rl;
+      if (ml < 1 || ml > 2) continue;
+      const code = dig(s0.slice(0, zl)) + let_(s0.slice(zl, zl + rl)) + dig(s0.slice(zl + rl));
+      if (/\?/.test(code)) continue;
+      const p = parseTrapCode(code);
+      if (p.ok && +p.metres <= 200) return p;
     }
     return null;
   }
@@ -7616,7 +7613,7 @@ function sopOpen() {
     const words = (data.words || []).map(x => x.text).filter(Boolean);
     const list = words.length ? words : String(data.text || '').split(/\s+/);
     const known = traps.length ? matchCode(list, traps) : null;
-    // not a card of the list: the first word (or two joined) that makes a dated code is a new card
+    // not a card of the list: the first word (or two joined) that makes a position is a new card
     let fresh = null;
     if (!known) for (const c of [...list, ...list.slice(0, -1).map((x, i) => x + list[i + 1])]) { fresh = coerceCode(c); if (fresh) break; }
     return { text: canon(list.join(' ')).slice(0, 24), trap: known, fresh };
@@ -7706,6 +7703,7 @@ function sopOpen() {
     if (navigator.onLine && shown('trap')) ocr().catch(() => {});   // warm the text reader while the person walks to the first trap
 
     const box = el('div', 'fb-sc');
+    box.append(howItWorks());
     const tabs = el('div', 'fb-sc-tabs');
     const panes = {};
     const tabBtns = {};
@@ -7807,14 +7805,13 @@ function sopOpen() {
       p.code_text = String(text || '').toUpperCase().replace(/\s/g, '');
       const pc = parseTrapCode(p.code_text);
       if (!pc.ok) { p.code = null; p.trap_id = null; p.hung = null; p.code_why = pc.why || null; return; }
-      const known = traps.find(t => t.code === pc.code) || (!pc.hung ? null : traps.find(t => shortCode(t.code) === shortCode(pc.code)));
-      p.code = known ? known.code : pc.code; p.trap_id = known ? known.id : null;
-      p.hung = pc.hung ? pc.hung.toISOString().slice(0, 10) : null; p.code_why = null;
+      const known = traps.find(t => shortCode(t.code) === pc.code);
+      p.code = pc.code; p.trap_id = known ? known.id : null; p.code_why = null;
       if (source) p.code_source = source;
     }
     const codeWords = p => {
       const pc = parseTrapCode(p.code || '');
-      return pc.ok ? `${pc.n} · row ${pc.row} · ${pc.metres} m${pc.hung ? ' · hung ' + hungWords(pc.hung) : ''}` : '';
+      return pc.ok ? `${pc.n} · row ${pc.row} · ${pc.metres} m` : '';
     };
     // a card of a known size and colour counts better: count again once the trap is known
     function recount(p, canvas) {
@@ -7823,27 +7820,29 @@ function sopOpen() {
       try { const r = countInsects(canvas, t); Object.assign(p, { counts: r.counts, total: r.total, algo_total: r.total, confidence: r.confidence }); } catch (e) {}
     }
 
-    // the colour: new insects a week since the card's last reading (all of it after a replaced card)
+    // The colour: new insects A DAY since the photo before (FarmBox 0147) — the same rule as the server:
+    // after Replaced, or when the count falls hard (under 60 % and at least 3 fewer: a new card went up),
+    // everything on the card is new; a small fall is a miscount. The first photo of a trap, or one after
+    // three weeks without, only starts the count: no colour yet.
     function level(p) {
       if (p.total == null) return null;
       const t = trapById.get(p.trap_id);
-      let rate = null, fresh = p.total, since = null;
-      if (run.edit && p.orig_total != null) rate = p.total === p.orig_total ? p.week_rate : null;
-      else if (t) {
-        if (t.last_read_at && t.last_total != null) { since = new Date(t.last_read_at); fresh = t.last_replaced ? p.total : Math.max(0, p.total - t.last_total); }
-        else if (t.installed_at) since = new Date(t.installed_at + 'T08:00:00');
-        if (since) rate = Math.round(fresh / Math.max(0.5, (new Date(p.taken_at) - since) / 86400000) * 7 * 10) / 10;
-      } else if (p.hung) {                                             // a new card: everything on it since it was hung
-        since = new Date(p.hung + 'T08:00:00');
-        rate = Math.round(p.total / Math.max(0.5, (new Date(p.taken_at) - since) / 86400000) * 7 * 10) / 10;
+      let rate = null, fresh = null, since = null;
+      if (run.edit && p.orig_total != null) rate = p.total === p.orig_total && p.week_rate != null ? Math.round(p.week_rate / 7 * 10) / 10 : null;
+      else if (t && t.last_read_at && t.last_total != null && Date.now() - new Date(t.last_read_at) < 21 * 864e5) {
+        since = new Date(t.last_read_at);
+        const days = (new Date(p.taken_at) - since) / 864e5;
+        fresh = t.last_replaced || p.replacedBefore ? p.total
+          : (p.total < t.last_total && t.last_total - p.total >= 3 && p.total < t.last_total * 0.6) ? p.total
+          : Math.max(0, p.total - t.last_total);
+        if (days >= 0.5) rate = Math.round(fresh / days * 10) / 10;
       }
-      const v = rate ?? p.total;
-      const tone = v >= th.over ? 'red' : v >= th.watch ? 'orange' : 'green';
+      if (rate == null) return { tone: '', text: `${p.total} on the card · first photo: the count starts, the colour comes with the next one` };
+      const tone = rate >= th.over ? 'red' : rate >= th.watch ? 'orange' : 'green';
       const word = { red: 'high', orange: 'watch', green: 'low' }[tone];
-      const text = rate != null
-        ? (since ? `+${fresh} since ${(new Date(p.taken_at) - since) < 6 * 864e5 ? since.toLocaleDateString(undefined, { weekday: 'short' }) : since.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} · ${Math.round(rate)} a week · ${word}` : `${Math.round(rate)} a week · ${word}`)
-        : `${p.total} on the card · ${word}`;
-      return { tone, text };
+      const when = since && (new Date(p.taken_at) - since) < 6 * 864e5 ? since.toLocaleDateString(undefined, { weekday: 'short' })
+        : since ? since.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+      return { tone, text: `${rate} a day · +${fresh ?? '?'} since ${when || 'the last photo'} · ${word}` };
     }
 
     function aiButton(p, card, box) {
@@ -7936,7 +7935,7 @@ function sopOpen() {
       drop.onclick = () => { if (!confirm('Remove this photo?')) return; sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
 
       if (p.section === 'trap') {
-        const sel = el('input', 'fb-num fb-sc-code'); sel.type = 'text'; sel.placeholder = '1B6D0101';
+        const sel = el('input', 'fb-num fb-sc-code'); sel.type = 'text'; sel.placeholder = '1B6';
         sel.setAttribute('autocapitalize', 'characters'); sel.setAttribute('autocomplete', 'off'); sel.spellcheck = false;
         sel.setAttribute('aria-label', 'The code written on the card');
         if (traps.length) { const dl = el('datalist'); dl.id = 'fb-trapcodes-' + p.ref; traps.forEach(t => { const o = el('option'); o.value = shortCode(t.code); dl.append(o); }); sel.setAttribute('list', dl.id); side.append(dl); }
@@ -7949,7 +7948,7 @@ function sopOpen() {
           if (document.activeElement !== sel) sel.value = p.code_text || '';
           const how = p.code_source === 'text' ? ' · read from the card' : p.code_source === 'ai' ? ' · read by the AI' : '';
           src.textContent = !p.code_text ? (p.code_read ? `read "${p.code_read}" — write the code` : 'write the code on the card')
-            : !p.code ? (p.code_why || 'write it like 1B6D0101')
+            : !p.code ? 'write the position, like 1B6'
             : p.trap_id ? 'known trap' + how : `new trap · ${codeWords(p)}${how}`;
           src.className = 'fb-chip' + (p.code ? ' ok' : ' late');
           num.value = p.total == null ? '' : String(p.total);
@@ -8022,7 +8021,7 @@ function sopOpen() {
       cover.textContent = '';
       if (!traps.length) {
         const n = [...sc.photos.values()].filter(x => x.section === 'trap').length;
-        cover.append(el('div', 'fb-hold fb-sc-first', 'First round: photograph every trap. Each card is added from the code written on it — 1B6D0101 = zone 1, row B, 6 m from the corridor, hung 1 January.'),
+        cover.append(el('div', 'fb-hold fb-sc-first', 'First round: photograph every trap. Each one is added from the position written on its card — 1B6 = zone 1, row B, 6 m from the corridor. The count starts today; the colour comes with the next photo.'),
                      el('div', 'fb-sec', `${n} trap${n === 1 ? '' : 's'} photographed`));
         return;
       }
@@ -8037,7 +8036,7 @@ function sopOpen() {
     }
     const missedLine = k => sc.missed[k] ? el('div', 'fb-hold fb-sc-missed', `Not done ${/^(Yesterday|Today|Tomorrow)$/.test(fmtDay(sc.missed[k])) ? fmtDay(sc.missed[k]).toLowerCase() : 'on ' + fmtDay(sc.missed[k])} — due today.`) : '';
     lists.trap = el('div');
-    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph every trap, square-on, the code written on the card in the picture (1B6D0101). The phone reads the code and counts; correct either if it is wrong. A new card is added by itself. The colour is the new insects a week.'),
+    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph every trap, square-on, the position written on the card in the picture (1B6). The phone reads it and counts; correct either if it is wrong. A new trap is added by itself. After changing a card press Replaced — the phone also notices when the count drops. The colour is new insects a day.'),
                       addBar('trap', 'Trap photo'), cover, lists.trap);
     // Plant health
     lists.health = el('div');
@@ -8075,6 +8074,27 @@ function sopOpen() {
       .forEach(p => lists[p.section]?.prepend(photoCard(p)));
     paintCoverage(); paintTabs();
     return box;
+  }
+
+  // ── How the scouting works (0.11.44): the working principle, one tap away ──
+  function howItWorks() {
+    const d = el('details', 'fb-how');
+    try { d.open = localStorage.getItem('fb_how_open') === '1'; } catch (e) {}
+    d.ontoggle = () => { try { localStorage.setItem('fb_how_open', d.open ? '1' : '0'); } catch (e) {} };
+    d.append(el('summary', null, 'How the scouting works'));
+    const list = el('ol');
+    [
+      ['Today\u2019s sections are the tabs.', 'Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day; any other can be opened with + under the tabs.'],
+      ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
+      ['Traps.', 'Photograph each card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads it and counts; correct either if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day: green, orange, red.'],
+      ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
+      ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure.'],
+      ['AI note.', 'Only when you press it, one photo at a time; it needs signal.'],
+      ['Finish.', 'OK or Not OK (with why) at the bottom, then Finish: the phone says what is still missing and, on a trap day, asks about the traps not photographed.'],
+      ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
+    ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), document.createTextNode(t)); list.append(li); });
+    d.append(list);
+    return d;
   }
 
   // ── measuring on the scale card: two taps = one size ────────────────────
@@ -8196,7 +8216,7 @@ function sopOpen() {
     if (sc.due?.trap && !trapsP.length)
       return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
     const noCode = trapsP.find(p => !p.code);
-    if (noCode) return stop('trap', 'A trap photo has no code — write the code on the card (1B6D0101).', noCode.ref);
+    if (noCode) return stop('trap', 'A trap photo has no position — write the one on the card (1B6).', noCode.ref);
     const noNum = trapsP.find(p => p.total == null);
     if (noNum) return stop('trap', 'A trap photo has no count — type the number of insects.', noNum.ref);
     const seen = new Map();
