@@ -872,6 +872,15 @@
     .fb-sc-n { font-size: 11px; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #0d2b27; }
     .fb-sc-n.nok { background: var(--coral); color: #fff; }
     .fb-sc-add { margin: var(--space-3) 0; }
+    .fb-trap-head { align-items: center; }
+    .fb-trap-head .fb-sc-code { width: 92px; }
+    .fb-trap-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: var(--space-2) 0; }
+    .fb-trap-side { border: 2px solid var(--border); border-radius: var(--radius-md); padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .fb-trap-side.yellow { border-color: #e7c21a; }
+    .fb-trap-side.blue { border-color: #2f7de1; }
+    .fb-trap-side img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
+    .fb-trap-side input.fb-num { width: 72px; }
+    .fb-trap-side .fb-btn { min-height: 34px; padding: 4px 10px; font-size: var(--text-xs); }
     .fb-how { margin: 0 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
     .fb-how > summary { cursor: pointer; padding: 10px 14px; font-weight: 700; font-size: var(--text-sm); list-style: none; }
     .fb-how > summary::-webkit-details-marker { display: none; }
@@ -959,7 +968,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.44';
+  const CURRENT_VERSION = '0.11.45';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1093,6 +1102,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.45', '2026-09-29', 'Two-sided traps, the code confirmed', 'Every trap is one card with a yellow side and a blue side. The phone reads the position and asks to confirm it or correct it; once confirmed the camera opens for the other side, without reading the code again. Each side is counted and has its own AI note; the trap colour is both sides together, in new insects a day.'],
     ['0.11.44', '2026-09-29', 'Trap positions, insects a day', 'A trap card carries only its position (1B6 = zone 1, row B, 6 m); the app keeps each card start itself, from Replaced or when the count drops hard. The colour is new insects a day since the photo before, so a card change keeps the curve going; the first photo of a trap starts the count. A How the scouting works panel at the top of the scouting explains the tabs, working in parallel and Finish.'],
     ['0.11.43', '2026-09-29', 'Traps by the code on the card', 'A trap is known by the code written on its card: position and the day it was hung, 1B6D0101 = zone 1, row B, 6 m, hung 1 January (the full year may be added). The first round just asks to photograph every trap, and a new card is added by itself from its code. At Finish, the traps not photographed on a trap day are listed: Taken down, Forgot (photograph it now) or Cannot reach it today with a reason for the manager. The Finish tab is gone: OK, Not OK and the note sit just above the Finish button.'],
     ['0.11.42', '2026-09-29', 'Scouting sections on their days', 'The daily scouting shows only the sections due that day: Traps on Monday, Wednesday and Friday, Growth on Tuesday and Thursday, Plant health every working day (the days are set on the procedure in the console). A holiday moves them to the next working day, and a trap or growth day that was missed comes back the next day. The others can still be opened by hand under the tabs. At least one trap photo only on a trap day.'],
@@ -7479,7 +7489,8 @@ function sopOpen() {
   const PARTS = [['leaf', 'Leaf'], ['fruit', 'Fruit'], ['root', 'Root'], ['stem', 'Stem'], ['whole', 'Whole plant'], ['other', 'Other']];
   const GROWTH_PARTS = [['fruit', 'Fruit'], ['leaf', 'Leaf'], ['whole', 'Whole plant']];
   const MEASURE_WHAT = [['diameter', 'Diameter'], ['length', 'Length'], ['width', 'Width'], ['height', 'Height']];
-  const SC_TABS = [['trap', 'Traps'], ['health', 'Plant health'], ['growth', 'Growth']];   // OK / Not OK sit above Finish (0.11.43)
+  const SC_TABS = [['trap', 'Traps'], ['health', 'Plant health'], ['growth', 'Growth']];
+  const SIDES = [['yellow', 'Yellow side'], ['blue', 'Blue side']];              // the two faces of every trap card (0149)   // OK / Not OK sit above Finish (0.11.43)
   const scDraftKey = task => 'scout2:' + (task.key || task.id);
   let scDraftTimer = null;
   function saveScDraft() {
@@ -7661,15 +7672,29 @@ function sopOpen() {
     let draft = null;
     try { draft = await getKV(scDraftKey(task)); } catch (e) { /* none */ }
     if (draft && Date.now() - (draft.saved || 0) < 24 * 3600000) {
-      (draft.photos || []).forEach(p => sc.photos.set(p.ref, p));
+      (draft.photos || []).forEach(p => {
+        // a one-sided trap photo from an older draft: that side of the card
+        if (p.section === 'trap' && !p.sides) {
+          p.sides = { [p.colour === 'blue' ? 'blue' : 'yellow']: { thumb: p.thumb, full: p.full, full_w: p.full_w, taken_at: p.taken_at, counts: p.counts,
+            total: p.total, algo_total: p.algo_total, algorithm: p.algorithm, confidence: p.confidence, corrected: p.corrected, ai: p.ai, photo_path: p.photo_path } };
+          p.code_ok = !!p.code;
+        }
+        sc.photos.set(p.ref, p);
+      });
       Object.assign(sc, { tab: draft.tab || 'trap', outcome: draft.outcome || null, outcomeNote: draft.outcomeNote || '', lastPos: draft.lastPos || '',
                           extra: new Set(draft.extra || []), status: new Map(draft.status || []) });
     } else if (detail) {
       // editing a scouting already sent: what the server holds
-      (detail.traps || []).forEach((r, i) => sc.photos.set('tr-' + i, { ref: 'tr-' + i, section: 'trap', trap_id: r.trap_id, code: r.code, code_text: shortCode(r.code), taken_at: r.read_at,
-        thumb: r.photo_data, photo_path: r.photo_path, total: r.total, algo_total: r.algo_total, counts: r.counts, corrected: r.corrected,
-        algorithm: r.algorithm, confidence: r.confidence, replaced: r.replaced, note: r.notes || '', code_read: r.code_read,
-        code_source: r.code_source || 'list', gps: r.gps, ai: r.ai, week_rate: r.week_rate, orig_total: r.total }));
+      (detail.traps || []).forEach(r => {
+        const ref = 'tr-' + r.trap_id;
+        const p = sc.photos.get(ref) || { ref, section: 'trap', trap_id: r.trap_id, code: shortCode(r.code), code_text: shortCode(r.code), code_ok: true,
+                                          taken_at: r.read_at, replaced: false, note: '', code_read: r.code_read, code_source: r.code_source || 'list', gps: r.gps, sides: {} };
+        p.replaced = p.replaced || !!r.replaced; p.note = p.note || r.notes || '';
+        p.sides[r.side === 'blue' ? 'blue' : 'yellow'] = { thumb: r.photo_data, photo_path: r.photo_path, total: r.total, algo_total: r.algo_total,
+          counts: r.counts, corrected: r.corrected, algorithm: r.algorithm, confidence: r.confidence, ai: r.ai, taken_at: r.read_at,
+          week_rate: r.week_rate, orig_total: r.total };
+        sc.photos.set(ref, p);
+      });
       (detail.observations || []).forEach(o => sc.photos.set(o.client_ref, { ref: o.client_ref, section: o.section || 'health', taken_at: o.taken_at,
         thumb: o.photo_data, photo_path: o.photo_path, part: o.part, crop_id: o.crop_id, note: o.note || '', pos_code: o.pos_code || '',
         gps: o.gps, measures: o.measures || [], px_per_mm: o.px_per_mm, ai: o.ai, zone_id: o.zone_id, item_id: o.item_id }));
@@ -7763,6 +7788,7 @@ function sopOpen() {
     }
 
     async function addPhoto(section, file, forTrap) {
+      if (section === 'trap') return addTrap(file, forTrap);        // one card, two sides (0149)
       let big;
       try { big = await shrinkPhoto(file, FULL_PX, null); }
       catch (e) { showToast('That photo could not be read — try again', 'error'); return; }
@@ -7800,14 +7826,189 @@ function sopOpen() {
         card._paintTrap?.(); paintCoverage(); saveScDraft();
       }
     }
-    // the code of a trap photo: a card of the list (known), or a new card from its code — added, no question (0146)
+    // The code of a trap: a known trap, or a new position added by itself. What the phone (or the AI) read is
+    // a PROPOSAL until the person confirms it — typed or read, one ✓ Confirm, which opens the other side (0149).
     function setTrapCode(p, text, source) {
       p.code_text = String(text || '').toUpperCase().replace(/\s/g, '');
       const pc = parseTrapCode(p.code_text);
-      if (!pc.ok) { p.code = null; p.trap_id = null; p.hung = null; p.code_why = pc.why || null; return; }
+      if (!pc.ok) { p.code = null; p.trap_id = null; p.code_ok = false; return; }
       const known = traps.find(t => shortCode(t.code) === pc.code);
-      p.code = pc.code; p.trap_id = known ? known.id : null; p.code_why = null;
+      p.code = pc.code; p.trap_id = known ? known.id : null;
+      p.code_ok = source === 'list';                  // chosen from the list of missing traps: already sure
       if (source) p.code_source = source;
+    }
+
+    // ── a trap: one card, its yellow side and its blue side (FarmBox 0149) ──
+    // Each side is photographed and counted on its own (a blue face catches thrips, a yellow one whitefly and
+    // the rest); once the code is confirmed the camera opens for the other side of the same card — its code is
+    // not read again. The trap's figure is the two sides added.
+    async function sideFrom(file, want) {
+      let big;
+      try { big = await shrinkPhoto(file, FULL_PX, null); }
+      catch (e) { showToast('That photo could not be read — try again', 'error'); return null; }
+      const S = { taken_at: new Date().toISOString(), full_w: big.canvas.width, thumb: shrinkCanvas(big.canvas, 640, 0.6) };
+      S.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
+      const canvas = scaleCanvas(big.canvas, 1600); big = null;
+      const seen = cardColour(canvas);
+      const side = want || seen;
+      if (want && seen !== want) S.check = `this looks like the ${seen} side`;
+      try { const r = countInsects(canvas, { colour: side }); Object.assign(S, { counts: r.counts, total: r.total, algo_total: r.total, algorithm: r.algorithm, confidence: r.confidence, corrected: false }); }
+      catch (e) { S.total = null; }
+      return { S, side, canvas };
+    }
+    async function addTrap(file, forTrap) {
+      const got = await sideFrom(file, null);
+      if (!got) return;
+      const p = { ref: 'sc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), section: 'trap', taken_at: got.S.taken_at,
+                  note: '', replaced: false, sides: { [got.side]: got.S },
+                  trap_id: forTrap?.id || null, code: forTrap ? shortCode(forTrap.code) : null, code_text: forTrap ? shortCode(forTrap.code) : '',
+                  code_source: forTrap ? 'list' : null, code_ok: !!forTrap };
+      sc.photos.set(p.ref, p);
+      const card = photoCard(p);
+      lists.trap.prepend(card);
+      paintTabs(); paintCoverage(); saveScDraft();
+      if (forTrap) { askOtherSide(p, card); return; }
+      card._codeState?.('reading the code…');
+      try {
+        const r = await readTrapCode(got.canvas, traps);
+        p.code_read = r.text || null;
+        if (!p.code_ok) { if (r.trap) setTrapCode(p, shortCode(r.trap.code), 'text'); else if (r.fresh) setTrapCode(p, r.fresh.code, 'text'); }
+      } catch (e) { console.warn('text reader', e); }
+      card._paintTrap?.(); paintCoverage(); saveScDraft();
+    }
+    async function addSide(p, side, card, fromGallery) {
+      let f = null;
+      if (!fromGallery) {
+        const r = await takeTrapPhoto(p.code || '', `Trap ${p.code || ''} — now the ${side} side, square-on`, 'trap');
+        if (r === 'cancel') return;
+        f = r;
+      }
+      if (!f) f = await pickFile();
+      if (!f) return;
+      const got = await sideFrom(f, side);
+      if (!got) return;
+      p.sides[side] = got.S;
+      card._paintTrap?.(); paintCoverage(); saveScDraft();
+    }
+    // the code confirmed: straight to the other side of the same card
+    function askOtherSide(p, card) {
+      const missing = SIDES.map(x => x[0]).find(k => !p.sides?.[k]);
+      if (missing) setTimeout(() => addSide(p, missing, card), 300);
+    }
+    // insects a day on one side: the same rule as the server, against that side's photo before
+    function sideRate(p, k) {
+      const S = p.sides?.[k];
+      if (!S || S.total == null) return null;
+      if (run.edit && S.orig_total != null) return S.total === S.orig_total && S.week_rate != null ? { rate: Math.round(S.week_rate / 7 * 10) / 10 } : null;
+      const t = trapById.get(p.trap_id);
+      const last = t?.last_sides?.[k];
+      if (!last || last.total == null || !last.at || Date.now() - new Date(last.at) > 21 * 864e5) return null;
+      const since = new Date(last.at), days = (new Date(S.taken_at) - since) / 864e5;
+      const fresh = last.replaced ? S.total
+        : (S.total < last.total && last.total - S.total >= 3 && S.total < last.total * 0.6) ? S.total
+        : Math.max(0, S.total - last.total);
+      return days >= 0.5 ? { rate: Math.round(fresh / days * 10) / 10, fresh, since } : null;
+    }
+    const toneOf = rate => rate >= th.over ? 'red' : rate >= th.watch ? 'orange' : 'green';
+    function trapLevel(p) {
+      const rs = SIDES.map(([k]) => sideRate(p, k)).filter(Boolean);
+      const sum = rs.reduce((a, x) => a + x.rate, 0);
+      const cards = SIDES.map(([k]) => p.sides?.[k]?.total).filter(x => x != null);
+      if (!rs.length) return { tone: '', text: cards.length ? `${cards.reduce((a, x) => a + x, 0)} on the card · first photo: the count starts, the colour comes with the next one` : 'photograph both sides' };
+      const r = Math.round(sum * 10) / 10, tone = toneOf(r);
+      return { tone, text: `Trap: ${r} a day · ${{ red: 'high', orange: 'watch', green: 'low' }[tone]}${rs.length < 2 && cards.length > 1 ? ' (one side starts its count)' : ''}` };
+    }
+    function trapCard(p) {
+      const card = el('div', 'fb-step fb-photo fb-sc-card fb-trapcard'); card.dataset.ref = p.ref;
+      const head = el('div', 'fb-actions fb-trap-head');
+      const sel = el('input', 'fb-num fb-sc-code'); sel.type = 'text'; sel.placeholder = '1B6';
+      sel.setAttribute('autocapitalize', 'characters'); sel.setAttribute('autocomplete', 'off'); sel.spellcheck = false;
+      sel.setAttribute('aria-label', 'The position written on the card');
+      if (traps.length) { const dl = el('datalist'); dl.id = 'fb-trapcodes-' + p.ref; traps.forEach(t => { const o = el('option'); o.value = shortCode(t.code); dl.append(o); }); sel.setAttribute('list', dl.id); head.append(dl); }
+      const ok = el('button', 'fb-btn fb-btn-primary', '✓ Confirm'); ok.type = 'button';
+      const src = el('span', 'fb-chip');
+      head.append(el('span', 'fb-trap-lbl', 'Trap'), sel, ok, src);
+      const sidesBox = el('div', 'fb-trap-sides');
+      const total = el('div', 'fb-sc-level');
+      const note = el('input', 'fb-note'); note.type = 'text'; note.value = p.note || ''; note.placeholder = 'Note (optional): torn, wet, missing…';
+      note.oninput = () => { p.note = note.value; saveScDraft(); };
+      const rep = el('button', 'fb-btn', 'Replaced'); rep.type = 'button';
+      rep.title = 'The card was changed after these photos: the next count starts from nothing';
+      rep.setAttribute('aria-pressed', String(!!p.replaced));
+      rep.onclick = () => { p.replaced = !p.replaced; rep.setAttribute('aria-pressed', String(p.replaced)); saveScDraft(); };
+      const drop = el('button', 'fb-link', 'Remove'); drop.type = 'button';
+      drop.onclick = () => { if (!confirm('Remove this trap and its photos?')) return; sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
+      const acts = el('div', 'fb-actions'); acts.append(rep, drop);
+      card.append(head, sidesBox, total, acts, note);
+      const paintTotal = () => { const l = trapLevel(p); total.textContent = l.text; total.className = 'fb-sc-level ' + l.tone; card.dataset.tone = l.tone; };
+      card._codeState = text => { src.textContent = text; src.className = 'fb-chip'; };
+      card._paintTrap = () => {
+        if (document.activeElement !== sel) sel.value = p.code_text || '';
+        const how = p.code_source === 'text' ? 'read from the card' : p.code_source === 'ai' ? 'read by the AI' : '';
+        src.textContent = !p.code_text ? (p.code_read ? `read "${p.code_read}" — write the position` : 'write the position on the card')
+          : !p.code ? 'write the position, like 1B6'
+          : !p.code_ok ? (p.code_source === 'typed' ? `${p.code}: tap Confirm` : `${how ? how + ': ' : ''}is it ${p.code}? Confirm or correct it`)
+          : p.trap_id ? 'known trap' : `new trap · ${codeWords(p)}`;
+        src.className = 'fb-chip' + (p.code && p.code_ok ? ' ok' : ' late');
+        ok.classList.toggle('hidden', !p.code || !!p.code_ok);
+        sidesBox.textContent = '';
+        SIDES.forEach(([k, label]) => sidesBox.append(sideBlock(p, k, label, card, paintTotal)));
+        paintTotal();
+      };
+      ok.onclick = () => { if (!p.code) return; p.code_ok = true; card._paintTrap(); paintCoverage(); saveScDraft(); askOtherSide(p, card); };
+      sel.oninput = () => { const v = sel.value.toUpperCase().replace(/\s/g, ''); if (v !== sel.value) sel.value = v;
+                            setTrapCode(p, v, 'typed'); card._paintTrap(); paintCoverage(); saveScDraft(); };
+      card._paintTrap();
+      return card;
+    }
+    function sideBlock(p, k, label, card, paintTotal) {
+      const S = p.sides?.[k];
+      const b = el('div', 'fb-trap-side ' + k);
+      b.append(el('div', 'fb-sec', label));
+      if (!S) {
+        const go = el('button', 'fb-btn', '📷 ' + label); go.type = 'button';
+        const gal = el('button', 'fb-btn', '🖼'); gal.type = 'button'; gal.setAttribute('aria-label', label + ' from the gallery');
+        go.onclick = () => addSide(p, k, card);
+        gal.onclick = () => addSide(p, k, card, true);
+        const r = el('div', 'fb-actions'); r.append(go, gal); b.append(r);
+        return b;
+      }
+      const img = el('img'); img.src = S.thumb || ''; img.alt = label;
+      const num = el('input', 'fb-num'); num.type = 'number'; num.min = '0'; num.step = '1'; num.value = S.total == null ? '' : String(S.total);
+      num.setAttribute('aria-label', 'Insects on the ' + label.toLowerCase());
+      const said = el('span', 'fb-chip', S.algo_total != null ? (S.total !== S.algo_total ? `phone said ${S.algo_total}` : 'counted') : '');
+      const lv = el('div', 'fb-meta');
+      const paintSide = () => { const r = sideRate(p, k); lv.textContent = r ? `${r.rate} a day${r.fresh != null ? ` · +${r.fresh}` : ''}` : 'count starts'; };
+      num.oninput = () => { const n = parseInt(num.value, 10); S.total = isNaN(n) ? null : n; S.corrected = S.algo_total != null && S.total !== S.algo_total;
+                            said.textContent = S.algo_total != null ? (S.corrected ? `phone said ${S.algo_total}` : 'counted') : ''; paintSide(); paintTotal(); saveScDraft(); };
+      const row = el('div', 'fb-actions'); row.append(num, said);
+      const aiBox = el('div', 'fb-sc-ai' + (S.ai ? '' : ' hidden'), S.ai ? aiText({ section: 'trap', ai: S.ai }) : '');
+      const again = el('button', 'fb-link', 'Retake'); again.type = 'button'; again.onclick = () => addSide(p, k, card);
+      const ai = el('button', 'fb-btn fb-ai', S.ai ? '✦ again' : '✦ AI note'); ai.type = 'button';
+      ai.onclick = async () => {
+        if (!navigator.onLine) { showToast('The AI note needs a connection', 'error'); return; }
+        ai.disabled = true; ai.textContent = '✦ Asking…';
+        try {
+          const image = await photoBase64(S);
+          if (!image) throw new Error('this photo is not on the phone any more');
+          const r = await api('/functions/v1/photo-note', { method: 'POST', body: JSON.stringify({ farm_id: task.farm_id || farm.id, kind: 'trap', image,
+            context: { trap_code: p.code || null, colour: k, count: S.total, codes: traps.map(x => shortCode(x.code)), note: p.note || null } }) });
+          if (!r?.ok) throw new Error(r?.error || 'no answer');
+          S.ai = r.ai;
+          if (!p.code && r.ai.code_seen) {
+            const m = traps.length ? matchCode([r.ai.code_seen], traps) : null;
+            const f = m ? null : coerceCode(r.ai.code_seen);
+            if (m || f) setTrapCode(p, shortCode((m || f).code), 'ai');
+          }
+          saveScDraft(); card._paintTrap();
+        } catch (e) { showToast('AI note: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); ai.disabled = false; ai.textContent = '✦ AI note'; }
+      };
+      const acts = el('div', 'fb-actions'); acts.append(ai, again);
+      b.append(img, row, lv);
+      if (S.check) b.append(el('span', 'fb-chip late', S.check));
+      b.append(acts, aiBox);
+      paintSide();
+      return b;
     }
     const codeWords = p => {
       const pc = parseTrapCode(p.code || '');
@@ -7921,6 +8122,7 @@ function sopOpen() {
     }
 
     function photoCard(p) {
+      if (p.section === 'trap') return trapCard(p);
       const card = el('div', 'fb-step fb-photo fb-sc-card'); card.dataset.ref = p.ref;
       const top = el('div', 'fb-shot');
       const img = el('img'); img.src = p.thumb || ''; img.alt = '';
@@ -7934,44 +8136,7 @@ function sopOpen() {
       const drop = el('button', 'fb-link', 'Remove'); drop.type = 'button';
       drop.onclick = () => { if (!confirm('Remove this photo?')) return; sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
 
-      if (p.section === 'trap') {
-        const sel = el('input', 'fb-num fb-sc-code'); sel.type = 'text'; sel.placeholder = '1B6';
-        sel.setAttribute('autocapitalize', 'characters'); sel.setAttribute('autocomplete', 'off'); sel.spellcheck = false;
-        sel.setAttribute('aria-label', 'The code written on the card');
-        if (traps.length) { const dl = el('datalist'); dl.id = 'fb-trapcodes-' + p.ref; traps.forEach(t => { const o = el('option'); o.value = shortCode(t.code); dl.append(o); }); sel.setAttribute('list', dl.id); side.append(dl); }
-        const src = el('span', 'fb-chip');
-        const num = el('input', 'fb-num'); num.type = 'number'; num.min = '0'; num.step = '1'; num.setAttribute('aria-label', 'Insects on the card');
-        const said = el('span', 'fb-chip');
-        const lvl = el('div', 'fb-sc-level');
-        card._codeState = text => { src.textContent = text; src.className = 'fb-chip'; };
-        card._paintTrap = () => {
-          if (document.activeElement !== sel) sel.value = p.code_text || '';
-          const how = p.code_source === 'text' ? ' · read from the card' : p.code_source === 'ai' ? ' · read by the AI' : '';
-          src.textContent = !p.code_text ? (p.code_read ? `read "${p.code_read}" — write the code` : 'write the code on the card')
-            : !p.code ? 'write the position, like 1B6'
-            : p.trap_id ? 'known trap' + how : `new trap · ${codeWords(p)}${how}`;
-          src.className = 'fb-chip' + (p.code ? ' ok' : ' late');
-          num.value = p.total == null ? '' : String(p.total);
-          said.textContent = p.algo_total != null ? (p.total !== p.algo_total ? `phone said ${p.algo_total}` : 'counted by the phone') : '';
-          const l = level(p);
-          lvl.textContent = l ? l.text : 'type the number of insects';
-          lvl.className = 'fb-sc-level ' + (l ? l.tone : '');
-          card.dataset.tone = l ? l.tone : '';
-        };
-        sel.oninput = () => { const v = sel.value.toUpperCase().replace(/\s/g, ''); if (v !== sel.value) sel.value = v;
-                              setTrapCode(p, v, 'typed'); card._paintTrap(); paintCoverage(); saveScDraft(); };
-        num.oninput = () => { const n = parseInt(num.value, 10); p.total = isNaN(n) ? null : n; p.corrected = p.algo_total != null && p.total !== p.algo_total; card._paintTrap(); saveScDraft(); };
-        const l1 = el('div', 'fb-actions'); l1.append(sel, src);
-        const l2 = el('div', 'fb-actions'); l2.append(el('span', 'fb-trap-lbl', 'Insects'), num, said);
-        side.append(l1, l2, lvl);
-        const rep = el('button', 'fb-btn', 'Replaced'); rep.type = 'button';
-        rep.setAttribute('aria-pressed', String(!!p.replaced));
-        rep.onclick = () => { p.replaced = !p.replaced; rep.setAttribute('aria-pressed', String(p.replaced)); saveScDraft(); };
-        acts.append(rep, aiButton(p, card, aiBox), drop);
-        note.placeholder = 'Note (optional): torn, wet, missing…';
-        card.append(acts, note, aiBox);
-        card._paintTrap();
-      } else {
+      {
         const pos = positionRow(p);
         card._paintPos = () => pos._paint();
         side.append(chips(p.section === 'growth' ? GROWTH_PARTS : PARTS, () => p.part, v => { p.part = v; }));
@@ -8026,7 +8191,8 @@ function sopOpen() {
         return;
       }
       const done = new Set([...sc.photos.values()].filter(x => x.section === 'trap' && x.trap_id).map(x => x.trap_id));
-      cover.append(el('div', 'fb-sec', `${done.size} of ${traps.length} traps today`));
+      const half = [...sc.photos.values()].filter(x => x.section === 'trap' && SIDES.some(([k]) => !x.sides?.[k])).length;
+      cover.append(el('div', 'fb-sec', `${done.size} of ${traps.length} traps today` + (half ? ` · ${half} waiting for the other side` : '')));
       const rest = traps.filter(t => !done.has(t.id));
       if (rest.length) {
         const row = el('div', 'fb-actions');
@@ -8036,7 +8202,7 @@ function sopOpen() {
     }
     const missedLine = k => sc.missed[k] ? el('div', 'fb-hold fb-sc-missed', `Not done ${/^(Yesterday|Today|Tomorrow)$/.test(fmtDay(sc.missed[k])) ? fmtDay(sc.missed[k]).toLowerCase() : 'on ' + fmtDay(sc.missed[k])} — due today.`) : '';
     lists.trap = el('div');
-    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph every trap, square-on, the position written on the card in the picture (1B6). The phone reads it and counts; correct either if it is wrong. A new trap is added by itself. After changing a card press Replaced — the phone also notices when the count drops. The colour is new insects a day.'),
+    panes.trap.append(missedLine('trap'), el('div', 'config-hint', 'Photograph each trap on one side, square-on, with its position in the picture (1B6). The phone reads the position — confirm it or correct it — then opens the camera for the other side. Each side is counted; correct the numbers if they are wrong. A new position is added by itself. After changing a card press Replaced. The colour is new insects a day, both sides together.'),
                       addBar('trap', 'Trap photo'), cover, lists.trap);
     // Plant health
     lists.health = el('div');
@@ -8086,7 +8252,7 @@ function sopOpen() {
     [
       ['Today\u2019s sections are the tabs.', 'Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day; any other can be opened with + under the tabs.'],
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
-      ['Traps.', 'Photograph each card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads it and counts; correct either if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day: green, orange, red.'],
+      ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal.'],
@@ -8216,9 +8382,13 @@ function sopOpen() {
     if (sc.due?.trap && !trapsP.length)
       return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
     const noCode = trapsP.find(p => !p.code);
-    if (noCode) return stop('trap', 'A trap photo has no position — write the one on the card (1B6).', noCode.ref);
-    const noNum = trapsP.find(p => p.total == null);
-    if (noNum) return stop('trap', 'A trap photo has no count — type the number of insects.', noNum.ref);
+    if (noCode) return stop('trap', 'A trap has no position — write the one on the card (1B6).', noCode.ref);
+    const unsure = trapsP.find(p => !p.code_ok);
+    if (unsure) return stop('trap', `Is it trap ${unsure.code}? Confirm the position or correct it.`, unsure.ref);
+    const oneSide = trapsP.find(p => SIDES.some(([k]) => !p.sides?.[k]));
+    if (oneSide) return stop('trap', `Trap ${oneSide.code}: the ${SIDES.find(([k]) => !oneSide.sides?.[k])[0]} side still needs its photo.`, oneSide.ref);
+    const noNum = trapsP.find(p => SIDES.some(([k]) => p.sides[k].total == null));
+    if (noNum) return stop('trap', `Trap ${noNum.code}: type the number of insects on each side.`, noNum.ref);
     const seen = new Map();
     for (const p of trapsP) {
       if (seen.has(p.code)) return stop('trap', `Trap ${shortCode(p.code)} has two photos — remove one.`, p.ref);
@@ -8249,17 +8419,20 @@ function sopOpen() {
       steps: step ? [{ seq: step.seq, step_id: step.id, result: sc.outcome === 'ok' ? 'ok' : 'nok', note: String(sc.outcomeNote || '').trim() || null,
                        media: [], recorded_at: finished }] : [],
       trap_status: missing.map(t => ({ trap_id: t.id, status: sc.status.get(t.id).status, note: sc.status.get(t.id).note || null })),
-      traps: trapsP.map(p => ({ trap_id: p.trap_id, code: p.code, colour: p.colour || null, photo_data: p.thumb || null, photo_path: p.photo_path || null,
-        counts: p.counts || {}, total: p.total ?? 0, algo_total: p.algo_total ?? null, algorithm: p.algorithm || null, confidence: p.confidence ?? null,
-        corrected: !!p.corrected, replaced: !!p.replaced, notes: p.note || null, read_at: p.taken_at, code_read: p.code_read || null,
-        code_source: p.code_source || null, gps: p.gps || null, ai: p.ai || null })),
+      traps: trapsP.flatMap(p => SIDES.map(([k]) => [k, p.sides[k]]).map(([k, S]) => ({ trap_id: p.trap_id, code: p.code, side: k, colour: k,
+        photo_data: S.thumb || null, photo_path: S.photo_path || null,
+        counts: S.counts || {}, total: S.total ?? 0, algo_total: S.algo_total ?? null, algorithm: S.algorithm || null, confidence: S.confidence ?? null,
+        corrected: !!S.corrected, replaced: !!p.replaced, notes: p.note || null, read_at: S.taken_at || p.taken_at, code_read: p.code_read || null,
+        code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: p.gps || null, ai: S.ai || null }))),
       observations: plants.map(p => ({ client_ref: p.ref, section: p.section, part: p.part || 'other', crop_id: p.crop_id || null,
         zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, taken_at: p.taken_at,
         pos_code: parsePos(p.pos_code) ? p.pos_code : null, gps: p.gps || null, measures: p.measures || [], px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
     };
-    const uploads = photos.filter(p => p.full instanceof Blob && !p.photo_path)
-      .map(p => p.section === 'trap' ? { kind: 'trap', ref: p.code, blob: p.full } : { kind: 'observation', ref: p.ref, blob: p.full })
-      .filter(u => u.ref);
+    const uploads = [
+      ...trapsP.flatMap(p => SIDES.map(([k]) => [k, p.sides[k]]).filter(([, S]) => S.full instanceof Blob && !S.photo_path)
+                                  .map(([k, S]) => ({ kind: 'trap', ref: `${p.code}:${k}`, blob: S.full }))),
+      ...plants.filter(p => p.full instanceof Blob && !p.photo_path).map(p => ({ kind: 'observation', ref: p.ref, blob: p.full })),
+    ];
     run.task.members.forEach(m => { if (m.id === t.id) { m.status = 'done'; m.done_at = m.done_at || finished; } });
     await putAll('tasks', run.task.members.filter(m => m.id === t.id));
     await queue([payload, ...uploads.map((u, n) => ({ __upload: true, client_run_id: `${cid}~up-${Date.now().toString(36)}-${String(n).padStart(3, '0')}`,
