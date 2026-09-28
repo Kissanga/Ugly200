@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v140';
+const CACHE_NAME = 'ugly200-v141';
 // the scouting's text reader (Tesseract.js from jsDelivr, 0.11.40): kept across releases for offline days
 const LIB_CACHE = 'fb-lib-v1';
 const STATIC_ASSETS = [
@@ -49,7 +49,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(request.url);
 
   // the text reader's files (script, worker, wasm core, language data) from jsDelivr: cache-first, versioned URLs
-  if (url.hostname === 'cdn.jsdelivr.net' && request.method === 'GET') {
+  // and the measuring tool's model (MediaPipe MagicTouch, 0.11.53), the same way
+  if ((url.hostname === 'cdn.jsdelivr.net' || (url.hostname === 'storage.googleapis.com' && url.pathname.startsWith('/mediapipe-models/'))) && request.method === 'GET') {
     e.respondWith(caches.open(LIB_CACHE).then(cache => cache.match(request).then(hit => hit || fetch(request).then(res => {
       if (res && res.status === 200) cache.put(request, res.clone());
       return res;

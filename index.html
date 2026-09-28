@@ -972,8 +972,10 @@
     .fb-viewer-head { position: absolute; top: 0; left: 0; right: 0; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px;
       background: linear-gradient(rgba(0,0,0,.6), transparent); color: #fff; pointer-events: none; }
     .fb-viewer-head .fb-meta { color: #ddd; }
-    .fb-viewer-bar { display: flex; gap: 8px; justify-content: center; padding: 12px 16px 22px; background: #000; }
+    .fb-viewer-bar { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 10px 10px 20px; background: #000; }
+    .fb-viewer-bar .fb-btn { min-height: 40px; padding: 6px 12px; font-size: var(--text-sm); white-space: nowrap; }
     .fb-sc-card .fb-shot img, .fb-trap-side img { cursor: zoom-in; }
+    .fb-btn.fb-auto { border-style: dashed; }
     .fb-measure-bar { flex-wrap: wrap; gap: 8px; justify-content: center; }
     /* the day list (0.11.40): earlier days folded with a red dot, days ahead closed until opened */
     .fb-fold { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
@@ -1018,7 +1020,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.52';
+  const CURRENT_VERSION = '0.11.53';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1152,6 +1154,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.53', '2026-09-29', 'The phone measures the fruit or leaf', 'When a scale is known (the card found, or the scale set on a ruler) the phone outlines the fruit or leaf framed in the middle of the photo and gives its length and its diameter or width, on the phone, free, also offline after the first time. Tap the photo to see the outline; Re-measure and a tap on the right object if it took another. The AI estimate stays on its button.'],
     ['0.11.52', '2026-09-29', 'Sizes on plant health, photos that zoom', 'A plant-health photo looks for the scale card too and says Scale detected; measure with two taps, or press Estimate the size for the AI to read the fruit or leaf against it. Tap any scouting photo, trap sides included, to see it full screen: pinch or double-tap to zoom, drag to move, and Measure from there.'],
     ['0.11.51', '2026-09-29', 'The AI reads a code the phone cannot', 'When Scan a trap finds no position on a card and there is signal, the AI reads the handwritten code by itself and fills it in; it stays a proposal until you press Yes, and never replaces what you typed or picked. Every other AI note is still only when pressed.'],
     ['0.11.50', '2026-09-29', 'A clearer scouting screen', 'The tabs say how far along each section is (Traps 5 of 12, Health 2 photos, Growth off today) and a greyed tab still opens. Traps is the list of the unit traps by zone: a ring to do, half a ring with one side left, the colour when done; tap one to photograph it, tap a done one for its counts; the dots mark one taken down or out of reach. A card not in the list: Scan, then one sheet asks which trap it is and goes straight to the other side. One finish bar: Not OK (with why), or All OK and finish. The long explanations are behind the question mark.'],
@@ -8053,7 +8056,7 @@ function sopOpen() {
       try { big = await shrinkPhoto(file, FULL_PX, null); }
       catch (e) { showToast('That photo could not be read — try again', 'error'); return; }
       const p = { ref: 'sc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), section,
-                  taken_at: new Date().toISOString(), note: '', full_w: big.canvas.width };
+                  taken_at: new Date().toISOString(), note: '', full_w: big.canvas.width, full_h: big.canvas.height };
       p.thumb = shrinkCanvas(big.canvas, 640, 0.6);
       p.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
       const c1600 = scaleCanvas(big.canvas, 1600);
@@ -8075,6 +8078,7 @@ function sopOpen() {
       const card = photoCard(p);
       lists[section].prepend(card);
       paintTabs(); paintCoverage(); saveScDraft();
+      if (section !== 'trap' && p.px_per_mm) sc.autoSize(p);         // the scale card is in it: measure the fruit or leaf
       if (section !== 'trap' && await gpsAllowed()) { const g = await getGps(); if (g) { p.gps = g; card._paintPos?.(); saveScDraft(); } }
       if (section === 'trap' && !p.code) {
         card._codeState?.('reading the code…');
@@ -8510,7 +8514,8 @@ function sopOpen() {
             ms.append(el('span', 'fb-chip' + (p.px_per_mm ? ' ok' : ' late'),
               !p.px_per_mm ? 'no scale card seen' : p.scale_source === 'ruler' ? 'scale set on the ruler' : 'Scale detected · 5 cm square'));
             (p.measures || []).forEach((m, i) => {
-              const c = el('button', 'fb-btn', `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
+              const c = el('button', 'fb-btn' + (m.by === 'auto' ? ' fb-auto' : ''), `${m.by === 'auto' ? '📐 ' : ''}${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
+              if (m.by === 'auto') c.title = 'Measured by the phone on the outline; ✕ removes it';
               c.onclick = () => { p.measures.splice(i, 1); paintMs(); saveScDraft(); };
               ms.append(c);
             });
@@ -8526,6 +8531,9 @@ function sopOpen() {
               est.onclick = () => aiBtn.click();
               ms.append(est);
             }
+            if (p.auto_state === 'busy') ms.append(el('span', 'fb-chip', '📐 measuring…'));
+            else if (p.auto_state === 'none') ms.append(el('span', 'fb-chip late', '📐 could not outline it — tap the photo, then Re-measure'));
+            else if (p.auto_state === 'failed') ms.append(el('span', 'fb-chip late', '📐 the measuring tool needs a connection the first time'));
             const aiSizes = (p.ai?.measures || []).map(m => `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1].toLowerCase()} ≈ ${m.mm} mm`);
             if (aiSizes.length) ms.append(el('span', 'fb-chip ok', '✦ ' + aiSizes.join(' · ')));
           };
@@ -8535,7 +8543,9 @@ function sopOpen() {
         // tap the photo: full screen, pinch or double-tap to zoom, Measure inside
         img.onclick = () => photoViewer(p.full instanceof Blob ? p.full : p.thumb,
           { title: p.section === 'growth' ? 'Growth photo' : 'Plant photo', measure: p.full instanceof Blob ? () => measurePhoto(p, paintMs) : null,
-            scale: p.px_per_mm ? (p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected · 5 cm square') : null });
+            scale: p.px_per_mm ? (p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected · 5 cm square') : null,
+            outline: p.auto_view || null,
+            pick: p.full instanceof Blob && p.px_per_mm ? pt => sc.autoSize(p, pt) : null });
         card._paintMs = () => paintMs();
         note.placeholder = p.section === 'growth' ? 'Note (optional)' : 'What you see (optional)';
         const more = el('button', 'fb-link', '⋯'); more.type = 'button'; more.setAttribute('aria-label', 'More');
@@ -8568,6 +8578,24 @@ function sopOpen() {
     // the zone names come with the task: one item per zone (FarmBox 0095), its zone on area_zone_id
     const zoneName = new Map(task.positions.filter(x => x.area_zone_id).map(x => [x.area_zone_id, x.label || x.zone_name]));
     sc.open = new Set(); sc.menu = null;
+    // the phone measures the fruit or leaf (0.11.53): at the centre by itself, or where the person tapped in the viewer
+    sc.autoSize = async (p, point) => {
+      if (!(p.full instanceof Blob) || !p.px_per_mm) return;
+      const card = document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`);
+      p.auto_state = 'busy'; card?._paintMs?.();
+      try {
+        const r = await autoMeasure(p, point || null);
+        if (!r) p.auto_state = 'none';
+        else {
+          const two = p.part === 'fruit' ? 'diameter' : 'width';
+          p.measures = [...(p.measures || []).filter(m => m.by !== 'auto'),
+            { what: 'length', mm: r.length_mm, by: 'auto', scale: p.scale_source || 'card' },
+            { what: two, mm: r.width_mm, by: 'auto', scale: p.scale_source || 'card' }];
+          p.auto_view = r.view; p.auto_point = r.point; p.auto_state = 'done';
+        }
+      } catch (e) { console.warn('measuring', e); p.auto_state = 'failed'; }
+      card?._paintMs?.(); saveScDraft();
+    };
     sc.reveal = ref => { if (sc.photos.get(ref)?.section === 'trap') { sc.open.add(ref); paintCoverage(); } };
     const shortLevel = p => {
       const rs = SIDES.map(([k]) => sideRate(p, k)).filter(Boolean);
@@ -8708,7 +8736,7 @@ function sopOpen() {
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
       ['Writing the position.', 'On each card, in black permanent marker: capitals about 2 cm high, on one line, apart from each other, on a clear part of the card (1B6, no dashes). Write it on both sides. If the phone cannot read it, press Read with AI or type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
-      ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note. With the scale card in the photo the phone says Scale detected: measure with two taps, or press Estimate the size for the AI to read it. Tap any photo to zoom.'],
+      ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
       ['Finish.', 'All OK · finish at the bottom, or Not OK first (with why): the phone says what is still missing and, on a trap day, asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
@@ -8718,8 +8746,128 @@ function sopOpen() {
     return d;
   }
 
+  // ── the size of the fruit or leaf, measured on the phone (0.11.53, owner: "yes automatic estimation … not library
+  // available?") ── Google's MediaPipe interactive segmenter (MagicTouch, free, on the phone, cached for offline days)
+  // outlines the object at a point: the photo's centre, where the fruit or leaf is framed, then points round it when the
+  // outline runs edge to edge (a tape, a stem, the whole canopy). The outline keeps only its piece at the point and, when
+  // it holds two clearly different hues (a cucumber and the yellow tape beside it), the larger one. Length = its main
+  // axis; thickness = the median width of its middle slices for a fruit, the widest slice for a leaf; in millimetres from
+  // the scale (the card's square or the ruler the person set). Checked on FarmLab's two cucumber photos: 274 and 349 mm
+  // against the tape's 277 and ~360. A tap in the zoom viewer measures another object.
+  const MP_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const SEG_MODEL = 'https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite';
+  let segP = null;
+  function segmenter() {
+    if (!segP) segP = (async () => {
+      const mp = await import(MP_URL + '/vision_bundle.mjs');
+      const files = await mp.FilesetResolver.forVisionTasks(MP_URL + '/wasm');
+      return mp.InteractiveSegmenter.createFromOptions(files, { baseOptions: { modelAssetPath: SEG_MODEL }, outputCategoryMask: true, outputConfidenceMasks: false });
+    })().catch(e => { segP = null; throw e; });
+    return segP;
+  }
+  const segmentAt = (seg, canvas, x, y) => new Promise(res => seg.segment(canvas, { keypoint: { x, y } }, r => {
+    const m = r.categoryMask, w = m.width, h = m.height, a = m.getAsUint8Array().slice(); m.close?.();
+    res({ w, h, a, fg: a[Math.round(y * (h - 1)) * w + Math.round(x * (w - 1))] });
+  }));
+  // the connected piece at the seed (or the largest), 4-neighbour
+  function maskPiece(mask, w, h, seed) {
+    const lab = new Int32Array(w * h), st = new Int32Array(w * h); let id = 0, best = 0, bestN = 0;
+    for (let p = 0; p < w * h; p++) {
+      if (!mask[p] || lab[p]) continue;
+      id++; let sp = 0, n = 0; st[sp++] = p; lab[p] = id;
+      while (sp) { const q = st[--sp]; n++; const qx = q % w;
+        if (qx > 0 && mask[q - 1] && !lab[q - 1]) { lab[q - 1] = id; st[sp++] = q - 1; }
+        if (qx < w - 1 && mask[q + 1] && !lab[q + 1]) { lab[q + 1] = id; st[sp++] = q + 1; }
+        if (q >= w && mask[q - w] && !lab[q - w]) { lab[q - w] = id; st[sp++] = q - w; }
+        if (q < w * (h - 1) && mask[q + w] && !lab[q + w]) { lab[q + w] = id; st[sp++] = q + w; } }
+      if (n > bestN) { bestN = n; best = id; }
+    }
+    const keep = seed >= 0 && lab[seed] ? lab[seed] : best, out = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) if (lab[p] === keep) out[p] = 1;
+    return out;
+  }
+  function cleanMask(r, x, y, rgba) {
+    const { w, h, a, fg } = r, on = new Uint8Array(w * h);
+    for (let i = 0; i < a.length; i++) if (a[i] === fg) on[i] = 1;
+    let m = maskPiece(on, w, h, Math.round(y * (h - 1)) * w + Math.round(x * (w - 1)));
+    const idx = []; for (let p = 0; p < w * h; p += 7) if (m[p]) idx.push(p);
+    if (idx.length < 200) return m;
+    // two colours: by hue, not brightness (chromaticity r/(r+g+b), g/(r+g+b)) — the shaded side of a cucumber is the same
+    // green as its lit side and must stay; the yellow tape beside it is another colour and goes
+    const col = p => { const r = rgba[p * 4], g = rgba[p * 4 + 1], bl = rgba[p * 4 + 2], t = r + g + bl + 1; return [r / t, g / t]; };
+    const d2 = (c, k) => (c[0] - k[0]) ** 2 + (c[1] - k[1]) ** 2;
+    let c1 = null, c2 = null, lo = 1e9, hi = -1;
+    idx.forEach(p => { const c = col(p), v = c[0] - c[1]; if (v < lo) { lo = v; c1 = c; } if (v > hi) { hi = v; c2 = c; } });
+    let n1 = 0, n2 = 0;
+    for (let it = 0; it < 8; it++) {
+      const s1 = [0, 0], s2 = [0, 0]; n1 = n2 = 0;
+      idx.forEach(p => { const c = col(p); if (d2(c, c1) <= d2(c, c2)) { n1++; s1[0] += c[0]; s1[1] += c[1]; } else { n2++; s2[0] += c[0]; s2[1] += c[1]; } });
+      if (n1) c1 = s1.map(v => v / n1); if (n2) c2 = s2.map(v => v / n2);
+    }
+    if (Math.sqrt(d2(c1, c2)) > 0.07 && Math.min(n1, n2) / (n1 + n2) > 0.08) {
+      const keepC = n1 >= n2 ? c1 : c2, dropC = n1 >= n2 ? c2 : c1, m2 = new Uint8Array(w * h);
+      for (let p = 0; p < w * h; p++) if (m[p]) { const c = col(p); if (d2(c, keepC) <= d2(c, dropC)) m2[p] = 1; }
+      m = maskPiece(m2, w, h, -1);
+    }
+    return m;
+  }
+  // length along the main axis, thickness across; whether it runs edge to edge
+  function outlineSize(m, w, h, part) {
+    let n = 0, sx = 0, sy = 0; const t = { l: 0, r: 0, t: 0, b: 0 }, xs = [], ys = [];
+    for (let i = 0; i < m.length; i++) if (m[i]) { const px = i % w, py = (i - px) / w; n++; sx += px; sy += py; xs.push(px); ys.push(py);
+      if (px === 0) t.l++; if (px === w - 1) t.r++; if (py === 0) t.t++; if (py === h - 1) t.b++; }
+    if (!n) return null;
+    const mx = sx / n, my = sy / n; let cxx = 0, cyy = 0, cxy = 0;
+    for (let i = 0; i < n; i += 3) { const dx = xs[i] - mx, dy = ys[i] - my; cxx += dx * dx; cyy += dy * dy; cxy += dx * dy; }
+    const ang = 0.5 * Math.atan2(2 * cxy, cxx - cyy), ux = Math.cos(ang), uy = Math.sin(ang);
+    const along = new Float32Array(n), across = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; along[i] = dx * ux + dy * uy; across[i] = -dx * uy + dy * ux; }
+    const sorted = Float32Array.from(along).sort(), lo = sorted[Math.floor(n * 0.003)], hi = sorted[Math.min(n - 1, Math.floor(n * 0.997))], L = hi - lo;
+    const B = 40, mins = new Array(B).fill(Infinity), maxs = new Array(B).fill(-Infinity);
+    for (let i = 0; i < n; i++) { const b = Math.min(B - 1, Math.max(0, Math.floor((along[i] - lo) / L * B))); if (across[i] < mins[b]) mins[b] = across[i]; if (across[i] > maxs[b]) maxs[b] = across[i]; }
+    const widths = mins.map((v, b) => maxs[b] - v).filter(x => isFinite(x) && x > 0);
+    const mid = widths.slice(Math.floor(widths.length * 0.2), Math.ceil(widths.length * 0.8)).sort((p, q) => p - q);
+    const W = part === 'fruit' ? mid[Math.floor(mid.length / 2)] : [...widths].sort((p, q) => p - q)[Math.floor(widths.length * 0.9)];
+    const e = k => t[k] > 3, spans = (e('l') && e('r')) || (e('t') && e('b'));
+    return { L, W, area: n / (w * h), spans, mx, my, ux, uy, lo, hi };
+  }
+  let sizeBusy = Promise.resolve();
+  // the measurement of one photo: {length_mm, width_mm, point, view (a small picture of the outline)} or null
+  function autoMeasure(p, point) {
+    const job = sizeBusy.then(async () => {
+      if (!(p.full instanceof Blob) || !p.px_per_mm) return null;
+      const seg = await segmenter();
+      const k = Math.min(1, 1024 / Math.max(p.full_w || 1024, p.full_h || p.full_w || 1024));
+      const bmp = await createImageBitmap(p.full, { resizeWidth: Math.max(1, Math.round((p.full_w || 1024) * k)), resizeQuality: 'medium' });
+      const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+      const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0); bmp.close?.();
+      const rgba = cx.getImageData(0, 0, c.width, c.height).data;
+      const ppm = p.px_per_mm * (c.width / (p.full_w || c.width));
+      const pts = point ? [point] : [[0.5, 0.5], [0.5, 0.4], [0.5, 0.6], [0.42, 0.5], [0.58, 0.5], [0.42, 0.4], [0.58, 0.6]];
+      for (const [x, y] of pts) {
+        const r = await segmentAt(seg, c, x, y);
+        const m = cleanMask(r, x, y, rgba), s = outlineSize(m, r.w, r.h, p.part);
+        if (!s || s.area < 0.004 || s.area > 0.6 || (!point && s.spans)) continue;
+        // the outline on a small copy: the object tinted, its long axis drawn
+        const v = document.createElement('canvas'); const vk = Math.min(1, 640 / Math.max(c.width, c.height));
+        v.width = Math.round(c.width * vk); v.height = Math.round(c.height * vk);
+        const vx = v.getContext('2d'); vx.drawImage(c, 0, 0, v.width, v.height);
+        const tint = document.createElement('canvas'); tint.width = r.w; tint.height = r.h;
+        const tx = tint.getContext('2d'), im = tx.createImageData(r.w, r.h);
+        for (let i = 0; i < m.length; i++) if (m[i]) { im.data[i * 4] = 255; im.data[i * 4 + 1] = 0; im.data[i * 4 + 2] = 200; im.data[i * 4 + 3] = 110; }
+        tx.putImageData(im, 0, 0); vx.drawImage(tint, 0, 0, v.width, v.height);
+        vx.strokeStyle = '#ffeb3b'; vx.lineWidth = 3; vx.beginPath();
+        vx.moveTo((s.mx + s.ux * s.lo) * vk, (s.my + s.uy * s.lo) * vk); vx.lineTo((s.mx + s.ux * s.hi) * vk, (s.my + s.uy * s.hi) * vk); vx.stroke();
+        return { length_mm: Math.round(s.L / ppm), width_mm: Math.round(s.W / ppm), point: [x, y], view: v.toDataURL('image/jpeg', 0.7) };
+      }
+      return null;
+    });
+    sizeBusy = job.catch(() => {});
+    return job;
+  }
+
   // ── a photo full screen (0.11.52): pinch, wheel or double-tap to zoom (to 8×), drag to move ──
-  function photoViewer(src, { title = '', measure = null, scale = null } = {}) {
+  function photoViewer(src, { title = '', measure = null, scale = null, outline = null, pick = null } = {}) {
     const ov = el('div', 'fb-viewer');
     const stage = el('div', 'fb-viewer-stage');
     const img = el('img'); img.alt = title; img.draggable = false; img.decoding = 'async';
@@ -8732,6 +8880,18 @@ function sopOpen() {
     const fitB = el('button', 'fb-btn', 'Fit'); fitB.type = 'button';
     const close = el('button', 'fb-btn fb-btn-primary', 'Close'); close.type = 'button';
     if (measure) { const m = el('button', 'fb-btn', '📏 Measure'); m.type = 'button'; m.onclick = () => { done(); measure(); }; bar.append(m); }
+    // the phone's outline over the photo, and "tap the fruit" to measure another object (0.11.53)
+    let picking = false;
+    if (outline) {
+      const o = el('button', 'fb-btn', 'Outline'); o.type = 'button'; o.setAttribute('aria-pressed', 'false');
+      o.onclick = () => { const on = o.getAttribute('aria-pressed') !== 'true'; o.setAttribute('aria-pressed', String(on)); img.src = on ? outline : (url || src || ''); };
+      bar.append(o);
+    }
+    if (pick) {
+      const rm = el('button', 'fb-btn', '📐 Re-measure'); rm.type = 'button';
+      rm.onclick = () => { picking = true; rm.setAttribute('aria-pressed', 'true'); head.lastChild.textContent = 'Tap the fruit or leaf to measure'; };
+      bar.append(rm);
+    }
     bar.append(fitB, close);
     ov.append(stage, head, bar);
     document.body.append(ov);
@@ -8773,6 +8933,11 @@ function sopOpen() {
       if (!pts.has(e.pointerId)) return;
       pts.delete(e.pointerId);
       if (pts.size) { snap(); return; }
+      if (!moved && picking) {                        // Re-measure: this tap says which object
+        const r = img.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+        if (x >= 0 && x <= 1 && y >= 0 && y <= 1) { done(); pick([x, y]); }
+        base = null; return;
+      }
       if (!moved) {                                   // a tap: two in a row zoom in, or back out
         const now = Date.now();
         if (now - lastTap < 320) { zoomAt(s > 1.5 ? 1 : 3, centre(e.clientX, e.clientY)); lastTap = 0; } else lastTap = now;
@@ -8837,6 +9002,7 @@ function sopOpen() {
           if (!(v > 0) || px < 20) { showToast('Tap two marks further apart and give the centimetres between them', 'error'); return; }
           ppm = px / (v * 10);
           p.px_per_mm = Math.round(ppm * (p.full_w / bmp.width) * 1000) / 1000; p.scale_source = 'ruler'; p.scale_cm = v;
+          run?.sc?.autoSize?.(p);                                      // the phone measures the fruit or leaf on this scale
           calibrating = false; a = b = null; saved = `Scale set: ${v} cm on the ruler. Now tap the two ends of what you measure.`;
           draw(); paintBar(); saveScDraft();
         };
