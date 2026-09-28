@@ -847,6 +847,14 @@
     .fb-cam-zoom input[type=range] { flex:1; accent-color:#f4d24a; }
     .fb-cam-zval { min-width:38px; font-weight:800; font-variant-numeric: tabular-nums; }
     .fb-cam .fb-cam-q { min-height:34px; padding:4px 10px; }
+    .fb-cam-ring { position:fixed; width:72px; height:72px; margin:-36px 0 0 -36px; border:2px solid #fff; border-radius:50%;
+      pointer-events:none; box-shadow:0 0 0 1px rgba(0,0,0,.35); transition:border-color .2s, transform .2s; transform:scale(1.15); }
+    .fb-cam-ring.ok { border-color:#3ddc84; transform:scale(1); }
+    .fb-cam-end { color:#bbb; font-size:12px; }
+    .fb-cam-blur { position:absolute; left:12px; right:12px; bottom:120px; background:rgba(20,20,22,.94); color:#fff; border-radius:14px;
+      padding:14px; display:flex; flex-direction:column; gap:6px; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+    .fb-cam-blur span { color:#ccc; font-size:14px; }
+    .fb-cam-blur .fb-actions { margin-top:6px; }
     .fb-trap-counts { margin-top: var(--space-2); }
     .fb-hold { background: var(--coral-soft); color: var(--coral); border:1px solid var(--coral); border-radius: var(--radius-md);
       padding: 10px 12px; font-weight:700; font-size: var(--text-sm); margin-bottom: var(--space-3); }
@@ -968,7 +976,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.45';
+  const CURRENT_VERSION = '0.11.46';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1102,6 +1110,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.46', '2026-09-29', 'A sharper camera', 'Tap the picture to focus there; the shutter focuses once more before it fires. Focus: auto or by hand, with a near to far slider, in place of Close-up. The photo is taken at the largest size up to 4000 px. A blurred photo asks whether to retake. Phone camera opens the phone camera app itself, with its macro and its sharpening.'],
     ['0.11.45', '2026-09-29', 'Two-sided traps, the code confirmed', 'Every trap is one card with a yellow side and a blue side. The phone reads the position and asks to confirm it or correct it; once confirmed the camera opens for the other side, without reading the code again. Each side is counted and has its own AI note; the trap colour is both sides together, in new insects a day.'],
     ['0.11.44', '2026-09-29', 'Trap positions, insects a day', 'A trap card carries only its position (1B6 = zone 1, row B, 6 m); the app keeps each card start itself, from Replaced or when the count drops hard. The colour is new insects a day since the photo before, so a card change keeps the curve going; the first photo of a trap starts the count. A How the scouting works panel at the top of the scouting explains the tabs, working in parallel and Finish.'],
     ['0.11.43', '2026-09-29', 'Traps by the code on the card', 'A trap is known by the code written on its card: position and the day it was hung, 1B6D0101 = zone 1, row B, 6 m, hung 1 January (the full year may be added). The first round just asks to photograph every trap, and a new card is added by itself from its code. At Finish, the traps not photographed on a trap day are listed: Taken down, Forgot (photograph it now) or Cannot reach it today with a reason for the manager. The Finish tab is gone: OK, Not OK and the note sit just above the Finish button.'],
@@ -8719,12 +8728,55 @@ function sopOpen() {
     return i === 0 ? 'Main' : `Lens ${i + 1}`;
   };
   const fmtZoom = v => (Math.round(Number(v) * 10) / 10) + '×';
-  const canCloseUp = caps => !!(caps.focusDistance && caps.focusDistance.max > caps.focusDistance.min && (caps.focusMode || []).includes('manual'));
+  const canFocusBy = caps => !!(caps.focusDistance && caps.focusDistance.max > caps.focusDistance.min && (caps.focusMode || []).includes('manual'));
+  const fmtFocus = v => v >= 1 ? `≈ ${(Math.round(v * 10) / 10)} m` : `≈ ${Math.round(v * 100)} cm`;
+  // How sharp the frame is (0.11.46): the mean of its 300 steepest one-pixel steps over the
+  // patch's contrast. A sharp edge rises in a pixel or two (0.5–1.2); a blurred one over many
+  // (under 0.25 once the blur is ~2 px on the preview, ~4 px on the 4000 px photo). A flat
+  // patch (a bare card) says nothing, and nothing is said about it.
+  const BLUR_BELOW = 0.25;
+  function sharpness(g, w, h) {
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < g.length; i++) hist[g[i]]++;
+    const at = q => { let n = 0; const t = g.length * q; for (let v = 0; v < 256; v++) { n += hist[v]; if (n >= t) return v; } return 255; };
+    const range = at(0.98) - at(0.02);
+    if (range < 25) return null;
+    const gh = new Uint32Array(256);
+    for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+      const i = y * w + x, v = g[i];
+      gh[Math.max(Math.abs(g[i + 1] - v), Math.abs(g[i + w] - v))]++;
+    }
+    let need = 300, sum = 0, n = 0;
+    for (let v = 255; v >= 0 && need > 0; v--) { const k = Math.min(gh[v], need); sum += k * v; n += k; need -= k; }
+    return (sum / Math.max(1, n)) / range;
+  }
+  // a 400 px patch of the live frame at its own pixels, round the focus point
+  function frameSharpness(video, pt) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return null;
+    const S = Math.min(400, vw, vh);
+    const sx = Math.max(0, Math.min(vw - S, Math.round((pt?.x ?? 0.5) * vw - S / 2)));
+    const sy = Math.max(0, Math.min(vh - S, Math.round((pt?.y ?? 0.5) * vh - S / 2)));
+    const c = document.createElement('canvas'); c.width = S; c.height = S;
+    const cx = c.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(video, sx, sy, S, S, 0, 0, S, S);
+    const d = cx.getImageData(0, 0, S, S).data, g = new Uint8Array(S * S);
+    for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+    return sharpness(g, S, S);
+  }
+  const wait = ms => new Promise(r => setTimeout(r, ms));
 
+  // The in-app camera (0.11.10, lenses 0.11.41). 0.11.46 (owner: "focus is still in auto mode … not
+  // very sharp"): tap the screen to focus there, and the shutter focuses once more before it fires;
+  // a Focus slider (near ↔ far) where the phone lets the app hold the focus, instead of the old
+  // Close-up that pinned it at the nearest distance; the still is asked for at its largest up to
+  // FULL_PX; a blurred frame asks whether to retake; and "Phone camera" hands over to the phone's
+  // own camera app for its macro and its processing (a run killed meanwhile comes back from its draft).
   function takeTrapPhoto(code, hintText, purpose = 'trap') {
     return new Promise(async resolve => {
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
       const pref = camPref(purpose);
+      if (pref.closeup && !pref.focus) { pref.focus = { manual: true, d: null }; delete pref.closeup; }   // 0.11.41's Close-up
       const openCam = deviceId => navigator.mediaDevices.getUserMedia({ audio: false, video: {
         ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
         width: { ideal: 4096 }, height: { ideal: 3072 } } });
@@ -8743,28 +8795,54 @@ function sopOpen() {
       const video = document.createElement('video');
       video.autoplay = true; video.playsInline = true; video.muted = true; video.srcObject = stream;
       const hint = el('div', 'fb-cam-hint', hintText || `Trap ${code} — square-on, the whole card and its code in the picture`);
+      const ring = el('div', 'fb-cam-ring'); ring.hidden = true;
       const ctl = el('div', 'fb-cam-ctl');
       const bar = el('div', 'fb-cam-bar');
       const cancel = el('button', 'fb-btn', 'Cancel');
       const shutter = el('button', 'fb-cam-shutter'); shutter.setAttribute('aria-label', 'Take the photo');
-      bar.append(cancel, shutter);
-      ov.append(video, hint, ctl, bar);
+      const native = el('button', 'fb-btn', '📷 Phone camera');
+      native.title = "Use the phone's own camera app — its macro and its sharpening";
+      bar.append(cancel, shutter, native);
+      ov.append(video, hint, ring, ctl, bar);
       document.body.append(ov);
       const track = () => stream.getVideoTracks()[0];
+      const caps = () => track().getCapabilities?.() || {};
       const remember = () => saveCamPref(purpose, pref);
+      let done = false;
       const stop = () => { try { stream.getTracks().forEach(x => x.stop()); } catch (e) {} ov.remove(); };
+      const finish = v => { if (done) return; done = true; stop(); resolve(v); };
+      let point = null;                                   // the last place tapped, 0–1 of the frame
+      const manual = () => !!pref.focus?.manual && canFocusBy(caps());
+      const autoMode = c => (c.focusMode || []).includes('continuous') ? 'continuous' : (c.focusMode || []).includes('single-shot') ? 'single-shot' : null;
 
-      // the remembered zoom and close-up, on whichever lens is open
+      async function apply(adv) {
+        try { await track().applyConstraints({ advanced: [adv] }); return true; }
+        catch (e) {
+          if (adv.pointsOfInterest) { const { pointsOfInterest, ...rest } = adv; if (Object.keys(rest).length) return apply(rest); }
+          console.warn('camera settings', e); return false;
+        }
+      }
+      // one focus pass, on the point when there is one (single-shot where offered, else the continuous one)
+      async function focusOnce(pt) {
+        const c = caps(), modes = c.focusMode || [];
+        if (manual() || !modes.length) return false;
+        const adv = { focusMode: modes.includes('single-shot') ? 'single-shot' : autoMode(c) };
+        if (pt) adv.pointsOfInterest = [pt];               // dropped by apply() where the phone refuses it
+        return apply(adv);
+      }
+      // the remembered zoom and focus, on whichever lens is open
       async function applyPrefs() {
-        const t = track(), caps = t.getCapabilities?.() || {};
-        const adv = {};
-        if (caps.zoom && pref.zoom) adv.zoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, pref.zoom));
-        if (pref.closeup && canCloseUp(caps)) { adv.focusMode = 'manual'; adv.focusDistance = caps.focusDistance.min; }
-        if (Object.keys(adv).length) { try { await t.applyConstraints({ advanced: [adv] }); } catch (e) { console.warn('camera settings', e); } }
+        const c = caps(), adv = {};
+        if (c.zoom && pref.zoom) adv.zoom = Math.min(c.zoom.max, Math.max(c.zoom.min, pref.zoom));
+        if (manual()) {
+          const lo = c.focusDistance.min, hi = Math.min(c.focusDistance.max, 1.5);
+          adv.focusMode = 'manual'; adv.focusDistance = Math.min(hi, Math.max(lo, pref.focus.d ?? lo));
+        } else if (autoMode(c)) adv.focusMode = autoMode(c);
+        if (Object.keys(adv).length) await apply(adv);
       }
       function paintTools() {
         ctl.textContent = '';
-        const t = track(), caps = t.getCapabilities?.() || {}, set = t.getSettings?.() || {};
+        const t = track(), c = caps(), set = t.getSettings?.() || {};
         const row = el('div', 'fb-cam-tools');
         if (lenses.length > 1) {
           const i = Math.max(0, lenses.findIndex(d => d.deviceId === set.deviceId));
@@ -8773,33 +8851,44 @@ function sopOpen() {
           b.onclick = () => switchTo(lenses[(i + 1) % lenses.length].deviceId);
           row.append(b);
         }
-        if (canCloseUp(caps)) {
-          const b = el('button', 'fb-btn', 'Close-up');
-          b.setAttribute('aria-pressed', String(!!pref.closeup));
-          b.title = 'Focus as near as this lens can — for small insects and eggs';
+        if (canFocusBy(c)) {
+          const b = el('button', 'fb-btn', manual() ? 'Focus: by hand' : 'Focus: auto');
+          b.setAttribute('aria-pressed', String(manual()));
+          b.title = 'Auto: tap the screen where it should be sharp. By hand: slide from near to far.';
           b.onclick = async () => {
-            pref.closeup = !pref.closeup; remember();
-            b.setAttribute('aria-pressed', String(pref.closeup));
-            const back = (caps.focusMode || []).includes('continuous') ? 'continuous' : 'single-shot';
-            try { await t.applyConstraints({ advanced: [pref.closeup ? { focusMode: 'manual', focusDistance: caps.focusDistance.min } : { focusMode: back }] }); }
-            catch (e) { console.warn('close-up', e); }
+            pref.focus = { manual: !manual(), d: pref.focus?.d ?? null }; remember();
+            await applyPrefs(); paintTools();
           };
           row.append(b);
         }
         if (row.children.length) ctl.append(row);
-        if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+        if (manual()) {
+          const lo = c.focusDistance.min, hi = Math.min(c.focusDistance.max, 1.5);
+          const f = el('div', 'fb-cam-zoom');
+          const r = el('input'); r.type = 'range'; r.min = String(lo); r.max = String(hi); r.step = String(c.focusDistance.step || 0.01);
+          r.value = String(Math.min(hi, Math.max(lo, pref.focus.d ?? set.focusDistance ?? lo))); r.setAttribute('aria-label', 'Focus distance');
+          const lab = el('span', 'fb-cam-zval', fmtFocus(Number(r.value)));
+          r.oninput = () => {
+            lab.textContent = fmtFocus(Number(r.value));
+            pref.focus.d = Number(r.value); remember();
+            apply({ focusMode: 'manual', focusDistance: Number(r.value) });
+          };
+          f.append(el('span', 'fb-cam-end', 'near'), r, el('span', 'fb-cam-end', 'far'), lab);
+          ctl.append(f);
+        }
+        if (c.zoom && c.zoom.max > c.zoom.min) {
           const z = el('div', 'fb-cam-zoom');
-          const max = Math.min(caps.zoom.max, 10);
-          const r = el('input'); r.type = 'range'; r.min = String(caps.zoom.min); r.max = String(max); r.step = String(caps.zoom.step || 0.1);
-          r.value = String(set.zoom ?? caps.zoom.min); r.setAttribute('aria-label', 'Zoom');
+          const max = Math.min(c.zoom.max, 10);
+          const r = el('input'); r.type = 'range'; r.min = String(c.zoom.min); r.max = String(max); r.step = String(c.zoom.step || 0.1);
+          r.value = String(set.zoom ?? c.zoom.min); r.setAttribute('aria-label', 'Zoom');
           const lab = el('span', 'fb-cam-zval', fmtZoom(r.value));
           const setZoom = v => {
             r.value = String(v); lab.textContent = fmtZoom(v); pref.zoom = Number(v); remember();
-            t.applyConstraints({ advanced: [{ zoom: Number(v) }] }).catch(e => console.warn('zoom', e));
+            apply({ zoom: Number(v) });
           };
           r.oninput = () => setZoom(r.value);
           z.append(lab, r);
-          [1, 2].filter(v => v >= caps.zoom.min && v <= max).forEach(v => {
+          [1, 2].filter(v => v >= c.zoom.min && v <= max).forEach(v => {
             const q = el('button', 'fb-btn fb-cam-q', v + '×'); q.onclick = () => setZoom(v); z.append(q);
           });
           ctl.append(z);
@@ -8810,31 +8899,96 @@ function sopOpen() {
         try { stream = await openCam(id); }
         catch (e) {
           showToast('That lens could not be opened', 'error');
-          try { stream = await openCam(null); } catch (e2) { stop(); return resolve(null); }
+          try { stream = await openCam(null); } catch (e2) { finish(null); return; }
         }
         video.srcObject = stream;
         pref.deviceId = track().getSettings?.().deviceId || id; pref.zoom = null; remember();
-        await applyPrefs(); paintTools();
+        point = null; await applyPrefs(); paintTools();
       }
       await applyPrefs(); paintTools();
 
-      cancel.onclick = () => { stop(); resolve('cancel'); };
-      // the full photo: the camera's own still where the browser offers it
-      // (ImageCapture, Chrome on Android), else the preview frame at its size
-      shutter.onclick = async () => {
-        shutter.disabled = true;
+      // tap to focus: where the finger lands on the picture (object-fit: cover crops its edges)
+      let ringTimer = null;
+      video.addEventListener('click', async ev => {
+        const r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight;
+        if (!vw || !vh) return;
+        const k = Math.max(r.width / vw, r.height / vh), dw = vw * k, dh = vh * k;
+        const x = (ev.clientX - r.left - (r.width - dw) / 2) / dw, y = (ev.clientY - r.top - (r.height - dh) / 2) / dh;
+        if (x < 0 || x > 1 || y < 0 || y > 1) return;
+        point = { x, y };
+        if (manual()) { pref.focus.manual = false; remember(); await applyPrefs(); paintTools(); }   // a tap means "auto, here"
+        ring.hidden = false; ring.className = 'fb-cam-ring';
+        ring.style.left = ev.clientX + 'px'; ring.style.top = ev.clientY + 'px';
+        clearTimeout(ringTimer);
+        const ok = await focusOnce(point);
+        if (!ok) { ring.hidden = true; showToast('This phone does not let the app choose where to focus', 'info'); return; }
+        ringTimer = setTimeout(() => { ring.className = 'fb-cam-ring ok'; ringTimer = setTimeout(() => { ring.hidden = true; }, 900); }, 700);
+      });
+
+      cancel.onclick = () => finish('cancel');
+      // the phone's own camera app: the page lets go of the camera first
+      native.onclick = () => {
+        try { stream.getTracks().forEach(x => x.stop()); } catch (e) {}
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); inp.style.display = 'none';
+        document.body.append(inp);
+        let back = false;
+        const settle = v => { if (back) return; back = true; inp.remove(); window.removeEventListener('focus', onFocus); finish(v); };
+        const onFocus = () => setTimeout(() => settle(inp.files?.[0] || 'cancel'), 1500);   // came back without a photo
+        inp.onchange = () => settle(inp.files?.[0] || 'cancel');
+        inp.addEventListener('cancel', () => settle('cancel'));
+        window.addEventListener('focus', onFocus);
+        inp.click();
+      };
+
+      // the still: focus once more, judge the frame, then the camera's own photo at its largest up to
+      // FULL_PX (ImageCapture, Chrome on Android) — a 50 MP still would push the app out of memory —
+      // else the preview frame at its size
+      async function takeStill() {
         let blob = null;
-        try {
-          if (window.ImageCapture) blob = await new ImageCapture(track()).takePhoto();
-        } catch (e) { console.warn('takePhoto', e); }
+        if (window.ImageCapture) {
+          const ic = new ImageCapture(track());
+          let opts;
+          try {
+            const pc = await ic.getPhotoCapabilities();
+            if (pc?.imageWidth?.max && pc?.imageHeight?.max) {
+              const w = Math.min(pc.imageWidth.max, FULL_PX);
+              opts = { imageWidth: w, imageHeight: Math.round(w * pc.imageHeight.max / pc.imageWidth.max) };
+            }
+          } catch (e) { /* no photo capabilities */ }
+          try { blob = await ic.takePhoto(opts); }
+          catch (e) { if (opts) { try { blob = await ic.takePhoto(); } catch (e2) { console.warn('takePhoto', e2); } } else console.warn('takePhoto', e); }
+        }
         if (!blob) {
           const w = video.videoWidth, h = video.videoHeight;
-          if (!w || !h) { showToast('The camera is still starting — try again', 'error'); shutter.disabled = false; return; }
+          if (!w || !h) return null;
           const c = document.createElement('canvas'); c.width = w; c.height = h;
           c.getContext('2d').drawImage(video, 0, 0);
           blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
         }
-        stop(); resolve(blob);
+        return blob;
+      }
+      function askBlurred(blob) {
+        const box = el('div', 'fb-cam-blur');
+        box.append(el('b', null, 'This photo looks blurred — retake?'),
+          el('span', null, point ? 'Hold still, tap the card to focus, then shoot.' : 'Hold still, tap where it should be sharp, then shoot.'));
+        const row = el('div', 'fb-actions');
+        const again = el('button', 'fb-btn fb-btn-primary', 'Retake');
+        const keep = el('button', 'fb-btn', 'Keep it');
+        row.append(again, keep); box.append(row); ov.append(box);
+        again.onclick = async () => { box.remove(); shutter.disabled = false; await applyPrefs(); };
+        keep.onclick = () => finish(blob);
+      }
+      shutter.onclick = async () => {
+        shutter.disabled = true;
+        if (!video.videoWidth) { showToast('The camera is still starting — try again', 'error'); shutter.disabled = false; return; }
+        if (await focusOnce(point)) await wait(650);
+        let score = null;
+        try { score = frameSharpness(video, point); } catch (e) { /* cannot read the frame */ }
+        const blob = await takeStill();
+        if (!blob) { showToast('The photo could not be taken — try again', 'error'); shutter.disabled = false; return; }
+        if (score != null && score < BLUR_BELOW) { console.info('blur score', score.toFixed(2)); askBlurred(blob); return; }
+        finish(blob);
       };
     });
   }
