@@ -966,6 +966,14 @@
     .fb-sc-ai::before { content: '✦ AI · '; font-weight: 800; }
     .fb-sc-outcome .fb-btn { min-height: 48px; font-size: var(--text-base); }
     .fb-measure canvas { touch-action: none; }
+    .fb-viewer { position: fixed; inset: 0; z-index: 1001; background: #000; display: flex; flex-direction: column; }
+    .fb-viewer-stage { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; }
+    .fb-viewer-stage img { max-width: 100%; max-height: 100%; transform-origin: center; will-change: transform; user-select: none; -webkit-user-drag: none; }
+    .fb-viewer-head { position: absolute; top: 0; left: 0; right: 0; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px;
+      background: linear-gradient(rgba(0,0,0,.6), transparent); color: #fff; pointer-events: none; }
+    .fb-viewer-head .fb-meta { color: #ddd; }
+    .fb-viewer-bar { display: flex; gap: 8px; justify-content: center; padding: 12px 16px 22px; background: #000; }
+    .fb-sc-card .fb-shot img, .fb-trap-side img { cursor: zoom-in; }
     .fb-measure-bar { flex-wrap: wrap; gap: 8px; justify-content: center; }
     /* the day list (0.11.40): earlier days folded with a red dot, days ahead closed until opened */
     .fb-fold { margin-top: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
@@ -1010,7 +1018,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.51';
+  const CURRENT_VERSION = '0.11.52';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1144,6 +1152,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.52', '2026-09-29', 'Sizes on plant health, photos that zoom', 'A plant-health photo looks for the scale card too and says Scale detected; measure with two taps, or press Estimate the size for the AI to read the fruit or leaf against it. Tap any scouting photo, trap sides included, to see it full screen: pinch or double-tap to zoom, drag to move, and Measure from there.'],
     ['0.11.51', '2026-09-29', 'The AI reads a code the phone cannot', 'When Scan a trap finds no position on a card and there is signal, the AI reads the handwritten code by itself and fills it in; it stays a proposal until you press Yes, and never replaces what you typed or picked. Every other AI note is still only when pressed.'],
     ['0.11.50', '2026-09-29', 'A clearer scouting screen', 'The tabs say how far along each section is (Traps 5 of 12, Health 2 photos, Growth off today) and a greyed tab still opens. Traps is the list of the unit traps by zone: a ring to do, half a ring with one side left, the colour when done; tap one to photograph it, tap a done one for its counts; the dots mark one taken down or out of reach. A card not in the list: Scan, then one sheet asks which trap it is and goes straight to the other side. One finish bar: Not OK (with why), or All OK and finish. The long explanations are behind the question mark.'],
     ['0.11.49', '2026-09-29', 'Insects sized on the grid', 'The insects on a trap are now sized against the card printed 23 mm grid, measured in each photo, instead of assuming a 25 cm card: the old way read FarmLab cards about 30 percent small, so insects were sized a class too big. Tilted or partly cropped cards still measure right; without a visible grid the card length is used as before.'],
@@ -8059,7 +8068,8 @@ function sopOpen() {
       } else {
         Object.assign(p, { pos_code: sc.lastPos || '', part: section === 'growth' ? 'fruit' : 'leaf', measures: [],
                            crop_id: crops.length === 1 ? crops[0].id : null });
-        if (section === 'growth') { const s = findScale(c1600); if (s) { p.px_per_mm = Math.round(s.ppm * (p.full_w / c1600.width) * 1000) / 1000; p.scale_source = 'card'; } }
+        // the scale card, on a growth photo and on a plant-health one (0.11.52)
+        { const s = findScale(c1600); if (s) { p.px_per_mm = Math.round(s.ppm * (p.full_w / c1600.width) * 1000) / 1000; p.scale_source = 'card'; } }
       }
       sc.photos.set(p.ref, p);
       const card = photoCard(p);
@@ -8316,6 +8326,7 @@ function sopOpen() {
         return b;
       }
       const img = el('img'); img.src = S.thumb || ''; img.alt = label;
+      img.onclick = () => photoViewer(S.full instanceof Blob ? S.full : S.thumb, { title: `Trap ${p.code || ''} · ${label.toLowerCase()}` });
       const num = el('input', 'fb-num'); num.type = 'number'; num.min = '0'; num.step = '1'; num.value = S.total == null ? '' : String(S.total);
       num.setAttribute('aria-label', 'Insects on the ' + label.toLowerCase());
       const said = el('span', 'fb-chip', S.algo_total != null ? (S.total !== S.algo_total ? `phone said ${S.algo_total}` : 'counted') : '');
@@ -8411,6 +8422,7 @@ function sopOpen() {
             if (m || f) { setTrapCode(p, shortCode((m || f).code), 'ai'); card._paintTrap?.(); paintCoverage(); }
           }
           box.textContent = aiText(p); box.classList.remove('hidden');
+          card._paintMs?.();
           saveScDraft();
         } catch (e) {
           showToast('AI note: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error');
@@ -8484,12 +8496,19 @@ function sopOpen() {
         side.append(chips(p.section === 'growth' ? GROWTH_PARTS : PARTS, () => p.part, v => { p.part = v; }));
         if (crops.length > 1) side.append(chips(crops.map(c => [c.id, c.name]), () => p.crop_id, v => { p.crop_id = v; }));
         card.append(pos);
-        if (p.section === 'growth') {
-          const ms = el('div', 'fb-actions fb-sc-measures');
-          const paintMs = () => {
+        // sizes (0.11.52, owner: "in the plant health add a message scale detected and estimate dimension of the fruit /
+        // leaf, zoom in the pic when clicked"): a growth photo always has its scale line; a plant-health one once a scale
+        // is known or a size taken. ✦ Estimate the size asks the AI (pressed only) for the sizes against the scale.
+        const ms = el('div', 'fb-actions fb-sc-measures');
+        let paintMs = () => {};
+        {
+          paintMs = () => {
             ms.textContent = '';
+            const growth = p.section === 'growth';
+            if (!growth && !p.px_per_mm && !(p.measures || []).length) { ms.classList.add('hidden'); return; }
+            ms.classList.remove('hidden');
             ms.append(el('span', 'fb-chip' + (p.px_per_mm ? ' ok' : ' late'),
-              !p.px_per_mm ? 'no scale card seen' : p.scale_source === 'ruler' ? 'scale set on the ruler' : 'scale card found'));
+              !p.px_per_mm ? 'no scale card seen' : p.scale_source === 'ruler' ? 'scale set on the ruler' : 'Scale detected · 5 cm square'));
             (p.measures || []).forEach((m, i) => {
               const c = el('button', 'fb-btn', `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
               c.onclick = () => { p.measures.splice(i, 1); paintMs(); saveScDraft(); };
@@ -8501,16 +8520,29 @@ function sopOpen() {
               go.onclick = () => measurePhoto(p, paintMs);
               ms.append(go);
             }
+            if (p.px_per_mm) {
+              const est = el('button', 'fb-btn fb-ai', '✦ Estimate the size'); est.type = 'button';
+              est.title = 'The AI reads the fruit or leaf against the scale (needs signal)';
+              est.onclick = () => aiBtn.click();
+              ms.append(est);
+            }
+            const aiSizes = (p.ai?.measures || []).map(m => `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1].toLowerCase()} ≈ ${m.mm} mm`);
+            if (aiSizes.length) ms.append(el('span', 'fb-chip ok', '✦ ' + aiSizes.join(' · ')));
           };
           paintMs();
           card.append(ms);
-          img.onclick = () => { if (p.full instanceof Blob) measurePhoto(p, paintMs); };
         }
+        // tap the photo: full screen, pinch or double-tap to zoom, Measure inside
+        img.onclick = () => photoViewer(p.full instanceof Blob ? p.full : p.thumb,
+          { title: p.section === 'growth' ? 'Growth photo' : 'Plant photo', measure: p.full instanceof Blob ? () => measurePhoto(p, paintMs) : null,
+            scale: p.px_per_mm ? (p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected · 5 cm square') : null });
+        card._paintMs = () => paintMs();
         note.placeholder = p.section === 'growth' ? 'Note (optional)' : 'What you see (optional)';
         const more = el('button', 'fb-link', '⋯'); more.type = 'button'; more.setAttribute('aria-label', 'More');
         drop.classList.add('hidden');
         more.onclick = () => drop.classList.toggle('hidden');
-        acts.append(aiButton(p, card, aiBox), more, drop);
+        const aiBtn = aiButton(p, card, aiBox);
+        acts.append(aiBtn, more, drop);
         card.append(note, acts, aiBox);
       }
       return card;
@@ -8629,11 +8661,11 @@ function sopOpen() {
       cover, lists.trap, scan);
     // Plant health
     lists.health = el('div');
-    panes.health.append(el('div', 'config-hint', 'Anything that looks wrong on a plant. Say where (3B8) or use the GPS.'),
+    panes.health.append(el('div', 'config-hint', 'Anything that looks wrong on a plant. Say where (3B8) or use the GPS. Put the scale card beside it to get sizes; tap a photo to zoom.'),
                         addBar('health', 'Add a plant photo'), lists.health);
     // Growth
     lists.growth = el('div');
-    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit or leaf beside the scale card, or a ruler or tape along it. Tap the photo to measure.'),
+    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit or leaf beside the scale card, or a ruler or tape along it. Tap a photo to zoom; 📏 to measure.'),
                         addBar('growth', 'Add a growth photo'), lists.growth);
     // the end, under every tab, just above Finish: OK / Not OK and a note (0.11.43)
     const fin = el('div', 'fb-sc-end');
@@ -8676,7 +8708,7 @@ function sopOpen() {
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
       ['Writing the position.', 'On each card, in black permanent marker: capitals about 2 cm high, on one line, apart from each other, on a clear part of the card (1B6, no dashes). Write it on both sides. If the phone cannot read it, press Read with AI or type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
-      ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note.'],
+      ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note. With the scale card in the photo the phone says Scale detected: measure with two taps, or press Estimate the size for the AI to read it. Tap any photo to zoom.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
       ['Finish.', 'All OK · finish at the bottom, or Not OK first (with why): the phone says what is still missing and, on a trap day, asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
@@ -8684,6 +8716,76 @@ function sopOpen() {
     ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), document.createTextNode(t)); list.append(li); });
     d.append(list);
     return d;
+  }
+
+  // ── a photo full screen (0.11.52): pinch, wheel or double-tap to zoom (to 8×), drag to move ──
+  function photoViewer(src, { title = '', measure = null, scale = null } = {}) {
+    const ov = el('div', 'fb-viewer');
+    const stage = el('div', 'fb-viewer-stage');
+    const img = el('img'); img.alt = title; img.draggable = false; img.decoding = 'async';
+    let url = null;
+    if (src instanceof Blob) { url = URL.createObjectURL(src); img.src = url; } else img.src = src || '';
+    stage.append(img);
+    const head = el('div', 'fb-viewer-head');
+    head.append(el('b', null, title), el('span', 'fb-meta', scale || 'Pinch or double-tap to zoom'));
+    const bar = el('div', 'fb-viewer-bar');
+    const fitB = el('button', 'fb-btn', 'Fit'); fitB.type = 'button';
+    const close = el('button', 'fb-btn fb-btn-primary', 'Close'); close.type = 'button';
+    if (measure) { const m = el('button', 'fb-btn', '📏 Measure'); m.type = 'button'; m.onclick = () => { done(); measure(); }; bar.append(m); }
+    bar.append(fitB, close);
+    ov.append(stage, head, bar);
+    document.body.append(ov);
+    let s = 1, tx = 0, ty = 0;
+    const clamp = () => {
+      const w = img.clientWidth, h = img.clientHeight, W = stage.clientWidth, H = stage.clientHeight;
+      const mx = Math.max(0, (w * s - W) / 2), my = Math.max(0, (h * s - H) / 2);
+      tx = Math.min(mx, Math.max(-mx, tx)); ty = Math.min(my, Math.max(-my, ty));
+    };
+    const apply = () => { clamp(); img.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`; };
+    const centre = (x, y) => { const r = stage.getBoundingClientRect(); return { x: x - r.left - r.width / 2, y: y - r.top - r.height / 2 }; };
+    const zoomAt = (to, c) => { to = Math.min(8, Math.max(1, to)); tx = c.x - (c.x - tx) * (to / s); ty = c.y - (c.y - ty) * (to / s); s = to; if (s === 1) tx = ty = 0; apply(); };
+    const pts = new Map();
+    let base = null, lastTap = 0, moved = false;
+    const snap = () => {
+      const a = [...pts.values()];
+      base = { s, tx, ty, a: a.map(p => ({ ...p })),
+               d: a.length > 1 ? Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) : 0,
+               mid: a.length > 1 ? centre((a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2) : centre(a[0].x, a[0].y) };
+    };
+    stage.onpointerdown = e => { try { stage.setPointerCapture(e.pointerId); } catch (err) { /* nothing to capture */ }
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = false; snap(); };
+    stage.onpointermove = e => {
+      if (!pts.has(e.pointerId) || !base) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const a = [...pts.values()];
+      if (a.length > 1 && base.d) {
+        const d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), mid = centre((a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2);
+        const to = Math.min(8, Math.max(1, base.s * d / base.d));
+        tx = mid.x - (base.mid.x - base.tx) * (to / base.s); ty = mid.y - (base.mid.y - base.ty) * (to / base.s); s = to;
+        moved = true; apply();
+      } else if (a.length === 1) {
+        const dx = a[0].x - base.a[0].x, dy = a[0].y - base.a[0].y;
+        if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+        if (s > 1) { tx = base.tx + dx; ty = base.ty + dy; apply(); }
+      }
+    };
+    const up = e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.delete(e.pointerId);
+      if (pts.size) { snap(); return; }
+      if (!moved) {                                   // a tap: two in a row zoom in, or back out
+        const now = Date.now();
+        if (now - lastTap < 320) { zoomAt(s > 1.5 ? 1 : 3, centre(e.clientX, e.clientY)); lastTap = 0; } else lastTap = now;
+      }
+      base = null;
+    };
+    stage.onpointerup = up; stage.onpointercancel = up;
+    stage.onwheel = e => { e.preventDefault(); zoomAt(s * (e.deltaY < 0 ? 1.25 : 0.8), centre(e.clientX, e.clientY)); };
+    fitB.onclick = () => { s = 1; tx = ty = 0; apply(); };
+    const done = () => { ov.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', key); };
+    const key = e => { if (e.key === 'Escape') done(); };
+    document.addEventListener('keydown', key);
+    close.onclick = done;
   }
 
   // ── measuring: two taps = one size ─────────────────────────────────────
