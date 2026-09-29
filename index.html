@@ -1088,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.63';
+  const CURRENT_VERSION = '0.11.64';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1110,14 +1110,57 @@
       const steady = data.version && data.version === lastSaid;
       lastSaid = data.version;
       if (Date.now() - notYetAt < 5 * 60 * 1000) return;
+      // 0.11.64: a new number seen once is asked again in 15 s, not in 5 minutes
+      if (!steady && data.version && data.version !== CURRENT_VERSION) { clearTimeout(recheckTimer); recheckTimer = setTimeout(checkForUpdates, 15000); return; }
       if (steady && data.version !== CURRENT_VERSION && sessionStorage.getItem('nb_update_dismissed') !== data.version) {
         updateAvailable = true;
         // "Update now" was already tapped for this version but the phone is
         // still on the old one: say so instead of offering the same button again.
         const stuck = sessionStorage.getItem('nb_update_target') === data.version;
+        // 0.11.64: nothing open (no checklist, sheet, camera or typing) → update by itself, once per version
+        if (!stuck && quietNow() && await arrived(data.version)) { autoUpdate(data.version); return; }
         showVersionNotification(data.version, stuck);
       }
     } catch(e) {}
+  }
+  let recheckTimer = null;
+  // is the person in the middle of something? A checklist, a scouting, a sheet, the camera, a photo, a field being typed in
+  function quietNow() {
+    if (document.visibilityState !== 'visible') return false;
+    const run = document.getElementById('fb-run');
+    if (run && !run.classList.contains('hidden')) return false;
+    if (document.querySelector('.fb-sheet, .fb-cam, .fb-viewer, .fb-measure')) return false;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return false;
+    return true;
+  }
+  function autoUpdate(v) {
+    const n = document.createElement('div');
+    n.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top) + 72px);left:50%;transform:translateX(-50%);z-index:10002;' +
+      'background:var(--ink);color:var(--ink-text);padding:12px 16px;border-radius:var(--radius-xl);font-size:var(--text-sm);box-shadow:var(--shadow-lg)';
+    n.textContent = '✨ Updating to ' + v + '…';
+    document.body.appendChild(n);
+    setTimeout(() => applyUpdate(v), 900);
+  }
+  // unregister the worker, empty the caches, open an address the HTTP cache has never seen
+  async function applyUpdate(newVersion) {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(k => k !== 'fb-lib-v1').map(k => caches.delete(k)));   // the text reader and the measuring model stay
+      }
+    } catch (_) {}
+    sessionStorage.setItem('nb_update_target', newVersion);
+    // A unique address can't be answered from the browser's HTTP cache
+    // (GitHub Pages: max-age=600). reload() could hand back the old page on
+    // iPhone, and the box would then keep coming back.
+    const params = new URLSearchParams(location.search);
+    params.set('updated', Date.now());
+    location.replace(location.pathname + '?' + params + location.hash);
   }
 
   function showVersionNotification(newVersion, stuck = false) {
@@ -1193,23 +1236,7 @@
         setTimeout(() => notification.remove(), 8000);
         return;
       }
-      try {
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map(r => r.unregister()));
-        }
-        if (window.caches) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(k => caches.delete(k)));
-        }
-      } catch (_) {}
-      sessionStorage.setItem('nb_update_target', newVersion);
-      // A unique address can't be answered from the browser's HTTP cache
-      // (GitHub Pages: max-age=600). reload() could hand back the old page on
-      // iPhone, and the box would then keep coming back.
-      const params = new URLSearchParams(location.search);
-      params.set('updated', Date.now());
-      location.replace(location.pathname + '?' + params + location.hash);
+      applyUpdate(newVersion);
     });
 
     document.getElementById('dismissUpdateBtn').addEventListener('click', () => {
@@ -1222,6 +1249,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.64', '2026-09-30', 'Faster updates', 'A new version is checked every 2 minutes and confirmed 15 seconds after it is first seen, instead of 5 minutes. When nothing is open (no checklist, scouting, sheet, camera or typing) the app updates by itself; otherwise the Update now message waits for you. Nothing waiting to be sent is lost, and the text reader and measuring tool stay downloaded.'],
     ['0.11.63', '2026-09-30', 'Scouting: each tab ends with its own OK', 'Traps, Plant health and Growth work the same way: add a photo, each photo with its comment, sizes and AI note, and at the bottom one button, red until tapped green when that section is OK, with a note saying why when it stays red. The tab shows a red dot or a green tick. A new Review tab lists everything captured, section by section, with its result; tap a photo to zoom. The box for the greenhouse as a whole is gone: the result follows from the sections.'],
     ['0.11.62', '2026-09-30', 'The timer to the second', 'The running timer shows its seconds, 12:34 and past an hour 1:02:05, ticking every second in the top bar, the In progress strip and on the card.'],
     ['0.11.61', '2026-09-30', 'To do, in progress, done, cancelled', 'One set of words on every task: To do, In progress, Paused, Done with the time worked, Cancelled with its reason, and Not done for a task whose day ended before it was finished (automatic, still open to finish). The task in progress shows at the top of the day with its timer, Pause and Open. Cancel this task is a real choice: Not needed, Equipment not available, Weather or access or Other, with a note; swipe left or the link under Finish. Day headings count done, worked, to do or not done, and cancelled.'],
@@ -1371,8 +1399,8 @@
     checkForUpdates();
   }
 
-  // Check periodically (every 5 minutes)
-  setInterval(checkForUpdates, 5 * 60 * 1000);
+  // Check periodically (every 2 minutes since 0.11.64; a single small file)
+  setInterval(checkForUpdates, 2 * 60 * 1000);
   // A home-screen app on iOS is resumed from the background with its timers
   // paused and no reload, so the 5-minute check alone could miss an update
   // for a long time. Check again whenever the app comes back into view.
