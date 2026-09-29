@@ -966,6 +966,38 @@
     .fb-how ol { margin: 0; padding: 0 16px 12px 34px; font-size: var(--text-sm); line-height: 1.45; }
     .fb-how li { margin: 6px 0; }
     .fb-sc-end { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+    /* 0.11.63: each section's result, the tab's dot, the Review tab */
+    .fb-sc-verdict { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      background: var(--surface); display: flex; flex-direction: column; gap: var(--space-2); }
+    .fb-sc-verdict .fb-tick { width: 100%; }
+    .fb-sc-name { display: inline-flex; align-items: center; gap: 5px; }
+    .fb-sc-v { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%;
+      font-size: 10px; font-weight: 900; line-height: 1; flex: none; }
+    .fb-sc-v.nok { background: var(--coral, #d9534f); }
+    .fb-sc-v.ok { background: var(--success, #2e7d32); color: #fff; }
+    .fb-sc-tabs .fb-sc-tab { flex: 1 1 0; min-width: 0; padding: 8px 4px; }
+    .fb-sc-tabs .fb-sc-help { flex: 0 0 32px; min-width: 32px; padding: 8px 0; }
+    .fb-sc-tabs .fb-sc-name { white-space: nowrap; gap: 4px; }
+    .fb-sc-tabs .fb-sc-sub { white-space: nowrap; }
+    @media (max-width: 420px) { .fb-sc-tabs .fb-sc-v { width: 10px; height: 10px; font-size: 8px; } }
+    .fb-sc-short { display: none; }
+    @media (max-width: 420px) { .fb-sc-long { display: none; } .fb-sc-short { display: inline; } .fb-sc-tabs .fb-sc-tab { font-size: 13px; } }
+    .fb-rv-sec { margin-bottom: var(--space-4); }
+    .fb-rv-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 2px; font: inherit; font-size: var(--text-base);
+      background: none; border: 0; border-bottom: 2px solid var(--border); color: var(--text); cursor: pointer; text-align: left; }
+    .fb-rv-word { margin-left: auto; font-size: var(--text-sm); font-weight: 800; }
+    .fb-rv-word.ok { color: var(--success, #2e7d32); }
+    .fb-rv-word.nok { color: var(--coral, #d9534f); }
+    .fb-rv-note { margin: 6px 0; padding: 6px 10px; border-radius: var(--radius-md); background: var(--surface-offset); font-size: var(--text-sm); }
+    .fb-rv-note.nok { background: var(--coral-soft, #fdecea); color: var(--coral, #d9534f); font-weight: 600; }
+    .fb-rv-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .fb-rv-plain { color: var(--text-muted); font-size: var(--text-sm); cursor: default; }
+    .fb-rv-pics { display: flex; gap: 4px; flex: none; }
+    .fb-rv-pics img { width: 72px; height: 72px; object-fit: cover; border-radius: var(--radius-md); cursor: zoom-in; }
+    .fb-rv-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-sm); }
+    .fb-rv-ai { padding: 4px 8px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-radius: 4px; }
+    .fb-rv-comment { font-style: italic; }
+    .fb-sc-when { font-size: var(--text-xs); color: var(--text-muted); margin: -2px 0 4px; }
     .fb-sc-first { font-weight: 600; }
     .fb-missing { max-height: 80vh; overflow-y: auto; }
     .fb-miss-row { padding: 10px 0; border-top: 1px solid var(--border); }
@@ -1056,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.62';
+  const CURRENT_VERSION = '0.11.63';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1190,6 +1222,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.63', '2026-09-30', 'Scouting: each tab ends with its own OK', 'Traps, Plant health and Growth work the same way: add a photo, each photo with its comment, sizes and AI note, and at the bottom one button, red until tapped green when that section is OK, with a note saying why when it stays red. The tab shows a red dot or a green tick. A new Review tab lists everything captured, section by section, with its result; tap a photo to zoom. The box for the greenhouse as a whole is gone: the result follows from the sections.'],
     ['0.11.62', '2026-09-30', 'The timer to the second', 'The running timer shows its seconds, 12:34 and past an hour 1:02:05, ticking every second in the top bar, the In progress strip and on the card.'],
     ['0.11.61', '2026-09-30', 'To do, in progress, done, cancelled', 'One set of words on every task: To do, In progress, Paused, Done with the time worked, Cancelled with its reason, and Not done for a task whose day ended before it was finished (automatic, still open to finish). The task in progress shows at the top of the day with its timer, Pause and Open. Cancel this task is a real choice: Not needed, Equipment not available, Weather or access or Other, with a note; swipe left or the link under Finish. Day headings count done, worked, to do or not done, and cancelled.'],
     ['0.11.60', '2026-09-30', 'Straight into the checklist', 'A tap on a task goes straight into its checklist, the timer starting; the task page is gone. A task with no checklist asks Mark it done; a done task opens what was sent to edit it; a not done one opens to be done after all; Not done is a link under Finish. The timer in the top bar is the pause button: tap it to pause, tap again to go on; the Pause button at the bottom is gone. Under the title and on the card: the zones to visit (Zones 1, 2, 3, 4.1, 4.2), then the minutes, PPE and tools; a crop task keeps its batches in a fold under the title.'],
@@ -7958,7 +7991,7 @@ function sopOpen() {
     const r = run;
     scDraftTimer = setTimeout(async () => {
       try {
-        await setKV(scDraftKey(r.task), { saved: Date.now(), tab: r.sc.tab, outcome: r.sc.outcome, outcomeNote: r.sc.outcomeNote,
+        await setKV(scDraftKey(r.task), { saved: Date.now(), tab: r.sc.tab, outcome: r.sc.outcome, outcomeNote: r.sc.outcomeNote, verdict: r.sc.verdict,
           lastPos: r.sc.lastPos, extra: [...r.sc.extra], status: [...r.sc.status], photos: [...r.sc.photos.values()] });
       } catch (e) { console.warn('scouting draft not saved', e); }
     }, 250);
@@ -8343,7 +8376,8 @@ function sopOpen() {
     const th = (await getKV('ipm_threshold')) || { watch: 25, over: 50 };
     const trapById = new Map(traps.map(t => [t.id, t]));
     const crops = [...new Map(task.positions.flatMap(p => Array.isArray(p.crops) ? p.crops : []).map(c => [c.id, c])).values()];
-    const sc = run.sc = { tab: 'trap', photos: new Map(), outcome: null, outcomeNote: '', lastPos: '', traps, th, extra: new Set(), status: new Map() };
+    // verdict (0.11.63): each section's own OK / not OK and its note — { trap: { ok: true, note: '' }, … }
+    const sc = run.sc = { tab: 'trap', photos: new Map(), outcome: null, outcomeNote: '', lastPos: '', traps, th, extra: new Set(), status: new Map(), verdict: {} };
     let draft = null;
     try { draft = await getKV(scDraftKey(task)); } catch (e) { /* none */ }
     if (draft && Date.now() - (draft.saved || 0) < 24 * 3600000) {
@@ -8357,7 +8391,7 @@ function sopOpen() {
         sc.photos.set(p.ref, p);
       });
       Object.assign(sc, { tab: draft.tab || 'trap', outcome: draft.outcome || null, outcomeNote: draft.outcomeNote || '', lastPos: draft.lastPos || '',
-                          extra: new Set(draft.extra || []), status: new Map(draft.status || []) });
+                          extra: new Set(draft.extra || []), status: new Map(draft.status || []), verdict: draft.verdict || {} });
     } else if (detail) {
       // editing a scouting already sent: what the server holds
       (detail.traps || []).forEach(r => {
@@ -8374,6 +8408,10 @@ function sopOpen() {
         thumb: o.photo_data, photo_path: o.photo_path, part: o.part, crop_id: o.crop_id, note: o.note || '', pos_code: o.pos_code || '',
         gps: o.gps, measures: o.measures || [], px_per_mm: o.px_per_mm, ai: o.ai, zone_id: o.zone_id, item_id: o.item_id }));
       sc.outcome = detail.run?.outcome || null; sc.outcomeNote = detail.run?.outcome_note || '';
+      // each section's verdict as sent (FarmBox 0169); a scouting sent before that was OK or not OK as a whole
+      const so = detail.run?.section_outcomes;
+      if (so) Object.entries(so).forEach(([k, v]) => { sc.verdict[k] = { ok: v.outcome === 'ok', note: v.note || '' }; });
+      else if (sc.outcome === 'ok') SC_TABS.forEach(([k]) => { sc.verdict[k] = { ok: true, note: '' }; });
     }
     // The sections due today (FarmBox 0145): the procedure's days (Settings of the procedure › Sections), a
     // holiday's moved to the next working day by the server (task.sections), and a trap or growth day that
@@ -8399,7 +8437,8 @@ function sopOpen() {
     }
     [...sc.photos.values()].forEach(p => { if (!sc.due[p.section]) sc.extra.add(p.section); });
     const shown = k => !!sc.due[k] || sc.extra.has(k);
-    if (!shown(sc.tab)) sc.tab = (SC_TABS.find(([k]) => shown(k)) || SC_TABS[1])[0];
+    if (sc.tab !== 'review' && !shown(sc.tab)) sc.tab = (SC_TABS.find(([k]) => shown(k)) || SC_TABS[1])[0];
+    sc.shown = shown;
     if (navigator.onLine && shown('trap')) ocr().catch(() => {});   // warm the text reader while the person walks to the first trap
 
     // 0.11.50 (owner: "the scouting task window is a little bit confusing"): the tabs say how far along each
@@ -8418,6 +8457,11 @@ function sopOpen() {
       tabBtns[k] = b; tabs.append(b);
       panes[k] = el('div', 'fb-sc-pane');
     });
+    // Review (0.11.63): everything captured, section by section, with its verdict
+    const revBtn = el('button', 'fb-sc-tab fb-sc-revtab'); revBtn.type = 'button';
+    revBtn.onclick = () => { sc.tab = 'review'; paintTabs(); saveScDraft(); };
+    tabs.append(revBtn);
+    panes.review = el('div', 'fb-sc-pane fb-sc-review');
     const help = el('button', 'fb-sc-tab fb-sc-help', '?'); help.type = 'button';
     help.setAttribute('aria-label', 'How the scouting works'); help.setAttribute('aria-pressed', 'false');
     help.onclick = () => { const open = how.classList.toggle('hidden') === false; help.setAttribute('aria-pressed', String(open)); if (open) how.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -8435,7 +8479,7 @@ function sopOpen() {
         more.append(b);
       });
     };
-    box.append(tabs, ...SC_TABS.map(([k]) => panes[k]));
+    box.append(tabs, ...SC_TABS.map(([k]) => panes[k]), panes.review);
     const count = k => [...sc.photos.values()].filter(p => p.section === k).length;
     const photoOf = t => [...sc.photos.values()].find(p => p.section === 'trap' && p.trap_id === t.id) || null;
     const trapDone = t => { const p = photoOf(t); return (p && SIDES.every(([k]) => p.sides?.[k])) || (!p && sc.status.has(t.id)); };
@@ -8448,13 +8492,108 @@ function sopOpen() {
       SC_TABS.forEach(([k, label]) => {
         const b = tabBtns[k];
         b.textContent = '';
-        b.append(el('span', null, label), el('small', 'fb-sc-sub', tabSub(k, count(k))));
+        const ok = !!sc.verdict[k]?.ok;
+        const name = el('span', 'fb-sc-name');
+        if (shown(k)) name.append(el('span', 'fb-sc-v ' + (ok ? 'ok' : 'nok'), ok ? '✓' : ''));
+        // a phone is narrow: "Plant health" is "Health" on the tab under 420 px
+        if (k === 'health') name.append(el('span', 'fb-sc-long', label), el('span', 'fb-sc-short', 'Health'));
+        else name.append(document.createTextNode(label));
+        b.append(name, el('small', 'fb-sc-sub', tabSub(k, count(k))));
         b.setAttribute('aria-pressed', String(sc.tab === k));
+        b.setAttribute('aria-label', `${label}: ${tabSub(k, count(k))}${shown(k) ? (ok ? ', OK' : ', not OK yet') : ''}`);
         b.classList.toggle('off', !shown(k));
         panes[k].classList.toggle('hidden', sc.tab !== k);
+        verdicts[k]?._paint();
       });
+      revBtn.textContent = '';
+      revBtn.append(el('span', null, 'Review'), el('small', 'fb-sc-sub', `${sc.photos.size} photo${sc.photos.size === 1 ? '' : 's'}`));
+      revBtn.setAttribute('aria-pressed', String(sc.tab === 'review'));
+      panes.review.classList.toggle('hidden', sc.tab !== 'review');
+      if (sc.tab === 'review') paintReview();
       $('finish').textContent = run.edit ? 'Save the changes' : 'Finish';
     };
+    sc.goTab = k => { if (k !== 'review' && !shown(k)) sc.extra.add(k); sc.tab = k; paintTabs(); };
+
+    // ── each section ends the same way (0.11.63): one red → green button, and a note that says why when it stays red ──
+    const verdicts = {};
+    function verdictBlock(k, label) {
+      const b = el('div', 'fb-sc-verdict'); b.id = 'fb-scv-' + k;
+      const tick = el('button', 'fb-tick'); tick.type = 'button';
+      const note = el('textarea', 'fb-runnote'); note.rows = 2;
+      note.value = sc.verdict[k]?.note || '';
+      b._paint = () => {
+        const v = sc.verdict[k] || {}, ok = !!v.ok;
+        tick.classList.toggle('on', ok);
+        tick.textContent = ok ? `✓ ${label} OK` : `${label}: tap when OK`;
+        tick.setAttribute('aria-pressed', String(ok));
+        note.placeholder = ok ? 'Note (optional)' : `What is not OK in ${label.toLowerCase()}? (the manager is told)`;
+        if (document.activeElement !== note) note.value = v.note || '';
+      };
+      tick.onclick = () => { const v = sc.verdict[k] || (sc.verdict[k] = { ok: false, note: '' }); v.ok = !v.ok; paintTabs(); saveScDraft(); };
+      note.oninput = () => { const v = sc.verdict[k] || (sc.verdict[k] = { ok: false, note: '' }); v.note = note.value; saveScDraft(); };
+      b.append(el('div', 'fb-sec', label + ' — result'), tick, note);
+      verdicts[k] = b;
+      return b;
+    }
+
+    // ── Review (0.11.63): every photo and what came with it — counts, sizes, position, the AI note, the comment ──
+    const wordOf = (list, v) => (list.find(x => x[0] === v) || [v, v || ''])[1];
+    const zoomImg = (src, full, title) => {
+      const im = el('img'); im.src = src || ''; im.alt = title; im.loading = 'lazy';
+      im.onclick = e => { e.stopPropagation(); photoViewer(full instanceof Blob ? full : src, { title }); };
+      return im;
+    };
+    function paintReview() {
+      const R = panes.review; R.textContent = '';
+      const secs = SC_TABS.filter(([k]) => shown(k) || count(k));
+      if (!secs.length) { R.append(el('div', 'config-hint', 'Nothing captured yet.')); return; }
+      secs.forEach(([k, label]) => {
+        const v = sc.verdict[k] || {};
+        const sec = el('div', 'fb-rv-sec');
+        const head = el('button', 'fb-rv-head'); head.type = 'button';
+        head.append(el('span', 'fb-sc-v ' + (v.ok ? 'ok' : 'nok'), v.ok ? '✓' : ''), el('b', null, label),
+          el('span', 'fb-rv-word ' + (v.ok ? 'ok' : 'nok'), !shown(k) ? 'off today' : v.ok ? 'OK' : 'not OK yet'));
+        head.onclick = () => sc.goTab(k);
+        sec.append(head);
+        if (v.note) sec.append(el('div', 'fb-rv-note' + (v.ok ? '' : ' nok'), v.note));
+        const items = [...sc.photos.values()].filter(p => p.section === k).sort((a, b) => String(a.taken_at).localeCompare(String(b.taken_at)));
+        if (!items.length && !(k === 'trap' && sc.status.size)) sec.append(el('div', 'fb-meta', 'No photos.'));
+        items.forEach(p => {
+          const row = el('div', 'fb-rv-item');
+          const pics = el('div', 'fb-rv-pics');
+          const txt = el('div', 'fb-rv-text');
+          const lines = [];
+          if (k === 'trap') {
+            SIDES.forEach(([sk, sl]) => { const S = p.sides?.[sk]; if (S?.thumb) pics.append(zoomImg(S.thumb, S.full, `Trap ${p.code || ''} · ${sl.toLowerCase()}`)); });
+            txt.append(el('b', null, `Trap ${p.code || '?'}${p.code && !p.code_ok ? ' — not confirmed' : ''}`));
+            lines.push(SIDES.map(([sk, sl]) => { const S = p.sides?.[sk]; return `${sl.split(' ')[0]} ${S ? (S.total ?? '?') + (S.corrected ? ' (corrected)' : '') : '— missing'}`; }).join(' · '));
+            lines.push(trapLevel(p).text);
+            if (p.replaced) lines.push('Card replaced');
+            SIDES.forEach(([sk, sl]) => { const t = p.sides?.[sk]?.ai ? aiText({ section: 'trap', ai: p.sides[sk].ai }) : ''; if (t) lines.push(`✦ ${sl.split(' ')[0]}: ${t}`); });
+          } else {
+            pics.append(zoomImg(p.thumb, p.full, k === 'growth' ? 'Growth photo' : 'Plant photo'));
+            const crop = crops.find(c => c.id === p.crop_id)?.name;
+            txt.append(el('b', null, [wordOf(k === 'growth' ? GROWTH_PARTS : PARTS, p.part), crop].filter(Boolean).join(' · ')));
+            lines.push(posWords(p.pos_code) ? 'Position ' + p.pos_code : p.gps ? `GPS ±${p.gps.acc} m` : '— no position');
+            const ms = (p.measures || []).map(m => `${wordOf(MEASURE_WHAT, m.what).toLowerCase()} ${m.mm} mm${m.by === 'auto' ? ' 📐' : ''}`);
+            if (ms.length) lines.push('Size: ' + ms.join(' · '));
+            else if (p.px_per_mm) lines.push(p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected');
+            if (p.ai) lines.push('✦ ' + aiText(p));
+          }
+          lines.filter(Boolean).forEach(l => txt.append(el('div', l.startsWith('✦') ? 'fb-rv-ai' : 'fb-meta', l)));
+          if (p.note) txt.append(el('div', 'fb-rv-comment', '“' + p.note + '”'));
+          row.onclick = () => { sc.goTab(k); if (k === 'trap') sc.reveal?.(p.ref);
+            setTimeout(() => document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); };
+          row.append(pics, txt);
+          sec.append(row);
+        });
+        if (k === 'trap') sc.status.forEach((st, id) => {
+          const t = trapById.get(id); if (!t) return;
+          sec.append(el('div', 'fb-rv-item fb-rv-plain', `Trap ${shortCode(t.code)}: ${st.status === 'taken_down' ? 'taken down' : 'can’t reach' + (st.note ? ' — ' + st.note : '')}`));
+        });
+        R.append(sec);
+      });
+    }
 
     // one hidden picker for the gallery, used by every section
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.style.display = 'none';
@@ -8711,7 +8850,7 @@ function sopOpen() {
       head.append(el('span', 'fb-trap-lbl', 'Trap'), sel, ok, src, aiCode);
       const sidesBox = el('div', 'fb-trap-sides');
       const total = el('div', 'fb-sc-level');
-      const note = el('input', 'fb-note'); note.type = 'text'; note.value = p.note || ''; note.placeholder = 'Note (optional): torn, wet, missing…';
+      const note = el('input', 'fb-note'); note.type = 'text'; note.value = p.note || ''; note.placeholder = 'Comment (optional): torn, wet, missing…';
       note.oninput = () => { p.note = note.value; saveScDraft(); };
       const rep = el('button', 'fb-btn', 'Replaced'); rep.type = 'button';
       rep.title = 'The card was changed after these photos: the next count starts from nothing';
@@ -8917,6 +9056,7 @@ function sopOpen() {
       const note = el('input', 'fb-note'); note.type = 'text'; note.value = p.note || '';
       note.oninput = () => { p.note = note.value; saveScDraft(); };
       const acts = el('div', 'fb-actions');
+      card.append(el('div', 'fb-sc-when', new Date(p.taken_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })));
       const drop = el('button', 'fb-link', 'Remove'); drop.type = 'button';
       drop.onclick = () => { if (!confirm('Remove this photo?')) return; sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
 
@@ -8973,7 +9113,7 @@ function sopOpen() {
             outline: p.auto_view || null,
             pick: p.full instanceof Blob && p.px_per_mm ? pt => sc.autoSize(p, pt) : null });
         card._paintMs = () => paintMs();
-        note.placeholder = p.section === 'growth' ? 'Note (optional)' : 'What you see (optional)';
+        note.placeholder = p.section === 'growth' ? 'Comment (optional)' : 'Comment: what you see (optional)';
         const more = el('button', 'fb-link', '⋯'); more.type = 'button'; more.setAttribute('aria-label', 'More');
         drop.classList.add('hidden');
         more.onclick = () => drop.classList.toggle('hidden');
@@ -9112,35 +9252,17 @@ function sopOpen() {
     scan.append(scanBtn, scanGal);
     panes.trap.append(missedLine('trap'),
       el('div', 'config-hint', traps.length ? 'Tap a trap to photograph it: one side, then the other. Tap a done trap for its counts.' : 'Photograph every card: the phone reads its position and adds it.'),
-      cover, lists.trap, scan);
+      cover, lists.trap, scan, verdictBlock('trap', 'Traps'));
     // Plant health
     lists.health = el('div');
-    panes.health.append(el('div', 'config-hint', 'Anything that looks wrong on a plant. Say where (3B8) or use the GPS. Put the scale card beside it to get sizes; tap a photo to zoom.'),
-                        addBar('health', 'Add a plant photo'), lists.health);
+    panes.health.append(el('div', 'config-hint', 'A photo of anything that looks wrong on a plant: where (3B8) or GPS, a comment, the AI note if you want it. Tap a photo to zoom.'),
+                        addBar('health', 'Add a photo'), lists.health, verdictBlock('health', 'Plant health'));
     // Growth
     lists.growth = el('div');
-    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'Fruit or leaf beside the scale card, or a ruler or tape along it. Tap a photo to zoom; 📏 to measure.'),
-                        addBar('growth', 'Add a growth photo'), lists.growth);
-    // the end, under every tab, just above Finish: OK / Not OK and a note (0.11.43)
-    const fin = el('div', 'fb-sc-end');
-    box.append(fin);
+    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'A photo of a fruit or leaf with the scale card beside it, or a ruler or tape along it: the size comes by itself (or 📏). Tap a photo to zoom.'),
+                        addBar('growth', 'Add a photo'), lists.growth, verdictBlock('growth', 'Growth'));
+    // 0.11.63: no box for the greenhouse as a whole — each section says OK or not OK, and the result follows
     sc.shoot = shoot;
-    // 0.11.58: the same as every checklist — red until tapped green; still red at Finish = not OK, the note says why
-    const okRow = el('div', 'fb-actions fb-sc-outcome');
-    const nok = el('button', 'fb-tick'); nok.type = 'button';
-    const outNote = el('textarea', 'fb-runnote'); outNote.rows = 3; outNote.value = sc.outcomeNote || '';
-    outNote.placeholder = 'Notes — say what is not OK';
-    const paintOutcome = () => {
-      const on = sc.outcome === 'ok';
-      nok.classList.toggle('on', on);
-      nok.textContent = on ? '✓ All OK' : 'Tap when all OK';
-    };
-    nok.onclick = () => { sc.outcome = sc.outcome === 'ok' ? null : 'ok'; paintTabs(); saveScDraft(); };
-    outNote.oninput = () => { sc.outcomeNote = outNote.value; saveScDraft(); };
-    okRow.append(nok);
-    fin.append(el('div', 'fb-meta', 'The greenhouse as a whole, after the sections'), okRow, outNote);
-    const repaintTabs = paintTabs;
-    paintTabs = () => { repaintTabs(); paintOutcome(); };
 
     // the photos already taken (a draft, or a scouting being edited), newest on top
     [...sc.photos.values()].sort((a, b) => String(a.taken_at).localeCompare(String(b.taken_at)))
@@ -9164,7 +9286,9 @@ function sopOpen() {
       ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
-      ['Finish.', 'All OK · finish at the bottom, or Not OK first (with why): the phone says what is still missing and, on a trap day, asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
+      ['Each tab ends the same way.', 'At the bottom of Traps, Plant health and Growth: one button, red until you tap it green when that section is OK. Still red? Say why in the note under it. The tab shows a red dot or a green ✓.'],
+      ['Review.', 'The Review tab shows everything captured — every photo with its counts, sizes, position, AI note and comment, and each section’s result. Tap a photo to zoom, a line to go back to it.'],
+      ['Finish.', 'The result follows by itself: every section OK = OK; a section left red is asked about once and sent as not OK with its note. The phone says what is still missing and, on a trap day, asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
       ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
     ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), document.createTextNode(t)); list.append(li); });
     d.append(list);
@@ -9519,10 +9643,11 @@ function sopOpen() {
     const stop = (tab, text, ref) => {
       $('runHint').textContent = text;
       showToast(text, 'error');   // the hint sits under Finish, out of view while the tab scrolls to the problem
-      if (tab === 'end') { document.querySelector('.fb-sc-end')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
-      sc.tab = tab;
-      document.querySelector(`.fb-sc-tab:nth-child(${SC_TABS.findIndex(x => x[0] === tab) + 1})`)?.click();
-      if (ref) { sc.reveal?.(ref); document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      sc.goTab(tab);
+      if (ref === 'verdict') {
+        const v = document.getElementById('fb-scv-' + tab);
+        v?.scrollIntoView({ behavior: 'smooth', block: 'center' }); v?.querySelector('textarea')?.focus({ preventScroll: true });
+      } else if (ref) { sc.reveal?.(ref); document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     };
     if (sc.due?.trap && !trapsP.length)
       return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
@@ -9541,12 +9666,20 @@ function sopOpen() {
     }
     const lost = plants.find(p => !placed(p));
     if (lost) return stop(lost.section, 'A photo has no position — write it (3B8) or use the GPS.', lost.ref);
-    // still red: asked, then sent as not OK with the note, as every checklist (0.11.58)
-    if (sc.outcome !== 'ok') {
-      if (!confirm('The scouting is still red — send it as not OK?')) return stop('end', 'Tap “Tap when all OK” when everything is fine.');
-      sc.outcome = 'nok';
+    // each section today says OK or not OK (0.11.63): one still red is asked about once, then needs its note
+    const LABEL = Object.fromEntries(SC_TABS);
+    const secs = SC_TABS.map(([k]) => k).filter(k => sc.shown?.(k));
+    const red = secs.filter(k => !sc.verdict[k]?.ok);
+    if (red.length && sc.sentRed !== red.join()) {
+      const names = red.map(k => LABEL[k]).join(', ').replace(/, ([^,]*)$/, ' and $1');
+      if (!confirm(`${names} ${red.length === 1 ? 'is' : 'are'} still red — send ${red.length === 1 ? 'it' : 'them'} as not OK?`))
+        return stop(red[0], `${LABEL[red[0]]}: tap the red button at the bottom of the tab when it is fine.`, 'verdict');
+      sc.sentRed = red.join();
     }
-    if (sc.outcome === 'nok' && !String(sc.outcomeNote || '').trim()) return stop('end', 'Say in the notes what is not OK — the manager is told.');
+    const noWhy = red.find(k => !String(sc.verdict[k]?.note || '').trim());
+    if (noWhy) return stop(noWhy, `Say what is not OK in ${LABEL[noWhy].toLowerCase()} — the manager is told.`, 'verdict');
+    sc.outcome = red.length ? 'nok' : 'ok';
+    sc.outcomeNote = secs.map(k => String(sc.verdict[k]?.note || '').trim() ? `${LABEL[k]}: ${String(sc.verdict[k].note).trim()}` : null).filter(Boolean).join(' · ');
     // the traps of the list not photographed on a trap day: taken down, forgotten, or out of reach (0146)
     const photographed = new Set(trapsP.map(p => p.trap_id).filter(Boolean));
     const missing = !run.edit && sc.due?.trap ? sc.traps.filter(t => !photographed.has(t.id)) : [];
@@ -9567,6 +9700,7 @@ function sopOpen() {
       client_run_id: cid, status: 'completed', started_at: run.edit?.run?.started_at || run.started, finished_at: finished,
       ...(run.edit ? { edit: true } : {}),
       outcome: sc.outcome, outcome_note: String(sc.outcomeNote || '').trim() || null,
+      section_outcomes: Object.fromEntries(secs.map(k => [k, { outcome: sc.verdict[k]?.ok ? 'ok' : 'nok', note: String(sc.verdict[k]?.note || '').trim() || null }])),
       steps: step ? [{ seq: step.seq, step_id: step.id, result: sc.outcome === 'ok' ? 'ok' : 'nok', note: String(sc.outcomeNote || '').trim() || null,
                        media: [], recorded_at: finished }] : [],
       trap_status: missing.map(t => ({ trap_id: t.id, status: sc.status.get(t.id).status, note: sc.status.get(t.id).note || null })),
