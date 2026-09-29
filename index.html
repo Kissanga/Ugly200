@@ -774,6 +774,17 @@
       background: var(--surface-offset); color: var(--text-muted); white-space:nowrap; }
     .fb-chip.ok { background: var(--success-bg); color: var(--success); }
     .fb-chip.ok.over { color: var(--error, #c0392b); }
+    /* 0.11.57: a tick is red until tapped green; zones as buttons; one notes box; Pause beside Finish */
+    .fb-step.todo { border-color: color-mix(in srgb, var(--error, #c0392b) 55%, var(--border)); }
+    .fb-tick, .fb-zchip { font: inherit; font-weight: 800; border-radius: var(--radius-full); cursor: pointer;
+      border: 2px solid var(--error, #c0392b); background: color-mix(in srgb, var(--error, #c0392b) 12%, var(--surface)); color: var(--error, #c0392b); }
+    .fb-tick { min-height: 48px; padding: 0 22px; font-size: var(--text-base); }
+    .fb-tick.on, .fb-zchip.on { border-color: var(--success, #2e7d32); background: var(--success-bg, #e3f2e5); color: var(--success, #2e7d32); }
+    .fb-zchips { display: flex; flex-wrap: wrap; gap: 10px; margin: var(--space-3) 0 var(--space-1); }
+    .fb-zchip { min-width: 64px; min-height: 52px; padding: 0 14px; font-size: var(--text-lg); font-variant-numeric: tabular-nums; }
+    .fb-run-end { margin-top: var(--space-4); display: grid; gap: var(--space-2); }
+    .fb-runnote { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: var(--radius-lg, 12px);
+      border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
     .fb-chip.run { background: var(--primary); color: var(--text-inverse); cursor: pointer; }
     .fb-timer { display:flex; align-items:center; gap: var(--space-3); margin-top: var(--space-2); padding: 8px 12px;
       border-radius: var(--radius-lg, 12px); background: color-mix(in srgb, var(--primary) 14%, var(--surface)); flex-basis: 100%; width: 100%; box-sizing: border-box; }
@@ -1027,7 +1038,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.56';
+  const CURRENT_VERSION = '0.11.57';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1161,6 +1172,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.57', '2026-09-30', 'Checklists: tap red to green', 'Simpler checklists. A tick step is one button, red until tapped green; its details are still one tap away. A routine over the zones made only of ticks, like the irrigation check, shows its step once with a button per zone (1, 2, 3, 4.1, 4.2) and All OK. One notes box and an optional photo under the steps, then Pause and Finish: Pause stops the timer and keeps the answers, Finish sends. A step still red at Finish is asked about and sent as not OK, and anything not OK needs a word in the notes; the manager is told. The timer at the top only shows.'],
     ['0.11.56', '2026-09-30', 'A timer on every task', 'The clock card and the Now card are gone: each task times itself. Opening a checklist starts its timer, shown at the top with one button, Pause, then Resume; reopening the checklist resumes it. Back to the list keeps it running, and the card shows it with a Pause. Starting another checklist pauses the first, and a timer still running at 18:00 stops there. Works offline. The right of every card says Done in 42 min, 12 min so far, or Not finished 12 min for an earlier day; a task done without its checklist just says Done. Each day heading says how many are done, the time worked, and what is left or not finished. On the task screen: the time worked and Pause the timer.'],
     ['0.11.55', '2026-09-30', 'Uploads that do not get stuck', 'Uploads: one pass at a time (photos were sometimes sent twice), in the order they were made (clock in and out), and a record the server refuses for good is set aside with tap to try again instead of blocking everything behind it. Finish no longer waits for the full photos to upload, and never stays greyed out after an error. Checklist step photos are taken in the app, kept with the run when there is no signal and sent with it (they were lost offline); tap a photo to remove it. A decimal comma counts (12,5). n/a shows as pressed. A last cut with no weight still closes its batch, and a weight over 200 kg is asked about. The reason Finish did nothing is shown as a message. A busy sign-in server no longer signs you out. The phone Back gesture closes the camera, a photo or a sheet first. Larger buttons and chips for gloved hands.'],
     ['0.11.54', '2026-09-29', 'The code read in the header first', 'The phone first looks for the trap code in the plain band at the top of the card, above the grid, where nothing has to be wiped, so a code written with a fine pen keeps its strokes; the rest of the card only if nothing is found there. How the scouting works says where to write it: the blue side, top band, clear of the holes.'],
@@ -7553,9 +7565,8 @@ function sopOpen() {
         bar.classList.toggle('paused', !on);
         btn.textContent = on ? '⏸ Pause' : '▶ Resume';
       };
-      btn.onclick = async () => { if (groupRunning(task)) await timerPause(tt.id); else await timerStart(tt.id); paint(); };
       paint();
-      bar.append(txt, btn);
+      bar.append(txt);          // Pause is at the bottom, beside Finish (0.11.57)
       head.append(bar);
     }
     head.append(el('p', null, (isScouting(sop) ? [task.area || task.zone_name, `about ${fmtMin(task.minutes)}`] : [task.zone_name || task.area,
@@ -7589,6 +7600,11 @@ function sopOpen() {
     if (isScouting(sop)) {
       // the daily scouting (FarmBox 0141): Traps · Plant health · Growth · Finish, in any order
       box.append(await scoutSections(task, sop, detail));
+    } else if (run.perItem && steps.every(isTick) && !isTrapRound(sop)) {
+      // every step a tick (the irrigation check): each step once, its zones as buttons, red until tapped (0.11.57)
+      run.itemList = task.positions.filter(isItem);
+      run.chips = true;
+      steps.forEach(s => box.append(zoneStepCard(s, run.itemList)));
     } else if (run.perItem) {
       run.itemList = task.positions.filter(isItem);
       for (const it of run.itemList) {
@@ -7600,12 +7616,70 @@ function sopOpen() {
       if (task.positions.some(isItem)) box.append(itemBlock(task));
       steps.forEach(s => box.append(stepCard(s)));
     }
+    if (!isScouting(sop)) box.append(runEnd(task, steps));
     $('runHint').textContent = '';
+    paintPause(!detail && !!tt);
     show('run', detail ? 'Edit' : isScouting(sop) ? 'Scouting' : 'Checklist', () => { setKV('run_open', null).catch(() => {}); openTask(task.key); });
     if (isScouting(sop)) return;                       // the scouting keeps its own draft
     const back = await restoreRunDraft(task);
     if (back) showToast(`Your checklist is as you left it (${back} answers and photos)`, 'info');
     else if (detail) replayDetail(detail);
+  }
+
+  // the notes box and an optional photo, under the steps (0.11.57): one note for the checklist, the one a red step needs
+  function runEnd(task, steps) {
+    const end = el('div', 'fb-run-end');
+    const note = el('textarea', 'fb-runnote'); note.id = 'fb-runNote'; note.rows = 3;
+    note.placeholder = 'Notes — say what is not OK';
+    note.oninput = () => saveRunDraft();
+    end.append(note);
+    const shot = el('div', 'fb-shot');
+    const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.style.display = 'none';
+    const btn = el('button', 'fb-btn', '📷 Add a photo');
+    const key = run.perItem && run.itemList[0] ? stepKey(steps[0], run.itemList[0]) : steps[0].seq;
+    const add = async f => {
+      try {
+        const big = await shrinkPhoto(f, FULL_PX, null);
+        const b = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
+        big.canvas.width = big.canvas.height = 0;
+        f = b || f;
+      } catch (e) { /* the file as it is */ }
+      const list = run.media.get(key) || []; list.push(f); run.media.set(key, list);
+      const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'photo — tap to remove';
+      img.onload = () => URL.revokeObjectURL(img.src);
+      img.onclick = () => { if (!confirm('Remove this photo?')) return; const l = run.media.get(key) || [], i = l.indexOf(f); if (i >= 0) l.splice(i, 1); img.remove(); saveRunDraft(); };
+      shot.insertBefore(img, btn);
+      saveRunDraft();
+    };
+    btn.onclick = async () => {
+      let r = null;
+      try { r = await takeTrapPhoto('', task.title, 'step'); } catch (e) { r = null; }
+      if (r === 'cancel') return;
+      if (r) add(r); else pick.click();
+    };
+    pick.onchange = () => { const f = pick.files[0]; pick.value = ''; if (f) add(f); };
+    end._addPhoto = add;
+    shot.append(btn, pick);
+    end.append(shot);
+    return end;
+  }
+  // Pause beside Finish (0.11.57): the timer stops, the answers stay (the draft), back to the day
+  function paintPause(on) {
+    let p = $('pause');
+    if (!p) {
+      p = document.createElement('button'); p.id = 'fb-pause'; p.className = 'btn btn-lg btn-block fb-pausebtn';
+      p.textContent = '⏸ Pause'; p.style.marginTop = 'var(--space-2)';
+      $('finish').after(p);
+      p.onclick = async () => {
+        const R = run; if (!R) return;
+        const tt = timerTaskOf(R.task);
+        if (tt) await timerPause(tt.id);
+        if (R.sc) { try { await saveScDraft?.(); } catch (e) {} } else saveRunDraft();
+        showToast('Paused — the answers are kept', 'success');
+        showWeek();
+      };
+    }
+    p.classList.toggle('hidden', !on);
   }
 
   // ── the checklist's own draft (0.11.39): answers, notes and photos kept in
@@ -7620,7 +7694,7 @@ function sopOpen() {
     draftTimer = setTimeout(async () => {
       try {
         await setKV(runDraftKey(r.task), { saved: Date.now(), answers: [...r.answers.entries()],
-          notes: [...document.querySelectorAll('#fb-steps .fb-step')].map(c => [c.dataset.key, c.querySelector('.fb-note')?.value || '']).filter(x => x[1]),
+          runNote: document.getElementById('fb-runNote')?.value || '',
           media: [...r.media.entries()].map(([k, list]) => [k, list.filter(f => f instanceof Blob)]).filter(x => x[1].length) });
       } catch (e) { console.warn('run draft not saved', e); }
     }, 300);
@@ -7644,13 +7718,15 @@ function sopOpen() {
         if (chip) { chip.textContent = `${x.media.length} saved`; chip.className = 'fb-chip ok'; }
       }
     }
-    return replayAnswers({ answers, notes, media: [] });
+    return replayAnswers({ answers, notes, media: [], runNote: d.run?.outcome_note || d.run?.notes || '' });
   }
   function replayAnswers(d) {
     let n = 0;
-    const card = key => document.querySelector(`#fb-steps .fb-step[data-key="${CSS.escape(String(key))}"]`);
+    // a step card, or a zone button (0.11.57): whatever carries the key
+    const card = key => document.querySelector(`#fb-steps [data-key="${CSS.escape(String(key))}"]`);
     for (const [key, a] of d.answers || []) {
       const c = card(key); if (!c) continue;
+      if (c._setOk) { if (a.result === 'ok' || a.result === 'na') { c._setOk(true); n++; } continue; }
       const num = c.querySelector('input.fb-num');
       if (num && a.value_num != null) { num.value = a.value_num; num.dispatchEvent(new Event('input')); n++; continue; }
       if (num && a.value_text != null) { num.value = a.value_text; num.dispatchEvent(new Event('input')); n++; continue; }
@@ -7658,12 +7734,12 @@ function sopOpen() {
       const b = a.result === 'ok' ? btns[0] : a.result === 'nok' ? btns.find(x => x.classList.contains('no')) : a.result === 'na' ? btns[2] : null;
       if (b) { b.click(); n++; }
     }
-    for (const [key, text] of d.notes || []) {
-      const c = card(key); const note = c?.querySelector('.fb-note');
-      if (note) { note.value = text; note.dispatchEvent(new Event('input')); }
-    }
+    // the checklist's note (0.11.57); an older draft or an edited run brings its step notes into it
+    const rn = document.getElementById('fb-runNote');
+    const text = [d.runNote, ...(d.notes || []).map(x => x[1])].filter(Boolean).join('\n');
+    if (rn && text && !rn.value) rn.value = text;
     for (const [key, list] of d.media || []) {
-      const c = card(key);
+      const c = card(key)?._addPhoto ? card(key) : document.querySelector('#fb-steps .fb-run-end');
       if (c?._addPhoto) for (const f of list) { c._addPhoto(f); n++; }
     }
     return n;
@@ -10149,16 +10225,20 @@ function sopOpen() {
                               else { run.answers.delete(key); card.classList.remove('answered'); saveRunDraft(); } };
       acts.append(input);
     } else {
-      const yes = el('button', 'fb-btn', s.step_type === 'check' ? 'OK' : 'Done');
-      const no  = el('button', 'fb-btn no', 'Not OK');
-      yes.setAttribute('aria-pressed', 'false'); no.setAttribute('aria-pressed', 'false');
-      const na = el('button', 'fb-btn', 'n/a'); na.setAttribute('aria-pressed', 'false');
-      const press = b => [yes, no, na].forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-      yes.onclick = () => { press(yes); set('ok', {}); };
-      no.onclick  = () => { press(no); set('nok', {}); };
-      // n/a is an answer too: pressed, and the card marked answered (it looked as if nothing happened)
-      na.onclick = () => { press(na); set('na', {}); card.classList.add('answered'); };
-      acts.append(yes, no, na);
+      // a tick (0.11.57): red until tapped green; still red at Finish = sent as not OK, with the note saying why
+      card.classList.add('todo');
+      const tog = el('button', 'fb-tick', s.step_type === 'check' ? 'Tap when OK' : 'Tap when done');
+      const paintTog = on => {
+        tog.classList.toggle('on', on); card.classList.toggle('todo', !on);
+        tog.textContent = on ? (s.step_type === 'check' ? '✓ OK' : '✓ Done') : (s.step_type === 'check' ? 'Tap when OK' : 'Tap when done');
+      };
+      tog.onclick = () => {
+        const on = !tog.classList.contains('on');
+        if (on) set('ok', {}); else { run.answers.delete(key); card.classList.remove('answered', 'bad'); saveRunDraft(); }
+        paintTog(on);
+      };
+      card._setOk = on => { if (on) set('ok', {}); paintTog(on); };   // the draft and an edit come back through here
+      acts.append(tog);
     }
     card.append(acts);
 
@@ -10206,14 +10286,54 @@ function sopOpen() {
       card.append(shot);
     }
 
-    const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional)';
-    note.setAttribute('aria-label', 'Note for ' + s.title);
-    note.oninput = () => { const a = run.answers.get(key); if (a) a.note = note.value; saveRunDraft(); };
-    card.append(note);
-
     const plan = el('div', 'fb-plan hidden');
     if (s.action_plan) plan.textContent = s.action_plan;
     card.append(plan);
+    return card;
+  }
+
+  // a tick step: check or action, nothing to type or photograph by rule
+  const isTick = s => (s.step_type === 'check' || s.step_type === 'action') && !/photo|video/.test(s.evidence || '');
+  // a zone's short name on its button: Zone 4-1 → 4.1, Bay 2A → 2A
+  const zoneShort = l => String(l || '?').replace(/^(zone|bay)\s+/i, '').replace(/^(\d+)-(\d+)$/, '$1.$2');
+  // one tick step over the zones: the title and its details once, then a button per zone
+  function zoneStepCard(s, items) {
+    const card = el('div', 'fb-step fb-zstep');
+    card.dataset.seq = s.seq;
+    const head = el('div', 'fb-step-head');
+    head.append(el('h4', null, s.title));
+    const hasDetail = s.instruction || s.expected_result || s.action_plan;
+    if (hasDetail) {
+      const more = el('button', 'fb-link', 'Details'); more.setAttribute('aria-expanded', 'false');
+      more.onclick = () => { const open = card.classList.toggle('open'); more.setAttribute('aria-expanded', String(open)); };
+      head.append(more);
+    }
+    card.append(head);
+    if (hasDetail) {
+      const det = el('div', 'fb-detail');
+      if (s.instruction) det.append(el('div', 'fb-inst', s.instruction));
+      if (s.expected_result) { const x = el('div', 'fb-expect'); x.append(el('b', null, 'Expected: ')); x.append(document.createTextNode(s.expected_result)); det.append(x); }
+      if (s.action_plan) { const x = el('div', 'fb-expect'); x.append(el('b', null, 'If not OK: ')); x.append(document.createTextNode(s.action_plan)); det.append(x); }
+      card.append(det);
+    }
+    const row = el('div', 'fb-zchips');
+    items.forEach(it => {
+      const key = stepKey(s, it);
+      const b = el('button', 'fb-zchip', zoneShort(it.label));
+      b.dataset.key = String(key); b.title = it.label || '';
+      const paint = on => { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); };
+      b._setOk = on => {
+        if (on) run.answers.set(key, { seq: s.seq, step_id: s.id, result: 'ok', item_id: it.id });
+        else run.answers.delete(key);
+        paint(on); saveRunDraft();
+      };
+      b.onclick = () => b._setOk(!b.classList.contains('on'));
+      paint(false);
+      row.append(b);
+    });
+    const all = el('button', 'fb-link', 'All OK');
+    all.onclick = () => row.querySelectorAll('.fb-zchip').forEach(b => b._setOk(true));
+    card.append(row, all);
     return card;
   }
 
@@ -10261,8 +10381,10 @@ function sopOpen() {
     const expected = run.perItem
       ? run.itemList.flatMap(it => run.steps.map(s => ({ s, key: stepKey(s, it), item: it })))
       : run.steps.map(s => ({ s, key: s.seq, item: null }));
-    const missing = expected.filter(x => !run.answers.has(x.key));
-    const noPhoto = expected.filter(x => /photo|video/.test(x.s.evidence || '') && !(run.media.get(x.key) || []).length);
+    const unanswered = expected.filter(x => !run.answers.has(x.key));
+    const red = unanswered.filter(x => isTick(x.s) || (run.chips && (x.s.step_type === 'check' || x.s.step_type === 'action')));
+    const missing = unanswered.filter(x => !red.includes(x));
+    const noPhoto = expected.filter(x => !run.chips && /photo|video/.test(x.s.evidence || '') && !(run.media.get(x.key) || []).length);
     if (missing.length || noPhoto.length) {
       const where = x => x.item ? ` (${x.item.label})` : '';
       $('runHint').textContent = missing.length
@@ -10271,6 +10393,26 @@ function sopOpen() {
       showToast($('runHint').textContent, 'error');   // the hint sits under Finish, scrolled out of view
       const first = (missing[0] || noPhoto[0]).key;
       document.querySelector(`.fb-step[data-key="${first}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // still red (0.11.57): asked, then sent as not OK — the note says why, and the manager is told
+    const runNote = String(document.getElementById('fb-runNote')?.value || '').trim();
+    if (red.length) {
+      const names = red.slice(0, 4).map(x => x.item ? zoneShort(x.item.label) : x.s.title).join(', ') + (red.length > 4 ? '…' : '');
+      if (!confirm(`${red.length} still red (${names}) — send ${red.length === 1 ? 'it' : 'them'} as not OK?`)) return;
+      if (!runNote) {
+        $('runHint').textContent = 'Say in the notes what is not OK.';
+        showToast('Say in the notes what is not OK', 'error');
+        document.getElementById('fb-runNote')?.focus();
+        return;
+      }
+      red.forEach(x => run.answers.set(x.key, { seq: x.s.seq, step_id: x.s.id, result: 'nok', ...(x.item ? { item_id: x.item.id } : {}), note: runNote }));
+    }
+    const anyNok = [...run.answers.values()].some(a => a.result === 'nok');
+    if (anyNok && !runNote) {
+      $('runHint').textContent = 'Something is not OK: say what in the notes.';
+      showToast('Something is not OK: say what in the notes', 'error');
+      document.getElementById('fb-runNote')?.focus();
       return;
     }
     $('finish').disabled = true;
@@ -10309,6 +10451,8 @@ function sopOpen() {
       client_run_id: i ? `${cid}-${i}` : cid, status: 'completed',
       ...(run.edit ? { edit: true } : {}),
       started_at: run.edit?.run?.started_at || run.started, finished_at: finished, steps,
+      // the checklist's note and its verdict (0.11.57): a not OK tells the manager (an issue, FarmBox 0141)
+      notes: runNote || null, outcome: anyNok ? 'nok' : 'ok', outcome_note: anyNok ? runNote : (runNote || null),
       position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id),
       // harvest weights, on the first run only
       ...(run.harvests && !i ? { harvests: [...run.harvests.values()].filter(x => num(x.kg) > 0 || x.final).map(x => ({
