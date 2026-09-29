@@ -1088,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.64';
+  const CURRENT_VERSION = '0.11.65';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1249,6 +1249,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.65', '2026-09-30', 'Scouting: one task a zone, no GPS', 'The daily scouting is one task for each zone (Zone 1, 2, 3, 4.1, 4.2): each lists only its own traps and keeps its own photos, sizes, AI notes and OK. The zone comes from the task, so a photo needs no position; write the row and metres if you want (B6, the zone is added). The GPS button is gone. In Zone 4 a card code names its table: 4.1B6 or 4.2B6.'],
     ['0.11.64', '2026-09-30', 'Faster updates', 'A new version is checked every 2 minutes and confirmed 15 seconds after it is first seen, instead of 5 minutes. When nothing is open (no checklist, scouting, sheet, camera or typing) the app updates by itself; otherwise the Update now message waits for you. Nothing waiting to be sent is lost, and the text reader and measuring tool stay downloaded.'],
     ['0.11.63', '2026-09-30', 'Scouting: each tab ends with its own OK', 'Traps, Plant health and Growth work the same way: add a photo, each photo with its comment, sizes and AI note, and at the bottom one button, red until tapped green when that section is OK, with a note saying why when it stays red. The tab shows a red dot or a green tick. A new Review tab lists everything captured, section by section, with its result; tap a photo to zoom. The box for the greenhouse as a whole is gone: the result follows from the sections.'],
     ['0.11.62', '2026-09-30', 'The timer to the second', 'The running timer shows its seconds, 12:34 and past an hour 1:02:05, ticking every second in the top bar, the In progress strip and on the card.'],
@@ -7079,8 +7080,10 @@ function sopOpen() {
   const isPosUnit = u => ['position', 'positions'].includes(String(u || '').toLowerCase());
   const qtyBits = g => {
     const n = g.positions.length;
-    return [n > 1 ? `${n} positions` : (n === 1 && g.positions[0].label) || null,
-            g.quantity && !isPosUnit(g.unit) ? fmtQty(g.quantity, g.unit) : null,
+    // one place that is the task's own area (a zone's scouting, 0.11.65) is not said twice; a count of zones is no quantity
+    const one = n === 1 ? g.positions[0].label : null;
+    return [n > 1 ? `${n} positions` : (one && one !== g.area && one !== g.zone_name ? one : null),
+            g.quantity && !isPosUnit(g.unit) && !['system', 'area'].includes(String(g.unit || '').toLowerCase()) ? fmtQty(g.quantity, g.unit) : null,
             fmtMin(g.minutes)].filter(Boolean);
   };
   const groupMeta = g => [g.zone_name || g.area, ...qtyBits(g)].filter(Boolean).join(' · ');
@@ -8399,8 +8402,19 @@ function sopOpen() {
 
   // ── the screen ──────────────────────────────────────────────────────────
   async function scoutSections(task, sop, detail) {
+    // 0.11.65 (FarmBox 0172): the scouting is one task a zone — its zone line says which, and only that zone's
+    // traps are listed (a card of the zone that names no table counts in each of its tables). An older task
+    // covering every zone still lists them all.
+    const zoneLines = task.positions.filter(x => x.area_zone_id);
+    const zoneIds = new Set(zoneLines.map(x => x.area_zone_id)), sysIds = new Set(zoneLines.map(x => x.area_system_id).filter(Boolean));
     const traps = (await all('traps')).filter(t => t.active !== false && (!t.farm_id || !task.farm_id || t.farm_id === task.farm_id))
+      .filter(t => !zoneIds.size || (zoneIds.has(t.zone_id) && (!t.system_id || !sysIds.size || sysIds.has(t.system_id))))
       .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+    // the zone's number for a position written as its row alone: B6 in Zone 4-1 is 4.1B6
+    const zonePrefix = (() => { const z = zoneLines.length === 1 ? zoneShort(zoneLines[0].label || zoneLines[0].zone_name) : '';
+                                return /^\d+(\.\d+)?$/.test(z) ? z : ''; })();
+    const fullPos = v => { const c = String(v || '').toUpperCase().replace(/\s/g, '');
+                           return c && /^[A-Z]/.test(c) && zonePrefix ? zonePrefix + c : c; };
     const th = (await getKV('ipm_threshold')) || { watch: 25, over: 50 };
     const trapById = new Map(traps.map(t => [t.id, t]));
     const crops = [...new Map(task.positions.flatMap(p => Array.isArray(p.crops) ? p.crops : []).map(c => [c.id, c])).values()];
@@ -8602,7 +8616,7 @@ function sopOpen() {
             pics.append(zoomImg(p.thumb, p.full, k === 'growth' ? 'Growth photo' : 'Plant photo'));
             const crop = crops.find(c => c.id === p.crop_id)?.name;
             txt.append(el('b', null, [wordOf(k === 'growth' ? GROWTH_PARTS : PARTS, p.part), crop].filter(Boolean).join(' · ')));
-            lines.push(posWords(p.pos_code) ? 'Position ' + p.pos_code : p.gps ? `GPS ±${p.gps.acc} m` : '— no position');
+            lines.push(posWords(fullPos(p.pos_code)) ? 'Position ' + fullPos(p.pos_code) : zoneLines.length === 1 ? (zoneLines[0].label || 'this zone') : '— no position');
             const ms = (p.measures || []).map(m => `${wordOf(MEASURE_WHAT, m.what).toLowerCase()} ${m.mm} mm${m.by === 'auto' ? ' 📐' : ''}`);
             if (ms.length) lines.push('Size: ' + ms.join(' · '));
             else if (p.px_per_mm) lines.push(p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected');
@@ -8672,7 +8686,6 @@ function sopOpen() {
       lists[section].prepend(card);
       paintTabs(); paintCoverage(); saveScDraft();
       if (section !== 'trap' && p.px_per_mm) sc.autoSize(p);         // the scale card is in it: measure the fruit or leaf
-      if (section !== 'trap' && await gpsAllowed()) { const g = await getGps(); if (g) { p.gps = g; card._paintPos?.(); saveScDraft(); } }
       if (section === 'trap' && !p.code) {
         card._codeState?.('reading the code…');
         try {
@@ -9028,34 +9041,28 @@ function sopOpen() {
       return b;
     }
 
+    // where in the zone (0.11.65): optional — the task says the zone; the row and metres say where in it (B6)
     function positionRow(p, onChange) {
       const row = el('div', 'fb-actions fb-sc-pos');
-      const inp = el('input', 'fb-num'); inp.type = 'text'; inp.value = p.pos_code || ''; inp.placeholder = '3B8';
+      const inp = el('input', 'fb-num'); inp.type = 'text'; inp.value = p.pos_code || ''; inp.placeholder = zonePrefix ? 'B6' : '3B8';
       inp.setAttribute('autocapitalize', 'characters'); inp.setAttribute('autocomplete', 'off'); inp.spellcheck = false;
-      inp.setAttribute('aria-label', 'Position: zone, row, metres from the corridor');
+      inp.setAttribute('aria-label', zonePrefix ? 'Where in the zone: row and metres from the corridor (optional)' : 'Position: zone, row, metres from the corridor');
       const words = el('span', 'fb-chip');
-      const gps = el('button', 'fb-btn', '📍 GPS'); gps.type = 'button';
       const paint = () => {
-        const w = posWords(p.pos_code);
-        words.textContent = w || (p.pos_code ? 'write it as 3B8' : (p.gps ? '' : 'position or GPS needed'));
-        words.className = 'fb-chip' + (w ? ' ok' : p.pos_code || !p.gps ? ' late' : '');
-        gps.textContent = p.gps ? `📍 ±${p.gps.acc} m` : '📍 GPS';
-        gps.setAttribute('aria-pressed', String(!!p.gps));
+        const w = posWords(fullPos(p.pos_code));
+        const zoneWord = zoneLines.length === 1 ? (zoneLines[0].label || zoneLines[0].zone_name) : '';
+        words.textContent = w ? (zonePrefix ? `${zoneWord} · ${w.replace(/^[^·]*·\s*/, '')}` : w)
+          : p.pos_code ? (zonePrefix ? 'write it as B6: row, metres' : 'write it as 3B8')
+          : zoneWord ? `${zoneWord} · row optional` : 'position needed';
+        words.className = 'fb-chip' + (w || (!p.pos_code && zoneWord) ? ' ok' : ' late');
       };
       inp.oninput = () => {
         const v = inp.value.toUpperCase().replace(/\s/g, '');
         if (v !== inp.value) inp.value = v;
-        p.pos_code = v; if (parsePos(v)) sc.lastPos = v;
+        p.pos_code = v; if (parsePos(fullPos(v))) sc.lastPos = v;
         paint(); onChange?.(); saveScDraft();
       };
-      gps.onclick = async () => {
-        if (p.gps) { p.gps = null; paint(); saveScDraft(); return; }
-        gps.textContent = '📍 …';
-        const g = await getGps(12000);
-        if (!g) showToast('No GPS fix here — write the position instead', 'error');
-        p.gps = g; paint(); onChange?.(); saveScDraft();
-      };
-      row.append(el('span', 'fb-trap-lbl', 'Where'), inp, words, gps);
+      row.append(el('span', 'fb-trap-lbl', 'Where'), inp, words);
       row._paint = paint; paint();
       return row;
     }
@@ -9283,7 +9290,7 @@ function sopOpen() {
       cover, lists.trap, scan, verdictBlock('trap', 'Traps'));
     // Plant health
     lists.health = el('div');
-    panes.health.append(el('div', 'config-hint', 'A photo of anything that looks wrong on a plant: where (3B8) or GPS, a comment, the AI note if you want it. Tap a photo to zoom.'),
+    panes.health.append(el('div', 'config-hint', 'A photo of anything that looks wrong on a plant: where in the zone if you want (row and metres, B6), a comment, the AI note if you want it. Tap a photo to zoom.'),
                         addBar('health', 'Add a photo'), lists.health, verdictBlock('health', 'Plant health'));
     // Growth
     lists.growth = el('div');
@@ -9311,7 +9318,8 @@ function sopOpen() {
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
       ['Writing the position.', 'Always the same spot: on the blue side, in the plain band at the top, above the three holes and at least 1 cm from the edge, clear of the holes and the hanging wire. Black marker, capitals about 1 cm high, on one line, a little apart (1B6, no dashes). Photograph the blue side first. A trap of the list is never read: tap it in the list. If a new card is not read, the AI reads it or you type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
-      ['Plant health.', 'Anything that looks wrong: write where (3B8) or tap GPS, choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
+      ['One zone a task.', 'Each zone has its own scouting task (Zone 1, 2, 3, 4.1, 4.2): its traps only, its photos, its OK. In Zone 4 write the table in a card code: 4.1B6, 4.2B6.'],
+      ['Plant health.', 'Anything that looks wrong: the zone comes from the task; write the row and metres if you want (B6), choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
       ['Each tab ends the same way.', 'At the bottom of Traps, Plant health and Growth: one button, red until you tap it green when that section is OK. Still red? Say why in the note under it. The tab shows a red dot or a green ✓.'],
@@ -9677,7 +9685,8 @@ function sopOpen() {
         v?.scrollIntoView({ behavior: 'smooth', block: 'center' }); v?.querySelector('textarea')?.focus({ preventScroll: true });
       } else if (ref) { sc.reveal?.(ref); document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     };
-    if (sc.due?.trap && !trapsP.length)
+    // every trap of the zone photographed, or marked taken down / out of reach (0.11.65)
+    if (sc.due?.trap && !trapsP.length && (!sc.traps.length || sc.traps.some(t => !sc.status.has(t.id))))
       return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
     const noCode = trapsP.find(p => !p.code);
     if (noCode) return stop('trap', 'A trap has no position — write the one on the card (1B6).', noCode.ref);
@@ -9692,8 +9701,12 @@ function sopOpen() {
       if (seen.has(p.code)) return stop('trap', `Trap ${shortCode(p.code)} has two photos — remove one.`, p.ref);
       seen.set(p.code, p);
     }
-    const lost = plants.find(p => !placed(p));
-    if (lost) return stop(lost.section, 'A photo has no position — write it (3B8) or use the GPS.', lost.ref);
+    // one zone a task (0.11.65): the zone is known; a task over several zones still needs where
+    const oneZone = run.task.positions.filter(x => x.area_zone_id).length === 1;
+    const lost = oneZone ? null : plants.find(p => !parsePos(p.pos_code));
+    if (lost) return stop(lost.section, 'A photo has no position — write it (3B8).', lost.ref);
+    const zp = oneZone ? zoneShort(run.task.positions.find(x => x.area_zone_id).label) : '';
+    const posOf = v => { const c = String(v || '').toUpperCase().replace(/\s/g, ''); const f = c && /^[A-Z]/.test(c) && /^\d+(\.\d+)?$/.test(zp) ? zp + c : c; return parsePos(f) ? f : null; };
     // each section today says OK or not OK (0.11.63): one still red is asked about once, then needs its note
     const LABEL = Object.fromEntries(SC_TABS);
     const secs = SC_TABS.map(([k]) => k).filter(k => sc.shown?.(k));
@@ -9736,10 +9749,10 @@ function sopOpen() {
         photo_data: S.thumb || null, photo_path: S.photo_path || null,
         counts: S.counts || {}, total: S.total ?? 0, algo_total: S.algo_total ?? null, algorithm: S.algorithm || null, confidence: S.confidence ?? null,
         corrected: !!S.corrected, replaced: !!p.replaced, notes: p.note || null, read_at: S.taken_at || p.taken_at, code_read: p.code_read || null,
-        code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: p.gps || null, ai: S.ai || null }))),
+        code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: null, ai: S.ai || null }))),
       observations: plants.map(p => ({ client_ref: p.ref, section: p.section, part: p.part || 'other', crop_id: p.crop_id || null,
         zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, taken_at: p.taken_at,
-        pos_code: parsePos(p.pos_code) ? p.pos_code : null, gps: p.gps || null, measures: p.measures || [], px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
+        pos_code: posOf(p.pos_code), gps: null, measures: p.measures || [], px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
     };
     const uploads = [
       ...trapsP.flatMap(p => SIDES.map(([k]) => [k, p.sides[k]]).filter(([, S]) => S.full instanceof Blob && !S.photo_path)
