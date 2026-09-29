@@ -785,7 +785,15 @@
     .fb-run-end { margin-top: var(--space-4); display: grid; gap: var(--space-2); }
     .fb-runnote { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: var(--radius-lg, 12px);
       border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
-    .fb-chip.run { background: var(--primary); color: var(--text-inverse); cursor: pointer; }
+    .fb-chip.run { background: var(--primary); color: var(--text-inverse); }
+    .fb-chip.paused { background: color-mix(in srgb, var(--warning, #b7791f) 16%, var(--surface)); color: var(--text); }
+    .fb-chip.todo { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .fb-going { display:flex; align-items:center; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); padding: 10px 12px;
+      border-radius: var(--radius-lg, 12px); background: color-mix(in srgb, var(--primary) 16%, var(--surface)); border: 1px solid var(--primary); cursor: pointer; }
+    .fb-going-text { flex: 1; min-width: 0; display: grid; }
+    .fb-going-text small { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+    .fb-going-text b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fb-going-time { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .fb-timer { display:flex; align-items:center; gap: var(--space-3); margin-top: var(--space-2); padding: 8px 12px;
       border-radius: var(--radius-lg, 12px); background: color-mix(in srgb, var(--primary) 14%, var(--surface)); flex-basis: 100%; width: 100%; box-sizing: border-box; }
     .fb-timer.paused { background: var(--surface-offset); }
@@ -1048,7 +1056,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.60';
+  const CURRENT_VERSION = '0.11.61';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1182,6 +1190,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.61', '2026-09-30', 'To do, in progress, done, cancelled', 'One set of words on every task: To do, In progress, Paused, Done with the time worked, Cancelled with its reason, and Not done for a task whose day ended before it was finished (automatic, still open to finish). The task in progress shows at the top of the day with its timer, Pause and Open. Cancel this task is a real choice: Not needed, Equipment not available, Weather or access or Other, with a note; swipe left or the link under Finish. Day headings count done, worked, to do or not done, and cancelled.'],
     ['0.11.60', '2026-09-30', 'Straight into the checklist', 'A tap on a task goes straight into its checklist, the timer starting; the task page is gone. A task with no checklist asks Mark it done; a done task opens what was sent to edit it; a not done one opens to be done after all; Not done is a link under Finish. The timer in the top bar is the pause button: tap it to pause, tap again to go on; the Pause button at the bottom is gone. Under the title and on the card: the zones to visit (Zones 1, 2, 3, 4.1, 4.2), then the minutes, PPE and tools; a crop task keeps its batches in a fold under the title.'],
     ['0.11.59', '2026-09-30', 'A compact checklist', 'A compact checklist, the same on every task and the scouting: the running timer in the top bar beside the back arrow; the title with Show all details on its line; under it one line with what the task page said (day, half, where, the place, steps, minutes, PPE, tools). No Done button on the places: one is done with Finish, several are red and green buttons (Done on) and Finish asks about any still red. A section name shows once where it starts; the cards are tighter.'],
     ['0.11.58', '2026-09-30', 'The same logic everywhere', 'Pause stays on the checklist: it stops the timer and becomes Resume; go back to the list yourself, only Finish goes back by itself. The daily scouting ends like every checklist: one button, red until tapped green (Tap when all OK), the same notes box, Pause and Finish; still red at Finish is asked about and sent as not OK with the note. Procedures: neighbouring tick steps are now one red and green step, every old step kept in its details.'],
@@ -6912,26 +6921,30 @@ function sopOpen() {
   }
   // the words on the right of a task (the same in the console): Done in 42 min · ▶ 12 min · Pause ·
   // ⏸ 12 min so far · Not finished · 12 min (an earlier day) · Done (never timed)
+  // To do · In progress · Paused · Done · Cancelled · Not done (its day ended, still open) — the same words in the console
   function timeChip(g, late) {
     const m = groupMinutes(g), on = groupRunning(g);
     if (g.status === 'done') {
       const over = m >= 1 && num(g.minutes) > 0 && m > num(g.minutes) * 1.25;
-      const c = el('span', 'fb-chip ok' + (over ? ' over' : ''), m >= 1 ? `Done in ${fmtWork(m)}` : 'Done');
+      const c = el('span', 'fb-chip ok' + (over ? ' over' : ''), m >= 1 ? `Done · ${fmtWork(m)}` : 'Done');
       if (over) c.title = `planned ${fmtMin(g.minutes)}`;
       return c;
     }
-    if (g.status === 'skipped') return el('span', 'fb-chip skip', 'Not done' + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
-    if (on) {
-      const c = el('span', 'fb-chip run', `⏸ ${fmtWork(m)}`);
-      c.setAttribute('role', 'button'); c.title = 'Tap to pause'; c.dataset.timerIds = g.members.map(x => x.id).join(',');
-      c.dataset.timerWord = '⏸ {m}';
-      c.onclick = async e => { e.stopPropagation(); for (const x of g.members) await timerPause(x.id); showWeek(); };
+    if (g.status === 'skipped') {
+      const x = (g.members || []).find(t => t.status === 'skipped') || {};
+      const c = el('span', 'fb-chip skip', 'Cancelled' + (x.skip_reason ? ' · ' + reasonWord(x.skip_reason).toLowerCase() : ''));
+      if (x.skip_note) c.title = x.skip_note;
       return c;
     }
-    if (m >= 1) return el('span', 'fb-chip' + (late ? ' late' : ''), late ? `Not finished · ${fmtWork(m)}` : `⏸ ${fmtWork(m)} so far`);
-    if (g.status === 'partial') return el('span', 'fb-chip', `${g.doneCount}/${g.members.length}`);
-    if (late) return el('span', 'fb-chip late', 'Late');
-    return null;
+    if (on) {
+      const c = el('span', 'fb-chip run', `In progress · ${fmtWork(m)}`);
+      c.dataset.timerIds = g.members.map(x => x.id).join(','); c.dataset.timerWord = 'In progress · {m}';
+      return c;
+    }
+    if (late) return el('span', 'fb-chip late', 'Not done' + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
+    if (m >= 1) return el('span', 'fb-chip paused', `Paused · ${fmtWork(m)}`);
+    if (g.status === 'partial') return el('span', 'fb-chip', `In part · ${g.doneCount}/${g.members.length}`);
+    return el('span', 'fb-chip todo', 'To do');
   }
   // a running timer ticks where it shows (the cards, the checklist) without redrawing the page
   setInterval(() => {
@@ -7071,7 +7084,23 @@ function sopOpen() {
       : farm ? farm.name : 'Your farm work, day by day.';
     $('empty').classList.toggle('hidden', week.length + past.length > 0);
 
-    $('next').textContent = '';   // the "Now" card is gone (0.11.56): the list itself says what is open and late
+    // the task in progress, at the top of the day (0.11.61): a timer left running is hard to miss
+    const nx = $('next'); nx.textContent = '';
+    const going = groups.find(g => !isClosed(g.status) && groupRunning(g));
+    if (going) {
+      const strip = el('div', 'fb-going');
+      const txt = el('div', 'fb-going-text');
+      txt.append(el('small', null, 'In progress'), el('b', null, going.title));
+      const tm = el('span', 'fb-going-time', `▶ ${fmtWork(groupMinutes(going))}`);
+      tm.dataset.timerIds = going.members.map(x => x.id).join(','); tm.dataset.timerWord = '▶ {m}';
+      const pz = el('button', 'btn btn-sm', '⏸'); pz.title = 'Pause'; pz.setAttribute('aria-label', 'Pause ' + going.title);
+      pz.onclick = async e => { e.stopPropagation(); for (const x of going.members) await timerPause(x.id); showWeek(); };
+      const op = el('button', 'btn btn-sm btn-primary', 'Open');
+      op.onclick = e => { e.stopPropagation(); openTask(going.key); };
+      strip.onclick = () => openTask(going.key);
+      strip.append(txt, tm, pz, op);
+      nx.append(strip);
+    }
 
     const byDay = list => { const m = new Map(); list.forEach(t => { if (!m.has(t.planned_date)) m.set(t.planned_date, []); m.get(t.planned_date).push(t); }); return m; };
     const openOf = list => list.filter(t => !isClosed(t.status));
@@ -7080,8 +7109,10 @@ function sopOpen() {
     // a day's line: 5 of 8 done · 3 h 10 worked · then what is left (planned) or, for a day gone by, not finished
     const dayLine = (list, past) => {
       const done = list.filter(t => t.status === 'done').length, open = openOf(list).length, w = workedOf(list);
+      const cancelled = list.filter(t => t.status === 'skipped').length;
       return [`${done} of ${list.length} done`, w >= 1 ? `${fmtWork(w)} worked` : null,
-              open ? (past ? `${open} not finished` : `${open} open, ${fmtMin(minsOf(list))} planned`) : null].filter(Boolean).join(' · ');
+              open ? (past ? `${open} not done` : `${open} to do, ${fmtMin(minsOf(list))} planned`) : null,
+              cancelled ? `${cancelled} cancelled` : null].filter(Boolean).join(' · ');
     };
     // a day's work: one block per unit (sister units), the morning above the line, the afternoon under it
     const dayBody = (list, date, withClosed) => {
@@ -7118,7 +7149,7 @@ function sopOpen() {
       const det = fold('fb-earlier', foldState.earlier, v => { foldState.earlier = v; });
       const sum = el('summary');
       if (left) sum.append(el('span', 'fb-dot'));
-      sum.append(el('span', 'fb-fold-title', 'Earlier'), el('span', 'fb-fold-meta', left ? `${left} not done` : 'all closed'));
+      sum.append(el('span', 'fb-fold-title', 'Earlier'), el('span', 'fb-fold-meta', left ? `${left} not done — tap to finish` : 'all closed'));
       det.append(sum);
       [...byDay(past)].sort((x, y) => (x[0] < y[0] ? 1 : -1)).forEach(([date, list]) => {
         const sec = el('section', 'fb-day');
@@ -7224,8 +7255,10 @@ function sopOpen() {
     SW.admin = (await all('workers')).some(w => w.id === SW.me && w.role === 'farm_admin');
   }
   const swipeOverlay = new Map();                   // task id → the state held for the five seconds of Undo
-  const REASONS = [['no_time', 'No time'], ['not_needed', 'Not needed today'], ['blocked', 'Weather or equipment']];
-  const reasonWord = r => (REASONS.find(x => x[0] === r) || [r, r || ''])[1];
+  // why a task is cancelled (0.11.61, FarmBox 0168): a real choice — "no time" is what Not done says by itself
+  const REASONS = [['not_needed', 'Not needed'], ['equipment', 'Equipment not available'], ['weather', 'Weather or access'], ['other', 'Other']];
+  const OLD_REASONS = { no_time: 'No time', blocked: 'Weather or equipment' };
+  const reasonWord = r => (REASONS.find(x => x[0] === r) || [r, OLD_REASONS[r] || r || ''])[1];
   const INPUT_MODULES = ['harvest', 'scouting', 'ipm_traps'];
 
   // how many answers a task asks for: a weight per batch for a harvest, else its checklist's
@@ -7268,7 +7301,7 @@ function sopOpen() {
 
   function swipeable(card, g) {
     const wrap = el('div', 'fb-swipe');
-    wrap.append(el('div', 'fb-swipe-bg left', '✓ Done'), el('div', 'fb-swipe-bg right', 'Not done ✕'), card);
+    wrap.append(el('div', 'fb-swipe-bg left', '✓ Done'), el('div', 'fb-swipe-bg right', 'Cancel ✕'), card);
     let x0 = null, y0 = null, dx = 0, on = false, width = 0;
     card.addEventListener('pointerdown', e => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -7322,12 +7355,12 @@ function sopOpen() {
   }
 
   function swipeNotDone(g) {
-    if (!maySkip(g)) { notice('Only the Admin or the person this task is assigned to can mark it not done.'); return; }
-    // three reasons, No time chosen, and a note
+    if (!maySkip(g)) { notice('Only the Admin or the people on this task can cancel it.'); return; }
+    // cancelling is a decision (0.11.61): a reason chosen and a note saying why
     const sheet = el('div', 'fb-sheet');
     const card = el('div', 'fb-sheet-card');
-    card.append(el('h3', null, 'Not done'), el('div', 'fb-meta', g.title));
-    let reason = 'no_time';
+    card.append(el('h3', null, 'Cancel this task'), el('div', 'fb-meta', g.title));
+    let reason = null;
     const row = el('div', 'fb-actions');
     const btns = REASONS.map(([v, l]) => {
       const b = el('button', 'fb-btn', l);
@@ -7336,10 +7369,10 @@ function sopOpen() {
       row.append(b);
       return [v, b];
     });
-    const note = el('input', 'fb-note'); note.type = 'text'; note.placeholder = 'Note (optional)';
+    const note = el('textarea', 'fb-runnote'); note.rows = 2; note.placeholder = 'Why? (the manager reads it)';
     const acts = el('div', 'fb-actions'); acts.style.justifyContent = 'flex-end'; acts.style.marginTop = 'var(--space-3)';
-    const cancel = el('button', 'fb-btn', 'Cancel');
-    const ok = el('button', 'fb-btn fb-btn-primary', 'Mark not done');
+    const cancel = el('button', 'fb-btn', 'Keep it');
+    const ok = el('button', 'fb-btn fb-btn-primary', 'Cancel the task');
     acts.append(cancel, ok);
     card.append(row, note, acts);
     sheet.append(card);
@@ -7348,12 +7381,14 @@ function sopOpen() {
     cancel.onclick = close;
     sheet.onclick = e => { if (e.target === sheet) close(); };
     ok.onclick = () => {
+      if (!reason) { showToast('Choose why it is cancelled', 'error'); return; }
+      if (!note.value.trim()) { showToast('Say why in the note', 'error'); note.focus(); return; }
       close();
       const open = g.members.filter(m => !isClosed(m.status));
       const text = note.value.trim() || null;
       open.forEach(t => swipeOverlay.set(t.id, { status: 'skipped', skip_reason: reason, skip_note: text }));
       showWeek();
-      holdForUndo(`Not done (${reasonWord(reason).toLowerCase()}): ${g.title}`, async () => {
+      holdForUndo(`Cancelled (${reasonWord(reason).toLowerCase()}): ${g.title}`, async () => {
         const rows = open.map(t => ({ ...t, status: 'skipped', skip_reason: reason, skip_note: text }));
         open.forEach(t => swipeOverlay.delete(t.id));
         await putAll('tasks', rows);
@@ -7745,7 +7780,7 @@ function sopOpen() {
     let a = $('notdone');
     if (!a) {
       a = document.createElement('button'); a.id = 'fb-notdone'; a.className = 'fb-link fb-notdone'; a.type = 'button';
-      a.textContent = 'Not done…';
+      a.textContent = 'Cancel this task…';
       ($('pause') || $('finish')).after(a);
       a.onclick = () => { if (run) swipeNotDone(run.task); };
     }
