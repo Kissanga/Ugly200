@@ -788,18 +788,6 @@
     .fb-chip.run { background: var(--primary); color: var(--text-inverse); }
     .fb-chip.paused { background: color-mix(in srgb, var(--warning, #b7791f) 16%, var(--surface)); color: var(--text); }
     .fb-chip.todo { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
-    .fb-runtitle-h { font-size: 1.3rem; line-height: 1.25; margin: 0 0 4px; }
-    .fb-hub { display: flex; flex-direction: column; gap: 8px; margin: var(--space-3) 0; }
-    .fb-hub-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 14px; font: inherit; text-align: left;
-      border: 1px solid var(--border); border-radius: var(--radius-lg, 12px); background: var(--surface); color: var(--text); cursor: pointer; }
-    .fb-hub-row.done { opacity: .7; }
-    .fb-hub-text { flex: 1; min-width: 0; display: grid; }
-    .fb-hub-text b { font-size: var(--text-base); }
-    .fb-hub-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-muted); box-sizing: border-box; }
-    .fb-hub-dot.ok { background: var(--success, #2e7d32); border-color: var(--success, #2e7d32); }
-    .fb-hub-dot.run { background: var(--primary); border-color: var(--primary); }
-    .fb-hub-dot.x { border-style: dashed; }
-    .fb-hub-next { width: 100%; min-height: 48px; margin-top: var(--space-2); }
     .fb-going { display:flex; align-items:center; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); padding: 10px 12px;
       border-radius: var(--radius-lg, 12px); background: color-mix(in srgb, var(--primary) 16%, var(--surface)); border: 1px solid var(--primary); cursor: pointer; }
     .fb-going-text { flex: 1; min-width: 0; display: grid; }
@@ -1100,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.67';
+  const CURRENT_VERSION = '0.11.68';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1261,6 +1249,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.68', '2026-09-30', 'The zones as standard task cards', 'Inside the Daily scouting card the five zones are the usual task cards: title, zone, minutes, inputs, state and timer, the family colour, swipe. The day line on top says how many are done and what is left.'],
     ['0.11.67', '2026-09-30', 'The daily scouting on one card', 'The day has one Daily scouting card again, showing its zones. Tap it for the list of zones, each a task of its own with its state and time (to do, in progress, done); Start the next zone, or tap any. When a zone is finished, or you go back, you return to this list for the next one.'],
     ['0.11.66', '2026-09-30', 'All zones', 'A task done across the unit says All zones instead of Whole unit.'],
     ['0.11.65', '2026-09-30', 'Scouting: one task a zone, no GPS', 'The daily scouting is one task for each zone (Zone 1, 2, 3, 4.1, 4.2): each lists only its own traps and keeps its own photos, sizes, AI notes and OK. The zone comes from the task, so a photo needs no position; write the row and metres if you want (B6, the zone is added). The GPS button is gone. In Zone 4 a card code names its table: 4.1B6 or 4.2B6.'],
@@ -7593,7 +7582,7 @@ function sopOpen() {
     const t = findGroup(groups, key);
     if (!t) return;
     if (t.hub) { hubReturn = null; return openHub(t); }
-    hubReturn = fromHub || null;
+    hubReturn = fromHub || hubOf(groups, t.key)?.key || null;     // a zone of a hub comes back to it
     const sop = (await all('sops')).find(s => s.id === t.sop_id);
     await refreshSW();
     const hasChecklist = !!sop && (sop.validation || 'checklist') !== 'tick';
@@ -7610,38 +7599,18 @@ function sopOpen() {
     return startRun(t, sop);
   }
   // ── the day's scouting: its zones, each a task of its own (0.11.67) ──
+  // the day's scouting: its zone tasks, drawn exactly as on the day list (0.11.68, owner: "exactly the same task design,
+  // just a collection of the five tasks with all the standard information")
   function openHub(h) {
     const box = $('task'); box.textContent = '';
-    const head = el('div', 'fb-runhead');
-    head.append(el('h1', 'fb-runtitle-h', h.title));
-    const left = h.zones.filter(z => !isClosed(z.status)).length;
-    head.append(el('p', 'fb-runfacts', [fmtDay(h.planned_date), zonesLine(h), left ? `${left} of ${h.zones.length} to do` : 'all zones closed',
-                                       fmtMin(h.openMinutes) ? `about ${fmtMin(h.openMinutes)} left` : null].filter(Boolean).join(' · ')));
-    box.append(head);
-    const list = el('div', 'fb-hub');
+    const sec = el('section', 'fb-day');
+    const done = h.zones.filter(z => z.status === 'done').length, open = h.zones.filter(z => !isClosed(z.status));
+    sec.append(el('h2', null, [fmtDay(h.planned_date), `${done} of ${h.zones.length} done`,
+      open.length ? `${open.length} to do, ${fmtMin(open.reduce((a, z) => a + z.openMinutes, 0))} planned` : null].filter(Boolean).join(' · ')));
     const late = h.planned_date < todayISO();
-    h.zones.forEach(z => {
-      const row = el('button', 'fb-hub-row' + (isClosed(z.status) ? ' done' : ''));
-      row.type = 'button';
-      const name = z.positions[0]?.label || z.area || z.zone_name || 'Zone';
-      const txt = el('div', 'fb-hub-text');
-      txt.append(el('b', null, String(name).replace(/(\d)-(\d+)$/, '$1.$2')), el('span', 'fb-meta', fmtMin(z.minutes) || ''));
-      row.append(el('span', 'fb-hub-dot ' + (z.status === 'done' ? 'ok' : z.status === 'skipped' ? 'x' : groupRunning(z) ? 'run' : 'todo')), txt);
-      const chip = timeChip(z, late && !isClosed(z.status));
-      if (chip) row.append(chip);
-      row.onclick = () => openTask(z.key, h.key);
-      list.append(row);
-    });
-    box.append(list);
-    // the zone already started first (its timer, or time on it), else the first still to do
-    const started = h.zones.find(z => !isClosed(z.status) && (groupRunning(z) || groupMinutes(z) >= 1));
-    const nextZone = started || h.zones.find(z => !isClosed(z.status));
-    if (nextZone) {
-      const go = el('button', 'btn btn-primary fb-hub-next', (started ? 'Continue ' : 'Start ') + String(nextZone.positions[0]?.label || nextZone.area || 'the next zone').replace(/(\d)-(\d+)$/, '$1.$2'));
-      go.type = 'button'; go.onclick = () => openTask(nextZone.key, h.key);
-      box.append(go);
-    }
-    show('task', 'Scouting', () => { hubReturn = null; showWeek(); });
+    h.zones.forEach(z => sec.append(taskCard(z, late && !isClosed(z.status))));
+    box.append(sec);
+    show('task', h.title, () => { hubReturn = null; showWeek(); });
   }
   // back to the hub after a zone, else to the day
   async function backFromRun() {
