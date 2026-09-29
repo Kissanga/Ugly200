@@ -1088,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.65';
+  const CURRENT_VERSION = '0.11.66';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1249,6 +1249,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.66', '2026-09-30', 'All zones', 'A task done across the unit says All zones instead of Whole unit.'],
     ['0.11.65', '2026-09-30', 'Scouting: one task a zone, no GPS', 'The daily scouting is one task for each zone (Zone 1, 2, 3, 4.1, 4.2): each lists only its own traps and keeps its own photos, sizes, AI notes and OK. The zone comes from the task, so a photo needs no position; write the row and metres if you want (B6, the zone is added). The GPS button is gone. In Zone 4 a card code names its table: 4.1B6 or 4.2B6.'],
     ['0.11.64', '2026-09-30', 'Faster updates', 'A new version is checked every 2 minutes and confirmed 15 seconds after it is first seen, instead of 5 minutes. When nothing is open (no checklist, scouting, sheet, camera or typing) the app updates by itself; otherwise the Update now message waits for you. Nothing waiting to be sent is lost, and the text reader and measuring tool stay downloaded.'],
     ['0.11.63', '2026-09-30', 'Scouting: each tab ends with its own OK', 'Traps, Plant health and Growth work the same way: add a photo, each photo with its comment, sizes and AI note, and at the bottom one button, red until tapped green when that section is OK, with a note saying why when it stays red. The tab shows a red dot or a green tick. A new Review tab lists everything captured, section by section, with its result; tap a photo to zoom. The box for the greenhouse as a whole is gone: the result follows from the sections.'],
@@ -7716,7 +7717,7 @@ function sopOpen() {
     const itemsOf = task.positions.filter(isItem);
     const where = zonesLine(task)
       || (itemsOf.length ? itemsOf.map(p => p.label).join(' · ') : null)
-      || task.zone_name || (task.area && task.area !== 'Whole unit' ? task.area : null);
+      || task.zone_name || (task.area && !['Whole unit', 'All zones'].includes(task.area) ? task.area : null);
     head.append(el('p', 'fb-runfacts', [where, task.crop_name, `about ${fmtMin(task.minutes)}`,
       sop?.safety_ppe ? 'PPE: ' + sop.safety_ppe : null, sop?.tools ? 'Tools: ' + sop.tools : null].filter(Boolean).join(' · ')));
     // a crop task's batches, folded under the facts (they were on the task page)
