@@ -1038,7 +1038,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.57';
+  const CURRENT_VERSION = '0.11.58';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1172,6 +1172,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.58', '2026-09-30', 'The same logic everywhere', 'Pause stays on the checklist: it stops the timer and becomes Resume; go back to the list yourself, only Finish goes back by itself. The daily scouting ends like every checklist: one button, red until tapped green (Tap when all OK), the same notes box, Pause and Finish; still red at Finish is asked about and sent as not OK with the note. Procedures: neighbouring tick steps are now one red and green step, every old step kept in its details.'],
     ['0.11.57', '2026-09-30', 'Checklists: tap red to green', 'Simpler checklists. A tick step is one button, red until tapped green; its details are still one tap away. A routine over the zones made only of ticks, like the irrigation check, shows its step once with a button per zone (1, 2, 3, 4.1, 4.2) and All OK. One notes box and an optional photo under the steps, then Pause and Finish: Pause stops the timer and keeps the answers, Finish sends. A step still red at Finish is asked about and sent as not OK, and anything not OK needs a word in the notes; the manager is told. The timer at the top only shows.'],
     ['0.11.56', '2026-09-30', 'A timer on every task', 'The clock card and the Now card are gone: each task times itself. Opening a checklist starts its timer, shown at the top with one button, Pause, then Resume; reopening the checklist resumes it. Back to the list keeps it running, and the card shows it with a Pause. Starting another checklist pauses the first, and a timer still running at 18:00 stops there. Works offline. The right of every card says Done in 42 min, 12 min so far, or Not finished 12 min for an earlier day; a task done without its checklist just says Done. Each day heading says how many are done, the time worked, and what is left or not finished. On the task screen: the time worked and Pause the timer.'],
     ['0.11.55', '2026-09-30', 'Uploads that do not get stuck', 'Uploads: one pass at a time (photos were sometimes sent twice), in the order they were made (clock in and out), and a record the server refuses for good is set aside with tap to try again instead of blocking everything behind it. Finish no longer waits for the full photos to upload, and never stays greyed out after an error. Checklist step photos are taken in the app, kept with the run when there is no signal and sent with it (they were lost offline); tap a photo to remove it. A decimal comma counts (12,5). n/a shows as pressed. A last cut with no weight still closes its batch, and a weight over 200 kg is asked about. The reason Finish did nothing is shown as a message. A busy sign-in server no longer signs you out. The phone Back gesture closes the camera, a photo or a sheet first. Larger buttons and chips for gloved hands.'],
@@ -7566,6 +7567,7 @@ function sopOpen() {
         btn.textContent = on ? '⏸ Pause' : '▶ Resume';
       };
       paint();
+      run.paintTimer = paint;   // Pause and Resume at the bottom repaint it
       bar.append(txt);          // Pause is at the bottom, beside Finish (0.11.57)
       head.append(bar);
     }
@@ -7663,23 +7665,29 @@ function sopOpen() {
     end.append(shot);
     return end;
   }
-  // Pause beside Finish (0.11.57): the timer stops, the answers stay (the draft), back to the day
+  // Pause beside Finish (0.11.57): the timer stops and the answers stay (the draft); 0.11.58: it stays on the checklist
+  // and turns into Resume — going back to the day is the person's own step; only Finish goes back by itself
   function paintPause(on) {
     let p = $('pause');
     if (!p) {
       p = document.createElement('button'); p.id = 'fb-pause'; p.className = 'btn btn-lg btn-block fb-pausebtn';
-      p.textContent = '⏸ Pause'; p.style.marginTop = 'var(--space-2)';
+      p.style.marginTop = 'var(--space-2)';
       $('finish').after(p);
       p.onclick = async () => {
         const R = run; if (!R) return;
-        const tt = timerTaskOf(R.task);
-        if (tt) await timerPause(tt.id);
-        if (R.sc) { try { await saveScDraft?.(); } catch (e) {} } else saveRunDraft();
-        showToast('Paused — the answers are kept', 'success');
-        showWeek();
+        const tt = timerTaskOf(R.task); if (!tt) return;
+        if (groupRunning(R.task)) {
+          await timerPause(tt.id);
+          if (R.sc) saveScDraft(); else saveRunDraft();
+          showToast('Paused — the answers are kept', 'success');
+        } else {
+          await timerStart(tt.id);
+        }
+        R.paintTimer?.(); paintPause(true);
       };
     }
     p.classList.toggle('hidden', !on);
+    p.textContent = run && groupRunning(run.task) ? '⏸ Pause' : '▶ Resume';
   }
 
   // ── the checklist's own draft (0.11.39): answers, notes and photos kept in
@@ -8321,7 +8329,7 @@ function sopOpen() {
         b.classList.toggle('off', !shown(k));
         panes[k].classList.toggle('hidden', sc.tab !== k);
       });
-      $('finish').textContent = run.edit ? 'Save the changes' : sc.outcome === 'nok' ? 'Finish · not OK' : 'All OK · finish';
+      $('finish').textContent = run.edit ? 'Save the changes' : 'Finish';
     };
 
     // one hidden picker for the gallery, used by every section
@@ -8993,21 +9001,20 @@ function sopOpen() {
     const fin = el('div', 'fb-sc-end');
     box.append(fin);
     sc.shoot = shoot;
+    // 0.11.58: the same as every checklist — red until tapped green; still red at Finish = not OK, the note says why
     const okRow = el('div', 'fb-actions fb-sc-outcome');
-    const nok = el('button', 'fb-btn no', 'Not OK'); nok.type = 'button';
-    const outNote = el('input', 'fb-note'); outNote.type = 'text'; outNote.value = sc.outcomeNote || '';
-    const finHint = el('span', 'fb-meta');
+    const nok = el('button', 'fb-tick'); nok.type = 'button';
+    const outNote = el('textarea', 'fb-runnote'); outNote.rows = 3; outNote.value = sc.outcomeNote || '';
+    outNote.placeholder = 'Notes — say what is not OK';
     const paintOutcome = () => {
-      nok.setAttribute('aria-pressed', String(sc.outcome === 'nok'));
-      nok.textContent = sc.outcome === 'nok' ? 'Not OK ✓' : 'Not OK';
-      outNote.classList.toggle('hidden', sc.outcome !== 'nok');
-      outNote.placeholder = 'What is not OK? (the manager is told)';
-      finHint.textContent = sc.outcome === 'nok' ? 'Say why, then Finish. Tap Not OK again to undo.' : 'Something wrong in the greenhouse? Tap Not OK.';
+      const on = sc.outcome === 'ok';
+      nok.classList.toggle('on', on);
+      nok.textContent = on ? '✓ All OK' : 'Tap when all OK';
     };
-    nok.onclick = () => { sc.outcome = sc.outcome === 'nok' ? null : 'nok'; paintTabs(); saveScDraft(); if (sc.outcome === 'nok') outNote.focus(); };
+    nok.onclick = () => { sc.outcome = sc.outcome === 'ok' ? null : 'ok'; paintTabs(); saveScDraft(); };
     outNote.oninput = () => { sc.outcomeNote = outNote.value; saveScDraft(); };
-    okRow.append(nok, finHint);
-    fin.append(okRow, outNote);
+    okRow.append(nok);
+    fin.append(el('div', 'fb-meta', 'The greenhouse as a whole, after the sections'), okRow, outNote);
     const repaintTabs = paintTabs;
     paintTabs = () => { repaintTabs(); paintOutcome(); };
 
@@ -9410,8 +9417,12 @@ function sopOpen() {
     }
     const lost = plants.find(p => !placed(p));
     if (lost) return stop(lost.section, 'A photo has no position — write it (3B8) or use the GPS.', lost.ref);
-    if (!sc.outcome) sc.outcome = 'ok';                              // All OK · finish
-    if (sc.outcome === 'nok' && !String(sc.outcomeNote || '').trim()) return stop('end', 'Say what is not OK — the manager is told.');
+    // still red: asked, then sent as not OK with the note, as every checklist (0.11.58)
+    if (sc.outcome !== 'ok') {
+      if (!confirm('The scouting is still red — send it as not OK?')) return stop('end', 'Tap “Tap when all OK” when everything is fine.');
+      sc.outcome = 'nok';
+    }
+    if (sc.outcome === 'nok' && !String(sc.outcomeNote || '').trim()) return stop('end', 'Say in the notes what is not OK — the manager is told.');
     // the traps of the list not photographed on a trap day: taken down, forgotten, or out of reach (0146)
     const photographed = new Set(trapsP.map(p => p.trap_id).filter(Boolean));
     const missing = !run.edit && sc.due?.trap ? sc.traps.filter(t => !photographed.has(t.id)) : [];
