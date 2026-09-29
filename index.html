@@ -770,7 +770,7 @@
     .fb-name { font-weight:620; line-height:1.25; font-size: var(--text-sm); }
     .fb-meta { font-size: var(--text-xs); color: var(--text-muted); margin-top:1px; }
     .fb-where { font-weight:700; color: var(--text); }
-    .fb-chip { font-size:11px; font-weight:700; padding:3px 8px; border-radius: var(--radius-full);
+    .fb-chip { font-size:12px; font-weight:700; padding:4px 9px; border-radius: var(--radius-full);
       background: var(--surface-offset); color: var(--text-muted); white-space:nowrap; }
     .fb-chip.ok { background: var(--success-bg); color: var(--success); }
     .fb-chip.late { background: var(--coral-soft); color: var(--coral); }
@@ -817,7 +817,7 @@
     .fb-step-head { display:flex; align-items:flex-start; justify-content:space-between; gap: var(--space-2); }
     .fb-step-head h4 { flex:1; }
     .fb-link { font:inherit; font-size: var(--text-xs); font-weight:700; color: var(--accent-text, var(--primary));
-      background:none; border:0; padding:6px 0 6px 8px; cursor:pointer; white-space:nowrap; min-height:32px; }
+      background:none; border:0; padding:8px 4px 8px 10px; cursor:pointer; white-space:nowrap; min-height:40px; }   /* gloves: 40 px (0.11.55) */
     .fb-link[aria-expanded="true"]::after { content: ' ▴'; }
     .fb-link[aria-expanded="false"]::after { content: ' ▾'; }
     .fb-detail { display:none; margin-bottom: var(--space-3); }
@@ -882,7 +882,8 @@
     .fb-sc-add { margin: var(--space-3) 0; }
     /* 0.11.50: tabs with progress, the trap list, the code sheet */
     .fb-sc-tab { flex-direction: column; gap: 0; line-height: 1.15; }
-    .fb-sc-sub { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+    .fb-sc-sub { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .fb-foot-bad { color: var(--error, #c0392b); cursor: pointer; text-decoration: underline; }
     .fb-sc-tab[aria-pressed="true"] .fb-sc-sub { color: inherit; }
     .fb-sc-tab.off { border-style: dashed; color: var(--text-muted); }
     .fb-sc-help { flex: 0 0 auto; min-width: 44px; font-size: var(--text-base); }
@@ -1020,7 +1021,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.54';
+  const CURRENT_VERSION = '0.11.55';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1154,6 +1155,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.55', '2026-09-30', 'Uploads that do not get stuck', 'Uploads: one pass at a time (photos were sometimes sent twice), in the order they were made (clock in and out), and a record the server refuses for good is set aside with tap to try again instead of blocking everything behind it. Finish no longer waits for the full photos to upload, and never stays greyed out after an error. Checklist step photos are taken in the app, kept with the run when there is no signal and sent with it (they were lost offline); tap a photo to remove it. A decimal comma counts (12,5). n/a shows as pressed. A last cut with no weight still closes its batch, and a weight over 200 kg is asked about. The reason Finish did nothing is shown as a message. A busy sign-in server no longer signs you out. The phone Back gesture closes the camera, a photo or a sheet first. Larger buttons and chips for gloved hands.'],
     ['0.11.54', '2026-09-29', 'The code read in the header first', 'The phone first looks for the trap code in the plain band at the top of the card, above the grid, where nothing has to be wiped, so a code written with a fine pen keeps its strokes; the rest of the card only if nothing is found there. How the scouting works says where to write it: the blue side, top band, clear of the holes.'],
     ['0.11.53', '2026-09-29', 'The phone measures the fruit or leaf', 'When a scale is known (the card found, or the scale set on a ruler) the phone outlines the fruit or leaf framed in the middle of the photo and gives its length and its diameter or width, on the phone, free, also offline after the first time. Tap the photo to see the outline; Re-measure and a tap on the right object if it took another. The AI estimate stays on its button.'],
     ['0.11.52', '2026-09-29', 'Sizes on plant health, photos that zoom', 'A plant-health photo looks for the scale card too and says Scale detected; measure with two taps, or press Estimate the size for the AI to read the fruit or leaf against it. Tap any scouting photo, trap sides included, to see it full screen: pinch or double-tap to zoom, drag to move, and Measure from there.'],
@@ -6499,6 +6501,7 @@ function sopOpen() {
       const out = fn(s);
       t.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
       t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error || new Error('the phone refused to save (storage full?)'));
     });
   }
   const putAll = (store, rows) => rows && rows.length
@@ -6527,13 +6530,20 @@ function sopOpen() {
     saveSession(d);
     return d;
   }
-  async function refresh() {
+  let refreshing = null;
+  function refresh() {
+    refreshing = refreshing || doRefresh().finally(() => { refreshing = null; });
+    return refreshing;
+  }
+  async function doRefresh() {
     if (!session?.refresh_token) return false;
     const r = await fetch(`${URL_BASE}/auth/v1/token?grant_type=refresh_token`, {
       method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: session.refresh_token })
     });
-    if (!r.ok) { saveSession(null); return false; }
+    // only a refused token ends the session (0.11.55): a 5xx or 429 is the server's trouble, not the worker's
+    if (r.status === 400 || r.status === 401 || r.status === 403) { saveSession(null); return false; }
+    if (!r.ok) throw new Error(`${r.status} the sign-in server is busy, try again`);
     saveSession(await r.json());
     return true;
   }
@@ -6601,11 +6611,15 @@ function sopOpen() {
         const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps',
                         task_position: 'positions', task_item: 'positions', sticky_trap: 'traps' }[x.table];
         if (store) await del(store, x.id);
+        if (x.table === 'task') {
+          for (const p of (await all('positions')).filter(p => p.task_id === x.id)) await del('positions', p.id);
+          for (const w of (await all('task_workers')).filter(w => w.task_id === x.id)) await del('task_workers', w.id);
+        }
       }
       // The server only sends tasks from a week back: anything older on the
       // phone can never be updated again (a cancellation would not arrive), so
       // it goes — done or not. The outbox keeps what is still to upload.
-      const keepFrom = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      const keepFrom = new Date(Date.now() - 7 * 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
       const stale = (await all('tasks')).filter(t => t.planned_date && t.planned_date < keepFrom);
       for (const t of stale) await del('tasks', t.id);
       if (stale.length) {
@@ -6627,8 +6641,8 @@ function sopOpen() {
   // ── the outbox: nothing a worker records is ever lost ───────────────────
   async function queue(payloads) {
     const list = Array.isArray(payloads) ? payloads : [payloads];
-    await putAll('outbox', list.map(payload => ({ id: payload.client_run_id, payload, tries: 0, at: Date.now() })));
-    await flush();
+    await putAll('outbox', list.map((payload, i) => ({ id: payload.client_run_id, payload, tries: 0, at: Date.now() + i })));
+    flush().catch(e => console.warn('flush:', e));
   }
   // the full photos: over Wi-Fi only, or Wi-Fi and mobile data (Settings, 0.11.40)
   const uploadNet = () => { try { return localStorage.getItem('fb_upload_net') || 'any'; } catch (e) { return 'any'; } };
@@ -6638,9 +6652,24 @@ function sopOpen() {
     if (!c || !c.type || c.type === 'unknown') return true;   // the phone does not say (an iPhone): upload
     return c.type === 'wifi' || c.type === 'ethernet';
   }
-  async function flush() {
+  // one pass at a time (0.11.55): online, a network change, the screen coming back and a sync all call it, and two
+  // passes at once uploaded the same photos twice and wrote back rows the other had already sent
+  let flushing = null;
+  function flush() {
+    flushing = flushing || doFlush().finally(() => { flushing = null; });
+    return flushing;
+  }
+  // a row the server refuses for good (a task deleted by a reschedule, a bad value) is set aside, not retried for ever
+  // in front of everything else: 4xx other than 401/408/429. Network trouble, 5xx and 429 keep the order and wait.
+  const refusedForGood = e => { const m = /^(\d{3}) /.exec(String(e?.message || '')); const st = m ? Number(m[1]) : 0;
+                                return st >= 400 && st < 500 && ![401, 408, 429].includes(st); };
+  async function doFlush() {
     if (!session || !navigator.onLine) return;
-    for (const row of await all('outbox')) {
+    if (!farm) farm = await getKV('farm');
+    // in the order they were made (the store answers by id: every clock-in sorted before every clock-out)
+    const rows = (await all('outbox')).sort((a, b) => (a.at || 0) - (b.at || 0) || String(a.id).localeCompare(String(b.id)));
+    for (const row of rows) {
+      if (row.dead) continue;
       try {
         if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
@@ -6666,6 +6695,21 @@ function sopOpen() {
           }
         }
         else {
+          // step photos kept with the run (0.11.55): each goes up, is noted on its step and taken off the row at once,
+          // so a failure half-way re-sends none twice
+          for (const st of (row.payload.steps || [])) {
+            while (Array.isArray(st.media_blobs) && st.media_blobs.length) {
+              const b = st.media_blobs[0];
+              if (b instanceof Blob) {
+                const path = `${row.payload.farm_id || farm.id}/${row.payload.client_run_id}/s${st.seq}${st.item_id ? '-' + String(st.item_id).slice(0, 8) : ''}-${Date.now()}.jpg`;
+                await api('/storage/v1/object/evidence/' + path, { method: 'POST', headers: { 'Content-Type': b.type || 'image/jpeg' }, body: b });
+                (st.media = st.media || []).push({ path, kind: 'photo' });
+              }
+              st.media_blobs.shift();
+              await putAll('outbox', [row]);
+            }
+            delete st.media_blobs;
+          }
           // trap photos that never reached the bucket go first (the run waits if they cannot)
           for (const t of (row.payload.traps || [])) {
             if (t.photo_blob instanceof Blob && !t.photo_path) {
@@ -6678,7 +6722,9 @@ function sopOpen() {
         }
         await del('outbox', row.id);
       } catch (e) {
-        await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 120) }]);
+        const dead = refusedForGood(e);
+        await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 160), dead }]);
+        if (dead) continue;               // set aside, shown in the footer; the rest still goes
         break;                            // keep the order; try again next time
       }
     }
@@ -6713,6 +6759,14 @@ function sopOpen() {
 
   window.addEventListener('popstate', async () => {
     if (!fbOnScreen() || !backStack.length) return;   // not ours: let it through
+    // Back over the camera, a photo or a sheet closes that first and keeps the screen under it (0.11.55):
+    // it used to change the screen underneath and leave the overlay — the camera still running — on top
+    const over = [...document.querySelectorAll('.fb-cam, .fb-viewer, .fb-sheet')].pop();
+    if (over) {
+      if (typeof over._close === 'function') over._close(); else over.remove();
+      history.pushState({ fb: 'overlay', depth: backStack.length }, '');
+      return;
+    }
     const back = backStack.pop();
     unwinding++;
     try { await back(); } finally { unwinding--; }
@@ -7619,7 +7673,7 @@ function sopOpen() {
   }
   function ocr() {
     if (!ocrP) ocrP = (async () => {
-      if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+      if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
       const w = await window.Tesseract.createWorker('eng', 1);
       await w.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', tessedit_pageseg_mode: '11' });
       return w;
@@ -8976,6 +9030,7 @@ function sopOpen() {
     stage.onwheel = e => { e.preventDefault(); zoomAt(s * (e.deltaY < 0 ? 1.25 : 0.8), centre(e.clientX, e.clientY)); };
     fitB.onclick = () => { s = 1; tx = ty = 0; apply(); };
     const done = () => { ov.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', key); };
+    ov._close = done;   // Back closes the viewer and its listeners
     const key = e => { if (e.key === 'Escape') done(); };
     document.addEventListener('keydown', key);
     close.onclick = done;
@@ -9114,12 +9169,13 @@ function sopOpen() {
 
   // ── finishing a scouting ────────────────────────────────────────────────
   async function finishScouting() {
-    const sc = run.sc;
+    const R = run, sc = run.sc;   // the run being finished (0.11.55)
     const photos = [...sc.photos.values()];
     const trapsP = photos.filter(p => p.section === 'trap');
     const plants = photos.filter(p => p.section !== 'trap');
     const stop = (tab, text, ref) => {
       $('runHint').textContent = text;
+      showToast(text, 'error');   // the hint sits under Finish, out of view while the tab scrolls to the problem
       if (tab === 'end') { document.querySelector('.fb-sc-end')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
       sc.tab = tab;
       document.querySelector(`.fb-sc-tab:nth-child(${SC_TABS.findIndex(x => x[0] === tab) + 1})`)?.click();
@@ -9153,6 +9209,7 @@ function sopOpen() {
 
     $('finish').disabled = true;
     $('runHint').textContent = 'Saving…';
+    try {
     const finished = new Date().toISOString();
     const t = run.edit ? run.task.members[0] : (run.task.members.find(m => m.status !== 'done') || run.task.members[0]);
     const cid = run.edit?.run?.client_run_id || run.clientId;
@@ -9184,11 +9241,16 @@ function sopOpen() {
     await putAll('tasks', run.task.members.filter(m => m.id === t.id));
     await queue([payload, ...uploads.map((u, n) => ({ __upload: true, client_run_id: `${cid}~up-${Date.now().toString(36)}-${String(n).padStart(3, '0')}`,
       run_client_id: cid, farm_id: payload.farm_id, kind: u.kind, ref: u.ref, blob: u.blob }))]);
-    try { clearTimeout(scDraftTimer); await del('kv', scDraftKey(run.task)); await setKV('run_open', null); } catch (e) { /* nothing to clear */ }
+    try { clearTimeout(scDraftTimer); await del('kv', scDraftKey(R.task)); await setKV('run_open', null); } catch (e) { /* nothing to clear */ }
     $('finish').disabled = false;
-    const edited = !!run.edit;
+    const edited = !!R.edit;
     showToast(edited ? 'Changes saved ✓' : sc.outcome === 'nok' ? 'Saved — not OK, the manager is told' : 'Scouting done ✓', sc.outcome === 'nok' ? 'error' : 'success');
-    showWeek();
+    if (run === R) showWeek();
+    } catch (e) {
+      $('finish').disabled = false;
+      $('runHint').textContent = 'Could not save: ' + String(e.message || e).slice(0, 100);
+      showToast('Could not save — ' + String(e.message || e).slice(0, 60), 'error');
+    }
   }
 
   // ── the harvest weight, per batch ─────────────────────────────────────
@@ -9549,6 +9611,7 @@ function sopOpen() {
       let done = false;
       const stop = () => { try { stream.getTracks().forEach(x => x.stop()); } catch (e) {} ov.remove(); };
       const finish = v => { if (done) return; done = true; stop(); resolve(v); };
+      ov._close = () => finish('cancel');   // the phone's Back closes the camera, stream and all (0.11.55)
       let point = null;                                   // the last place tapped, 0–1 of the frame
       const manual = () => !!pref.focus?.manual && canFocusBy(caps());
       const autoMode = c => (c.focusMode || []).includes('continuous') ? 'continuous' : (c.focusMode || []).includes('single-shot') ? 'single-shot' : null;
@@ -9928,15 +9991,15 @@ function sopOpen() {
 
     const acts = el('div', 'fb-actions');
     if (s.step_type === 'measure') {
-      const input = el('input', 'fb-num'); input.type = 'number'; input.step = 'any';
+      const input = el('input', 'fb-num'); input.type = 'text'; input.inputMode = 'decimal';
       input.placeholder = s.value_unit || 'value';
       input.setAttribute('aria-label', s.title);
       const range = (s.min_value != null || s.max_value != null)
         ? `${s.min_value ?? ''}–${s.max_value ?? ''} ${s.value_unit || ''}`.trim()
         : (s.target_source !== 'fixed' ? 'target comes from the crop' : '');
       input.oninput = () => {
-        const v = parseFloat(input.value);
-        if (isNaN(v)) { run.answers.delete(key); card.classList.remove('answered', 'bad'); return; }
+        const v = parseFloat(String(input.value).replace(',', '.'));
+        if (isNaN(v)) { run.answers.delete(key); card.classList.remove('answered', 'bad'); saveRunDraft(); return; }
         const bad = (s.min_value != null && v < s.min_value) || (s.max_value != null && v > s.max_value);
         set(bad ? 'nok' : 'ok', { value_num: v });
       };
@@ -9946,42 +10009,62 @@ function sopOpen() {
       const input = el('input', 'fb-num'); input.style.width = '100%'; input.type = 'text';
       input.placeholder = s.expected_result || 'what you saw';
       input.setAttribute('aria-label', s.title);
-      input.oninput = () => input.value.trim() ? set('ok', { value_text: input.value.trim() })
-                                               : run.answers.delete(key);
+      input.oninput = () => { if (input.value.trim()) set('ok', { value_text: input.value.trim() });
+                              else { run.answers.delete(key); card.classList.remove('answered'); saveRunDraft(); } };
       acts.append(input);
     } else {
       const yes = el('button', 'fb-btn', s.step_type === 'check' ? 'OK' : 'Done');
       const no  = el('button', 'fb-btn no', 'Not OK');
       yes.setAttribute('aria-pressed', 'false'); no.setAttribute('aria-pressed', 'false');
-      yes.onclick = () => { yes.setAttribute('aria-pressed', 'true'); no.setAttribute('aria-pressed', 'false'); set('ok', {}); };
-      no.onclick  = () => { no.setAttribute('aria-pressed', 'true'); yes.setAttribute('aria-pressed', 'false'); set('nok', {}); };
-      acts.append(yes, no);
-      const na = el('button', 'fb-btn', 'n/a');
-      na.onclick = () => { yes.setAttribute('aria-pressed','false'); no.setAttribute('aria-pressed','false'); set('na', {}); };
-      acts.append(na);
+      const na = el('button', 'fb-btn', 'n/a'); na.setAttribute('aria-pressed', 'false');
+      const press = b => [yes, no, na].forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      yes.onclick = () => { press(yes); set('ok', {}); };
+      no.onclick  = () => { press(no); set('nok', {}); };
+      // n/a is an answer too: pressed, and the card marked answered (it looked as if nothing happened)
+      na.onclick = () => { press(na); set('na', {}); card.classList.add('answered'); };
+      acts.append(yes, no, na);
     }
     card.append(acts);
 
     // evidence
     if (/photo|video/.test(s.evidence || '')) {
       const shot = el('div', 'fb-shot');
-      const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*';
-      pick.capture = 'environment'; pick.style.display = 'none';
+      const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.style.display = 'none';   // the gallery, when the camera is not there
       const btn = el('button', 'fb-btn', '📷 Photo');
-      btn.onclick = () => pick.click();
+      const addStepPhoto = async f => {
+        try {
+          const big = await shrinkPhoto(f, FULL_PX, null);
+          const b = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
+          big.canvas.width = big.canvas.height = 0;
+          card._addPhoto(b || f);
+        } catch (e) { card._addPhoto(f); }
+        saveRunDraft();
+      };
+      btn.onclick = async () => {
+        let r = null;
+        try { r = await takeTrapPhoto('', s.title, 'step'); } catch (e) { r = null; }
+        if (r === 'cancel') return;
+        if (r) addStepPhoto(r); else pick.click();
+      };
       // one way in for a new photo and a restored one (the draft)
       card._addPhoto = f => {
         const list = run.media.get(key) || [];
         list.push(f); run.media.set(key, list);
-        const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'evidence';
+        const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'evidence — tap to remove';
+        img.onload = () => URL.revokeObjectURL(img.src);
+        // a wrong photo can go: tap it
+        img.onclick = () => {
+          if (!confirm('Remove this photo?')) return;
+          const l = run.media.get(key) || [], i = l.indexOf(f);
+          if (i >= 0) l.splice(i, 1);
+          img.remove();
+          if (!l.length && !shot.querySelector('.fb-chip')) shot.append(el('span', 'fb-chip', 'required'));
+          saveRunDraft();
+        };
         shot.insertBefore(img, btn);
         shot.querySelector('.fb-chip')?.remove();
       };
-      pick.onchange = () => {
-        const f = pick.files[0]; if (!f) return;
-        card._addPhoto(f);
-        saveRunDraft();
-      };
+      pick.onchange = () => { const f = pick.files[0]; pick.value = ''; if (f) addStepPhoto(f); };
       shot.append(btn, pick);
       shot.append(el('span', 'fb-chip', 'required'));
       card.append(shot);
@@ -10000,6 +10083,7 @@ function sopOpen() {
 
   async function finishRun() {
     if (run?.sc) return finishScouting();
+    const R = run;   // the run being finished: the person may open another task while it saves (0.11.55)
     // the trap round: every trap needs its photo and a number before the round can close
     if (run.traps) {
       const undone = [...run.traps.values()].filter(t => t.photo_data == null || t.total == null);
@@ -10027,6 +10111,8 @@ function sopOpen() {
     // a harvest task: the weights typed above answer the weigh / record steps
     if (run.harvests) {
       const rows = [...run.harvests.values()].filter(x => num(x.kg) > 0);
+      const big = rows.find(x => num(x.kg) > 200);
+      if (big && !confirm(`${big.position_code}: ${big.kg} kg — is that right?`)) return;
       const kg = Math.round(rows.reduce((a, x) => a + num(x.kg), 0) * 100) / 100;
       if (kg > 0) {
         run.steps.filter(s => (s.step_type === 'measure' || s.step_type === 'record') && !run.answers.has(s.seq)).forEach(s => {
@@ -10046,30 +10132,25 @@ function sopOpen() {
       $('runHint').textContent = missing.length
         ? `${missing.length} step${missing.length > 1 ? 's' : ''} still to answer${where(missing[0])}.`
         : `${noPhoto.length} step${noPhoto.length > 1 ? 's' : ''} still need a photo${where(noPhoto[0])}.`;
+      showToast($('runHint').textContent, 'error');   // the hint sits under Finish, scrolled out of view
       const first = (missing[0] || noPhoto[0]).key;
       document.querySelector(`.fb-step[data-key="${first}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     $('finish').disabled = true;
     $('runHint').textContent = 'Saving…';
+    try {
 
-    // photos first; if there is no signal they wait with the run in the outbox
+    // the step photos ride with the run in the outbox and go up just before it (0.11.55): uploading them here lost
+    // every photo taken without signal, and made Finish wait for them
     const steps = [];
     for (const x of expected) {
-      const s = x.s;
       const a = run.answers.get(x.key);
-      const media = [];
-      for (const [i, file] of (run.media.get(x.key) || []).entries()) {
-        if (!(file instanceof Blob)) continue;             // the trap cards carry their own photos
-        const path = `${run.task.farm_id || farm.id}/${run.clientId}/${String(x.key).replace(/[^0-9a-z]/gi, '')}-${i}-${Date.now()}.jpg`;
-        try {
-          await api('/storage/v1/object/evidence/' + path, {
-            method: 'POST', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file
-          });
-          media.push({ path, kind: 'photo' });
-        } catch (e) { console.warn('photo not uploaded yet:', e); }
-      }
-      steps.push({ ...a, media, recorded_at: new Date().toISOString() });
+      const blobs = (run.media.get(x.key) || []).filter(f => f instanceof Blob);   // the trap cards carry their own photos
+      // an edited run keeps the photos already on the server (✎ Edit what was sent)
+      const saved = (run.media.get(x.key) || []).filter(f => f && f.saved)
+        .map(f => typeof f.saved === 'string' ? { path: f.saved, kind: 'photo' } : f.saved);
+      steps.push({ ...a, media: saved, ...(blobs.length ? { media_blobs: blobs } : {}), recorded_at: new Date().toISOString() });
     }
 
     // the full photos (traps and plants) follow the run from the outbox and attach themselves:
@@ -10094,7 +10175,7 @@ function sopOpen() {
       started_at: run.edit?.run?.started_at || run.started, finished_at: finished, steps,
       position_ids: run.task.positions.filter(p => p.task_id === t.id && p.position_id).map(p => p.position_id),
       // harvest weights, on the first run only
-      ...(run.harvests && !i ? { harvests: [...run.harvests.values()].filter(x => num(x.kg) > 0).map(x => ({
+      ...(run.harvests && !i ? { harvests: [...run.harvests.values()].filter(x => num(x.kg) > 0 || x.final).map(x => ({
         plan_id: x.plan_id, position_code: x.position_code, kg: x.kg, final: !!x.final })) } : {}),
       // the ticks on the task's items, on the first run only
       ...(run.items && !i ? { items: [...run.items.values()].map(x => ({ id: x.id, done: !!x.done, note: x.note || '' })) } : {}),
@@ -10114,27 +10195,40 @@ function sopOpen() {
     // the run first, then its full photos, keyed to sort right after it
     await queue([...payloads, ...uploads.map((u, n) => ({ __upload: true, client_run_id: `${cid}~up-${String(n).padStart(3, '0')}`,
       run_client_id: cid, farm_id: run.task.farm_id || farm.id, kind: u.kind, ref: u.ref, blob: u.blob }))]);
-    try { clearTimeout(draftTimer); await del('kv', runDraftKey(run.task)); } catch (e) { /* nothing to clear */ }
-    if (run.traps) { try { await del('kv', trapDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
-    if (run.harvests) { try { await del('kv', harvDraftKey(run.task)); } catch (e) { /* nothing to clear */ } }
+    try { clearTimeout(draftTimer); await del('kv', runDraftKey(R.task)); } catch (e) { /* nothing to clear */ }
+    if (R.traps) { try { await del('kv', trapDraftKey(R.task)); } catch (e) { /* nothing to clear */ } }
+    if (R.harvests) { try { await del('kv', harvDraftKey(R.task)); } catch (e) { /* nothing to clear */ } }
     try { await setKV('run_open', null); } catch (e) {}
     const failed = steps.filter(s => s.result === 'nok').length;
     $('finish').disabled = false;
-    showToast(run.edit ? 'Changes saved ✓' : failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
+    showToast(R.edit ? 'Changes saved ✓' : failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
               failed ? 'error' : 'success');
-    showWeek();
+    if (run === R) showWeek();        // not when the person has already opened another task
+    } catch (e) {
+      // nothing is left disabled: the answers are still on screen and in the draft
+      $('finish').disabled = false;
+      $('runHint').textContent = 'Could not save: ' + String(e.message || e).slice(0, 100);
+      showToast('Could not save — ' + String(e.message || e).slice(0, 60), 'error');
+    }
   }
 
   async function paintFoot() {
-    const rows = await all('outbox');
+    const all_ = await all('outbox');
+    const dead = all_.filter(r => r.dead), rows = all_.filter(r => !r.dead);
     const photos = rows.filter(r => r.payload?.__upload).length;
     const pending = rows.length - photos;
     const at = await getKV('synced_at');
-    $('foot').textContent = [
+    const foot = $('foot');
+    foot.textContent = [
       at ? 'Synced ' + new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not synced yet',
       pending ? `${pending} waiting to upload` : null,
-      photos ? `${photos} photo${photos > 1 ? 's' : ''} ${uploadAllowed() ? 'still uploading' : 'waiting for Wi-Fi'}` : null
+      photos ? `${photos} photo${photos > 1 ? 's' : ''} ${uploadAllowed() ? 'still uploading' : 'waiting for Wi-Fi'}` : null,
+      dead.length ? `${dead.length} could not be sent — tap to try again` : null
     ].filter(Boolean).join(' · ');
+    foot.classList.toggle('fb-foot-bad', !!dead.length);
+    foot.title = dead.map(r => r.error).filter(Boolean).join('\n');
+    // tap: the rows set aside go back in the queue once more (0.11.55)
+    foot.onclick = dead.length ? async () => { await putAll('outbox', dead.map(r => ({ ...r, dead: false }))); flush(); } : null;
   }
 
   function paintAccount() {
@@ -10193,7 +10287,7 @@ function sopOpen() {
   }
 
   const netPill = () => $('net')?.classList.toggle('hidden', navigator.onLine);
-  addEventListener('online', () => { netPill(); flush(); });
+  addEventListener('online', () => { netPill(); session ? sync(false) : flush(); });
   addEventListener('offline', netPill);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && document.body.classList.contains('src-cloud')) { flush(); }

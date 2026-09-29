@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v142';
+const CACHE_NAME = 'ugly200-v143';
 // the scouting's text reader (Tesseract.js from jsDelivr, 0.11.40): kept across releases for offline days
 const LIB_CACHE = 'fb-lib-v1';
 const STATIC_ASSETS = [
@@ -103,6 +103,7 @@ self.addEventListener('fetch', e => {
       if (request.mode === 'navigate') {
         return caches.match('./index.html');
       }
+      return Response.error();   // respondWith needs a Response: undefined made the request fail oddly (0.11.55)
     })
   );
 });
