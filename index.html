@@ -773,6 +773,12 @@
     .fb-chip { font-size:12px; font-weight:700; padding:4px 9px; border-radius: var(--radius-full);
       background: var(--surface-offset); color: var(--text-muted); white-space:nowrap; }
     .fb-chip.ok { background: var(--success-bg); color: var(--success); }
+    .fb-chip.ok.over { color: var(--error, #c0392b); }
+    .fb-chip.run { background: var(--primary); color: var(--text-inverse); cursor: pointer; }
+    .fb-timer { display:flex; align-items:center; gap: var(--space-3); margin-top: var(--space-2); padding: 8px 12px;
+      border-radius: var(--radius-lg, 12px); background: color-mix(in srgb, var(--primary) 14%, var(--surface)); flex-basis: 100%; width: 100%; box-sizing: border-box; }
+    .fb-timer.paused { background: var(--surface-offset); }
+    .fb-timer-text { flex: 1; font-weight: 800; font-size: var(--text-base); font-variant-numeric: tabular-nums; }
     .fb-chip.late { background: var(--coral-soft); color: var(--coral); }
     .fb-ink { background: var(--ink); color: var(--ink-text); border-radius: var(--radius-lg);
       padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
@@ -1021,7 +1027,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.55';
+  const CURRENT_VERSION = '0.11.56';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1155,6 +1161,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.56', '2026-09-30', 'A timer on every task', 'The clock card and the Now card are gone: each task times itself. Opening a checklist starts its timer, shown at the top with one button, Pause, then Resume; reopening the checklist resumes it. Back to the list keeps it running, and the card shows it with a Pause. Starting another checklist pauses the first, and a timer still running at 18:00 stops there. Works offline. The right of every card says Done in 42 min, 12 min so far, or Not finished 12 min for an earlier day; a task done without its checklist just says Done. Each day heading says how many are done, the time worked, and what is left or not finished. On the task screen: the time worked and Pause the timer.'],
     ['0.11.55', '2026-09-30', 'Uploads that do not get stuck', 'Uploads: one pass at a time (photos were sometimes sent twice), in the order they were made (clock in and out), and a record the server refuses for good is set aside with tap to try again instead of blocking everything behind it. Finish no longer waits for the full photos to upload, and never stays greyed out after an error. Checklist step photos are taken in the app, kept with the run when there is no signal and sent with it (they were lost offline); tap a photo to remove it. A decimal comma counts (12,5). n/a shows as pressed. A last cut with no weight still closes its batch, and a weight over 200 kg is asked about. The reason Finish did nothing is shown as a message. A busy sign-in server no longer signs you out. The phone Back gesture closes the camera, a photo or a sheet first. Larger buttons and chips for gloved hands.'],
     ['0.11.54', '2026-09-29', 'The code read in the header first', 'The phone first looks for the trap code in the plain band at the top of the card, above the grid, where nothing has to be wiped, so a code written with a fine pen keeps its strokes; the rest of the card only if nothing is found there. How the scouting works says where to write it: the blue side, top band, clear of the holes.'],
     ['0.11.53', '2026-09-29', 'The phone measures the fruit or leaf', 'When a scale is known (the card found, or the scale set on a ruler) the phone outlines the fruit or leaf framed in the middle of the photo and gives its length and its diameter or width, on the phone, free, also offline after the first time. Tap the photo to see the outline; Re-measure and a tap on the right object if it took another. The AI estimate stays on its button.'],
@@ -6593,6 +6600,7 @@ function sopOpen() {
       }
       await putAll('workers', d.workers);
       if (d.me) await setKV('me', d.me);
+      if (Array.isArray(d.task_times)) await setKV('task_times', d.task_times);   // FarmBox 0161
       if (d.clock && !(await all('outbox')).some(r => r.payload && r.payload.__clock)) await setKV('clock', { ...d.clock, at: Date.now() });
       // sister units (FarmBox 0126): the tasks of every unit of the group come in one sync
       await setKV('sisters', Array.isArray(d.sisters) && d.sisters.length > 1 ? d.sisters : null);
@@ -6642,6 +6650,8 @@ function sopOpen() {
   async function queue(payloads) {
     const list = Array.isArray(payloads) ? payloads : [payloads];
     await putAll('outbox', list.map((payload, i) => ({ id: payload.client_run_id, payload, tries: 0, at: Date.now() + i })));
+    // done, not done, or a checklist sent: that task's timer stops (the server stops its own with the task)
+    list.forEach(p => { if (p.task_id && (p.__tick || p.__skip || (!p.__timer && !p.__upload && p.status === 'completed'))) timerCloseLocal(p.task_id); });
     flush().catch(e => console.warn('flush:', e));
   }
   // the full photos: over Wi-Fi only, or Wi-Fi and mobile data (Settings, 0.11.40)
@@ -6679,6 +6689,12 @@ function sopOpen() {
             await api('/rest/v1/rpc/clock', { method: 'POST', body: JSON.stringify({ p_farm: farm.id, p_action: row.payload.action,
                                                                                       p_at: row.payload.at, p_client: row.payload.client_run_id }) });
           } catch (e) { if (!/not clocked in|seven days|not one of this farm/.test(String(e.message || e))) throw e; }
+        }
+        else if (row.payload.__timer) {
+          try {
+            await api('/rest/v1/rpc/task_timer', { method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id,
+              p_action: row.payload.action, p_at: row.payload.at, p_client: row.payload.client_run_id }) });
+          } catch (e) { if (!refusedForGood(e)) throw e; }   // a task gone or closed: the event has nothing left to do
         }
         else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_reason: row.payload.reason, p_note: row.payload.note })
@@ -6803,6 +6819,102 @@ function sopOpen() {
   const fmtNum = n => (Math.round(n * 10) / 10).toString();
   const fmtQty = (q, u) => q == null || q === '' ? '' : `${fmtNum(num(q))} ${unitWord(u, num(q))}`.trim();
   const fmtMin = m => Math.round(num(m)) + ' min';
+  const fmtWork = m => { m = Math.round(num(m)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; };
+
+  // ── the task timer (FarmBox 0161, 0.11.56): opening a checklist starts it, Pause stops it, finishing ends it ──
+  // Mine live here (KV timers: task id → { segs: [[start ms, stop ms | null], …] }) and go up through the outbox,
+  // so it works offline; the server's sums (sync task_times) add everybody else's time on the task.
+  // One running task a person; a timer still running at 18:00 stops there (a forgotten one is not all night).
+  let TIMERS = {}, TTIMES = new Map();
+  async function loadTimers() {
+    try { TIMERS = (await getKV('timers')) || {}; } catch (e) { TIMERS = {}; }
+    try { TTIMES = new Map(((await getKV('task_times')) || []).map(x => [x.task_id, x])); } catch (e) { TTIMES = new Map(); }
+  }
+  const saveTimers = () => setKV('timers', TIMERS).catch(() => {});
+  const dayEndMs = ms => { const d = new Date(ms); d.setHours(18, 0, 0, 0); return d.getTime(); };
+  const segEnd = x => x[1] != null ? x[1] : Math.max(x[0], Math.min(Date.now(), dayEndMs(x[0])));
+  const localMin = id => ((TIMERS[id] && TIMERS[id].segs) || []).reduce((a, x) => a + (segEnd(x) - x[0]) / 60000, 0);
+  const timerRunning = id => ((TIMERS[id] && TIMERS[id].segs) || []).some(x => x[1] == null && Date.now() < dayEndMs(x[0]));
+  // everybody's minutes: the server's sum without my part, plus my part as this phone knows it (sent or not)
+  function taskMinutes(id) {
+    const sv = TTIMES.get(id);
+    if (TIMERS[id]) return Math.max(0, (sv ? num(sv.minutes) - num(sv.mine) : 0) + localMin(id));
+    return sv ? num(sv.minutes) : 0;
+  }
+  const groupMinutes = g => (g.members || []).reduce((a, m) => a + taskMinutes(m.id), 0);
+  const groupRunning = g => (g.members || []).some(m => timerRunning(m.id));
+  const timerTaskOf = g => (g.members || []).find(m => !isClosed(m.status)) || null;
+  const timerEvent = (id, action, ms) => ({ __timer: true, client_run_id: `tmr-${id}-${action[0]}-${ms}`, task_id: id, action, at: new Date(ms).toISOString() });
+  async function timerStart(id) {
+    if (!id || timerRunning(id)) return;
+    const now = Date.now(), ev = [];
+    for (const [other, rec] of Object.entries(TIMERS)) {         // one running task a person
+      if (other !== id && timerRunning(other)) { rec.segs[rec.segs.length - 1][1] = now; ev.push(timerEvent(other, 'pause', now)); }
+    }
+    if (!TIMERS[id]) TIMERS[id] = { segs: [] };
+    TIMERS[id].segs.push([now, null]); TIMERS[id].at = now; delete TIMERS[id].closed;
+    await saveTimers();
+    ev.push(timerEvent(id, 'start', now));
+    await queue(ev);
+  }
+  async function timerPause(id) {
+    if (!timerRunning(id)) return;
+    const now = Date.now();
+    TIMERS[id].segs[TIMERS[id].segs.length - 1][1] = now;
+    await saveTimers();
+    await queue([timerEvent(id, 'pause', now)]);
+  }
+  // the task was finished or marked not done: its timer stops here; the server stops its own with the task
+  function timerCloseLocal(id) {
+    const rec = TIMERS[id]; if (!rec) return;
+    rec.segs.forEach(x => { if (x[1] == null) x[1] = segEnd(x); });
+    rec.closed = true; saveTimers();
+  }
+  // at every look at the day: a timer forgotten past 18:00 stops there (the server does the same), old ones go
+  async function tidyTimers(groups) {
+    const ev = [];
+    const closed = new Set((groups || []).flatMap(g => (g.members || []).filter(m => isClosed(m.status)).map(m => m.id)));
+    for (const [id, rec] of Object.entries(TIMERS)) {
+      const last = rec.segs[rec.segs.length - 1];
+      if (last && last[1] == null && (Date.now() >= dayEndMs(last[0]) || closed.has(id))) {
+        last[1] = segEnd(last);
+        if (!closed.has(id)) ev.push(timerEvent(id, 'pause', last[1]));
+      }
+      if ((rec.at || 0) < Date.now() - 8 * 86400000) delete TIMERS[id];
+    }
+    await saveTimers();
+    if (ev.length) await queue(ev);
+  }
+  // the words on the right of a task (the same in the console): Done in 42 min · ▶ 12 min · Pause ·
+  // ⏸ 12 min so far · Not finished · 12 min (an earlier day) · Done (never timed)
+  function timeChip(g, late) {
+    const m = groupMinutes(g), on = groupRunning(g);
+    if (g.status === 'done') {
+      const over = m >= 1 && num(g.minutes) > 0 && m > num(g.minutes) * 1.25;
+      const c = el('span', 'fb-chip ok' + (over ? ' over' : ''), m >= 1 ? `Done in ${fmtWork(m)}` : 'Done');
+      if (over) c.title = `planned ${fmtMin(g.minutes)}`;
+      return c;
+    }
+    if (g.status === 'skipped') return el('span', 'fb-chip skip', 'Not done' + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
+    if (on) {
+      const c = el('span', 'fb-chip run', `▶ ${fmtWork(m)} · Pause`);
+      c.setAttribute('role', 'button'); c.dataset.timerIds = g.members.map(x => x.id).join(',');
+      c.onclick = async e => { e.stopPropagation(); for (const x of g.members) await timerPause(x.id); showWeek(); };
+      return c;
+    }
+    if (m >= 1) return el('span', 'fb-chip' + (late ? ' late' : ''), late ? `Not finished · ${fmtWork(m)}` : `⏸ ${fmtWork(m)} so far`);
+    if (g.status === 'partial') return el('span', 'fb-chip', `${g.doneCount}/${g.members.length}`);
+    if (late) return el('span', 'fb-chip late', 'Late');
+    return null;
+  }
+  // a running timer ticks where it shows (the cards, the checklist) without redrawing the page
+  setInterval(() => {
+    document.querySelectorAll('[data-timer-ids]').forEach(c => {
+      const ids = c.dataset.timerIds.split(',');
+      const m = ids.reduce((a, id) => a + taskMinutes(id), 0);
+      c.textContent = (c.dataset.timerWord || '▶ {m} · Pause').replace('{m}', fmtWork(m));
+    });
+  }, 20000);
   const posLabel = p => p.position_code || p.label || p.code || p.position_name || p.name || p.position_label || null;
 
   async function loadGroups() {
@@ -6886,7 +6998,9 @@ function sopOpen() {
     const me = await getKV('me');
     let who = await getKV('who');
     if (!who || (who !== 'all' && who !== 'none' && !workers.some(w => w.id === who))) who = workers.some(w => w.id === me) ? me : 'all';
-    await paintClock(me);
+    // the clock card and the "Now" card are gone (0.11.56): each task times itself
+    if ($('clock')) { $('clock').textContent = ''; $('clock').className = 'fb-clock'; }
+    await loadTimers(); await tidyTimers(groups);
     const whoBox = $('who'); whoBox.textContent = '';
     if (workers.length) {
       const sel = el('select', 'fb-who-sel');
@@ -6924,25 +7038,18 @@ function sopOpen() {
       : farm ? farm.name : 'Your farm work, day by day.';
     $('empty').classList.toggle('hidden', week.length + past.length > 0);
 
-    // the one to do now: the earliest open task, a late one first
-    const next = [...past, ...week].find(t => !isClosed(t.status) && t.planned_date <= today);
-    const nx = $('next'); nx.textContent = '';
-    if (next) {
-      const card = el('div', 'fb-ink' + famClass(next.family));
-      card.append(el('small', null, (next.planned_date < today ? 'Overdue — do this first' : 'Now')
-        + (units.length > 1 && unitOf(next) ? ' · ' + unitOf(next).name : '')));
-      card.append(el('h3', null, next.title));
-      card.append(el('div', 'fb-meta', [hhmm(next.due_time), groupMeta(next)].filter(Boolean).join(' · ')));
-      const go = el('button', 'btn btn-primary btn-sm', 'Open');
-      go.style.marginTop = 'var(--space-3)';
-      go.onclick = () => openTask(next.key);
-      card.append(go);
-      nx.append(card);
-    }
+    $('next').textContent = '';   // the "Now" card is gone (0.11.56): the list itself says what is open and late
 
     const byDay = list => { const m = new Map(); list.forEach(t => { if (!m.has(t.planned_date)) m.set(t.planned_date, []); m.get(t.planned_date).push(t); }); return m; };
     const openOf = list => list.filter(t => !isClosed(t.status));
     const minsOf = list => openOf(list).reduce((s, t) => s + t.openMinutes, 0);
+    const workedOf = list => list.reduce((s, t) => s + groupMinutes(t), 0);
+    // a day's line: 5 of 8 done · 3 h 10 worked · then what is left (planned) or, for a day gone by, not finished
+    const dayLine = (list, past) => {
+      const done = list.filter(t => t.status === 'done').length, open = openOf(list).length, w = workedOf(list);
+      return [`${done} of ${list.length} done`, w >= 1 ? `${fmtWork(w)} worked` : null,
+              open ? (past ? `${open} not finished` : `${open} open, ${fmtMin(minsOf(list))} planned`) : null].filter(Boolean).join(' · ');
+    };
     // a day's work: one block per unit (sister units), the morning above the line, the afternoon under it
     const dayBody = (list, date, withClosed) => {
       const frag = document.createDocumentFragment();
@@ -6956,8 +7063,9 @@ function sopOpen() {
           const h = el('div', 'fb-unit');
           h.style.setProperty('--u', u.colour || 'var(--text-muted)');
           const left = openOf(part0).length;
+          const w = workedOf(part0);
           h.append(el('span', 'fb-ubadge', u.badge || u.code), el('span', null, u.name),
-                   el('span', 'fb-ucount', `${left} open` + (left ? ' · ' + fmtMin(minsOf(part0)) : '')));
+                   el('span', 'fb-ucount', `${left} open` + (left ? ' · ' + fmtMin(minsOf(part0)) : '') + (w >= 1 ? ` · ${fmtWork(w)} worked` : '')));
           frag.append(h);
         }
         BANDS.forEach(slot => {
@@ -6982,7 +7090,7 @@ function sopOpen() {
       [...byDay(past)].sort((x, y) => (x[0] < y[0] ? 1 : -1)).forEach(([date, list]) => {
         const sec = el('section', 'fb-day');
         const n = openOf(list).length;
-        const h = el('h2', null, `${fmtDay(date)} · ${list.length - n} of ${list.length} closed`);
+        const h = el('h2', null, `${fmtDay(date)} · ${dayLine(list, true)}`);
         if (n) h.prepend(el('span', 'fb-dot'));
         sec.append(h, dayBody(list, date, true));
         det.append(sec);
@@ -6993,7 +7101,7 @@ function sopOpen() {
     // today, open; what is closed today folded under it
     const todays = ahead.get(today) || [];
     const sec = el('section', 'fb-day');
-    sec.append(el('h2', null, `${fmtDay(today)} · ${openOf(todays).length} open of ${todays.length}` + (openOf(todays).length ? ` · ${fmtMin(minsOf(todays))}` : '')));
+    sec.append(el('h2', null, todays.length ? `${fmtDay(today)} · ${dayLine(todays, false)}` : fmtDay(today)));
     if (todays.length) sec.append(dayBody(todays, today, false));
     else sec.append(el('div', 'config-hint', 'Nothing planned today.'));
     const shut = todays.filter(t => isClosed(t.status));
@@ -7064,11 +7172,9 @@ function sopOpen() {
     meta.append(document.createTextNode(bits.join(' · ')));
     body.append(meta);
     b.append(body);
-    // only the states worth a word get one; "Open" is what a card already is
-    if (g.status === 'done') b.append(el('span', 'fb-chip ok', 'Done'));
-    else if (g.status === 'skipped') b.append(el('span', 'fb-chip skip', 'Not done'));
-    else if (g.status === 'partial') b.append(el('span', 'fb-chip', `${g.doneCount}/${g.members.length}`));
-    else if (late) b.append(el('span', 'fb-chip late', 'Late'));
+    // only the states worth a word get one; "Open" is what a card already is — and the time worked (0.11.56)
+    const chip = timeChip(g, late);
+    if (chip) b.append(chip);
     b.onclick = () => { if (b.dataset.swiped) { delete b.dataset.swiped; return; } openTask(g.key); };
     return swipeable(b, g);
   }
@@ -7321,6 +7427,8 @@ function sopOpen() {
     row('Phase', t.phase_name);
     row('Quantity', t.quantity && !isPosUnit(t.unit) ? fmtQty(t.quantity, t.unit) : null);
     row('Takes', fmtMin(t.minutes));
+    const worked = groupMinutes(t);
+    if (worked >= 1 || groupRunning(t)) row('Worked', (groupRunning(t) ? '▶ running · ' : '') + fmtWork(worked) + (isClosed(t.status) ? '' : ' so far'));
     if (sop?.safety_ppe) row('Safety', sop.safety_ppe);
     if (sop?.tools) row('Tools', sop.tools);
     box.append(facts);
@@ -7349,13 +7457,19 @@ function sopOpen() {
       };
       box.append(b);
     } else {
-      const b = el('button', 'btn btn-primary btn-lg btn-block', 'Start checklist');
+      const b = el('button', 'btn btn-primary btn-lg btn-block', groupMinutes(t) >= 1 ? 'Continue the checklist' : 'Start checklist');
       b.onclick = () => startRun(t, sop);
       box.append(b);
+      if (groupRunning(t)) {
+        const pz = el('button', 'btn btn-block', '⏸ Pause the timer');
+        pz.style.marginTop = 'var(--space-2)';
+        pz.onclick = async () => { for (const x of t.members) await timerPause(x.id); openTask(t.key); };
+        box.append(pz);
+      }
       box.append(el('div', 'config-hint',
         (sop?.validation === 'checklist_evidence')
           ? 'This one needs evidence: some steps ask for a photo or a reading.'
-          : 'Tick each step as you go. It works offline.'));
+          : 'Tick each step as you go. The timer starts with the checklist; it works offline.'));
       // a checklist the manager allowed to close with a swipe: the same as a button
       if (sop?.swipe_done && canSwipeDone(t)) {
         const q = el('button', 'btn btn-block', 'Mark done without the checklist');
@@ -7423,9 +7537,31 @@ function sopOpen() {
 
     const head = $('runHead'); head.textContent = '';
     head.append(el('h1', null, task.title));
+    // the timer (0.11.56): opening the checklist starts it (reopening resumes it); not when editing a done task
+    const tt = detail ? null : timerTaskOf(task);
+    if (tt) {
+      await loadTimers();
+      await timerStart(tt.id);
+      const bar = el('div', 'fb-timer');
+      const txt = el('span', 'fb-timer-text');
+      txt.dataset.timerIds = task.members.map(x => x.id).join(',');
+      const btn = el('button', 'btn btn-sm', '⏸ Pause');
+      const paint = () => {
+        const on = groupRunning(task), m = fmtWork(groupMinutes(task));
+        txt.dataset.timerWord = on ? '▶ {m}' : '⏸ {m} · paused';
+        txt.textContent = on ? `▶ ${m}` : `⏸ ${m} · paused`;
+        bar.classList.toggle('paused', !on);
+        btn.textContent = on ? '⏸ Pause' : '▶ Resume';
+      };
+      btn.onclick = async () => { if (groupRunning(task)) await timerPause(tt.id); else await timerStart(tt.id); paint(); };
+      paint();
+      bar.append(txt, btn);
+      head.append(bar);
+    }
     head.append(el('p', null, (isScouting(sop) ? [task.area || task.zone_name, `about ${fmtMin(task.minutes)}`] : [task.zone_name || task.area,
       task.positions.length > 1 ? `${task.positions.length} positions` : (task.positions[0]?.label || null),
       `${steps.length} steps`, `about ${fmtMin(task.minutes)}`]).filter(Boolean).join(' · ')));
+    const tbar = head.querySelector('.fb-timer'); if (tbar) head.append(tbar);   // the timer on its own line, under the facts
 
     const box = $('steps'); box.textContent = '';
     if (holdLine(task)) box.append(el('div', 'fb-hold', holdLine(task)));
