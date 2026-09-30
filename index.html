@@ -1069,7 +1069,7 @@
     .fb-fold-meta { color: var(--text-muted); font-weight: 600; }
     .fb-fold > .fb-day, .fb-fold > .fb-swipe, .fb-fold > .fb-slot, .fb-fold > .fb-unit { margin-left: 10px; margin-right: 10px; }
     .fb-fold[open] { padding-bottom: 8px; }
-    .fb-done-today { margin-top: var(--space-3); }
+    .fb-done-today { margin: var(--space-2) 0 var(--space-3); }
     .fb-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--coral); display:inline-block; flex: none; margin-right: 6px; vertical-align: middle; }
     #viewFarmbox .set-row { align-items: baseline; padding: var(--space-2) 0; }
     #viewFarmbox .set-row > span:first-child { flex: 0 0 auto; white-space: nowrap; color: var(--text-muted); }
@@ -1101,7 +1101,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.77';
+  const CURRENT_VERSION = '0.11.78';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1262,6 +1262,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.78', '2026-09-30', 'Closed today on top', 'On the day list, the folded Closed today line now sits at the top of today, under its heading, and the open work follows it.'],
     ['0.11.77', '2026-09-30', 'No traps today', 'The Traps tab has a No traps today button: the section counts as done without a trap photo, its dot turns green and the zone report says Traps: No traps today; nothing is counted and no trap is marked missing. Undo takes it back, and photographing a trap after all takes it back by itself.'],
     ['0.11.76', '2026-09-30', 'Sizes measured on the fruit, not the card', 'On the photos of 30 Sept the scale was read right but the phone outlined the white card, not the cucumber (186 x 115 mm instead of about 363 x 41). Now the card is found from its marker and left out, the phone looks for the fruit round the card and keeps the outline that is long, solid and near the card, and a curved fruit is measured along its curve. The card shows the outline it measured: not the fruit, tap it and tap the fruit. The measuring runs on the phone graphics chip, about a second a photo.'],
     ['0.11.75', '2026-09-30', 'A zone sends itself when complete', 'As soon as every section required today has its minimum (all tab dots green), a bar says the zone is complete and sends its report after 5 seconds, then goes back to the zones; no Finish needed. Keep scouting holds it until something is added or removed, Send now sends at once. A section whose OK button was never tapped goes as OK, one with a note saying what is wrong goes as not OK. More can still be added afterwards with Edit what was sent.'],
@@ -7285,12 +7286,10 @@ function sopOpen() {
       days.append(det);
     }
     const ahead = byDay(week);
-    // today, open; what is closed today folded under it
+    // today: what is closed today folded at the top (0.11.78, owner: "on the top, not at the bottom"), then the open work
     const todays = ahead.get(today) || [];
     const sec = el('section', 'fb-day');
     sec.append(el('h2', null, todays.length ? `${fmtDay(today)} · ${dayLine(todays, false)}` : fmtDay(today)));
-    if (todays.length) sec.append(dayBody(todays, today, false));
-    else sec.append(el('div', 'config-hint', 'Nothing planned today.'));
     const shut = todays.filter(t => isClosed(t.status));
     if (shut.length) {
       const det = fold('fb-done-today', foldState.doneToday, v => { foldState.doneToday = v; });
@@ -7298,6 +7297,8 @@ function sopOpen() {
       shut.forEach(t => det.append(taskCard(t, false)));
       sec.append(det);
     }
+    if (todays.length) sec.append(dayBody(todays, today, false));
+    else sec.append(el('div', 'config-hint', 'Nothing planned today.'));
     days.append(sec);
     // the days ahead, closed until opened
     for (const [date, list] of ahead) {
