@@ -1088,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.69';
+  const CURRENT_VERSION = '0.11.70';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1249,6 +1249,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.70', '2026-09-30', 'A trap count you can trust', 'The insects on a trap are counted on the full photo and only on the grid: the printed header (logo, text, phone number, the holes) is no longer counted, insects on a grid line are, and the whole card to its edges. Checked on the 20 FarmLab trap photos: the header had added up to 35 false insects a side. A card cut by the edge of the photo is flagged: retake it with the whole card. The AI counts without being told the phone number, so it is a real second opinion.'],
     ['0.11.69', '2026-09-30', 'A scale card the phone always finds', 'The scale card is a printed black and white marker with a 5 cm square (print it again from Pest and diseases, Scale card). The phone finds its four corners in any light and outlines it in green; two taps with Measure are read in the card plane, so a tilted card still measures right, and a card held very tilted is flagged. The magenta card is no longer used. The size the phone takes by itself stays a suggestion.'],
     ['0.11.68', '2026-09-30', 'The zones as standard task cards', 'Inside the Daily scouting card the five zones are the usual task cards: title, zone, minutes, inputs, state and timer, the family colour, swipe. The day line on top says how many are done and what is left.'],
     ['0.11.67', '2026-09-30', 'The daily scouting on one card', 'The day has one Daily scouting card again, showing its zones. Tap it for the list of zones, each a task of its own with its state and time (to do, in progress, done); Start the next zone, or tap any. When a zone is finished, or you go back, you return to this list for the next one.'],
@@ -8756,7 +8757,7 @@ function sopOpen() {
 
     async function shoot(section, forTrap, fromGallery) {
       const hint = section === 'trap'
-        ? (forTrap ? `Trap ${forTrap.code} — square-on, the whole card and its code` : 'A sticky trap — square-on, the whole card and its code in the picture')
+        ? (forTrap ? `Trap ${forTrap.code} — square-on, the WHOLE card in the photo, top to bottom` : 'A sticky trap — square-on, the whole card, top to bottom, and its code in the picture')
         : section === 'growth' ? 'The fruit or leaf with the scale card beside it, flat, at the same distance'
         : 'Close and in focus: the part that looks wrong';
       let f = null;
@@ -8838,12 +8839,19 @@ function sopOpen() {
       catch (e) { showToast('That photo could not be read — try again', 'error'); return null; }
       const S = { taken_at: new Date().toISOString(), full_w: big.canvas.width, thumb: shrinkCanvas(big.canvas, 640, 0.6) };
       S.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
-      const canvas = scaleCanvas(big.canvas, 1600); big = null;
+      const canvas = scaleCanvas(big.canvas, 1600);
       const seen = cardColour(canvas);
       const side = want || seen;
       if (want && seen !== want) S.check = `this looks like the ${seen} side`;
-      try { const r = countInsects(canvas, { colour: side }); Object.assign(S, { counts: r.counts, total: r.total, algo_total: r.total, algorithm: r.algorithm, confidence: r.confidence, corrected: false }); }
-      catch (e) { S.total = null; }
+      // counted on the full photo (0.11.70: up to 4000 px, a thrips is ~1 mm)
+      try {
+        const r = countInsects(big.canvas, { colour: side });
+        Object.assign(S, { counts: r.counts, total: r.total, algo_total: r.total, algorithm: r.algorithm, confidence: r.confidence, corrected: false,
+                           rows_seen: r.rows_seen ?? null });
+        if (r.partial) S.check = `part of the card is outside the photo (${r.partial.replace('bottom', 'the bottom').replace('top', 'the top')}) — retake it with the whole card`;
+        else if (r.rows_seen != null && r.rows_seen < GRID_ROWS - 0.6) S.check = 'not all of the grid was read — retake it square-on, the whole card in the photo';
+      } catch (e) { S.total = null; }
+      big = null;
       return { S, side, canvas };
     }
     async function addTrap(file, forTrap) {
@@ -9074,7 +9082,7 @@ function sopOpen() {
           const image = await photoBase64(S);
           if (!image) throw new Error('this photo is not on the phone any more');
           const r = await api('/functions/v1/photo-note', { method: 'POST', body: JSON.stringify({ farm_id: task.farm_id || farm.id, kind: 'trap', image,
-            context: { trap_code: p.code || null, colour: k, count: S.total, codes: traps.map(x => shortCode(x.code)), note: p.note || null } }) });
+            context: { trap_code: p.code || null, colour: k, codes: traps.map(x => shortCode(x.code)), note: p.note || null } }) });   // blind: not the phone's count (0.11.70)
           if (!r?.ok) throw new Error(r?.error || 'no answer');
           S.ai = r.ai;
           if (!p.code && r.ai.code_seen) {
@@ -9137,7 +9145,7 @@ function sopOpen() {
         try {
           const t = trapById.get(p.trap_id);
           const context = p.section === 'trap'
-            ? { trap_code: p.code || null, colour: t?.colour || p.colour || 'yellow', size: t?.width_cm ? `${t.width_cm} × ${t.height_cm} cm` : null, count: p.total, codes: traps.map(x => shortCode(x.code)), note: p.note || null }
+            ? { trap_code: p.code || null, colour: t?.colour || p.colour || 'yellow', size: t?.width_cm ? `${t.width_cm} × ${t.height_cm} cm` : null, codes: traps.map(x => shortCode(x.code)), note: p.note || null }
             : { part: p.part, position: p.pos_code || null, note: p.note || null, scale_found: !!p.px_per_mm, scale_source: p.scale_source || null,
                 crop: crops.find(c => c.id === p.crop_id)?.name || null, crops: crops.map(c => c.name) };
           const image = await photoBase64(p);
@@ -10493,7 +10501,7 @@ function sopOpen() {
   // by strip — a strip a square tall is short enough that a tilted line stays in step — and the strips'
   // autocorrelations are added, so a slant or an offset between strips costs nothing. Across and down
   // are measured apart and averaged (a slanted photo shortens one); no grid found → the card's length.
-  const GRID_MM = 23;
+  const GRID_MM = 23, GRID_ROWS = 7;      // FarmLab's Insect Science cards: 4 × 7 squares of 23 mm
   function gridScale(d, W, H, x0, y0, bw, bh, isCard) {
     const guess = Math.max(bw, bh) / 250;                          // px/mm if the card were 25 cm: bounds only
     const thin = Math.max(2, Math.round(1.2 * guess)), long = Math.max(8, Math.round(5 * guess));
@@ -10543,81 +10551,215 @@ function sopOpen() {
     return { ppm: px / GRID_MM, across: X?.px ?? null, down: Y?.px ?? null };
   }
 
-  // ── counting insects on a sticky trap (blobs-v1) ────────────────────────
-  // 1. find the card: the biggest yellow (or blue) area in the photo;
-  // 2. inside it, an insect is a dark speck that is not the card's colour;
-  // 3. group touching specks, drop the dust (< 3 px) and the writing / edges
-  //    (very large or very long shapes), and count by size in millimetres
-  //    from the card's known width: tiny < 1.5 mm (thrips), small < 3 mm
-  //    (whitefly, fungus gnats), medium < 6 mm (aphids, leaf miners), large.
-  // It is a count of dark specks, not a species identification: the person
-  // says what they mostly are and corrects the number.
+  // ── counting insects on a sticky trap (blobs-v3, 0.11.70) ────────────────
+  // The check of 30 Sept 2026 (owner: "check if the current algorithm counting is correct"): on FarmLab's cards the
+  // old count took the printed header — logo, "STICKY TRAP", the phone number, a punched hole — for 17–35 insects,
+  // lost the insects touching a grid line (they merged with the grid) and those along the card's edge (its box cut the
+  // outer 3 %), and dropped thrips-sized specks as dust at 1600 px. Now:
+  // 1. the card: the long run of rows and columns that are mostly card colour, on a small copy — its real edges;
+  // 2. the count runs at about 12 px a mm (a thrips is ~1 mm), up to the full 4000 px photo;
+  // 3. inside the card, row by row between its own left and right edge (no leaf in a corner of the box);
+  // 4. the printed grid found as lines — long, thin dark runs, across or down, a card tilted a few degrees
+  //    included — its spacing is the scale (23 mm a square) and its first line across ends the header;
+  // 5. the lines and their crossings are wiped, so an insect on a line stays and a crossing is no insect;
+  // 6. what is left is grouped (8-neighbour) and counted by size: tiny < 1.5 mm (thrips), small < 3 (whitefly,
+  //    gnats), medium < 6 (aphids, leaf miners), large ≤ 9; bigger is writing, a leaf or a finger.
+  // A count of dark specks, not a species identification: the person corrects it and says what they mostly are.
   function countInsects(canvas, trap) {
-    const W = canvas.width, H = canvas.height;
-    const d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
     const blue = trap.colour === 'blue';
-    const isCard = i => {
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      return blue ? (b > 110 && b > r + 40 && b > g + 10) : (r > 140 && g > 110 && b < 120 && r - b > 60 && g - b > 40);
+    const cardOf = d => i => { const r = d[i], g = d[i + 1], b = d[i + 2];
+      // relative to the light: the lower half of a card is often in shade
+      // (a yellow card has red about as high as green, a sunlit leaf much less; a blue card is bluer than the sky)
+      return blue ? (b > 80 && b > r + 35 && b > g + 10) : (r > 95 && g > 75 && r > 0.82 * g && r - b > 50 && g - b > 35); };
+    const empty = { counts: { tiny: 0, small: 0, medium: 0, large: 0 }, total: 0, blobs: [], confidence: 0, algorithm: 'blobs-v3', scale: 'none', px_per_mm: null };
+    // 1. the card, on a small copy
+    const sm = scaleCanvas(canvas, 800), sw = sm.width, sh = sm.height;
+    const sd = sm.getContext('2d').getImageData(0, 0, sw, sh).data, sIs = cardOf(sd);
+    const colN = new Uint32Array(sw), rowN = new Uint32Array(sh); let tot = 0;
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) if (sIs((y * sw + x) * 4)) { colN[x]++; rowN[y]++; tot++; }
+    if (tot < 400) return empty;
+    // the longest run of mostly-card rows (or columns), a short break bridged: a row lying on a printed grid line
+    // has almost no card colour in it, and the card does not end there
+    const longest = (arr, frac) => {
+      let mx = 0; for (const v of arr) if (v > mx) mx = v;
+      const gap = Math.max(4, Math.round(arr.length * 0.02));
+      let best = [0, -1], s = -1, lastOn = -1e9;
+      for (let k = 0; k <= arr.length; k++) {
+        const on = k < arr.length && arr[k] >= frac * mx;
+        if (on) { if (s < 0 || k - lastOn > gap) s = k; lastOn = k; if (lastOn - s > best[1] - best[0]) best = [s, lastOn]; }
+      }
+      return best;
     };
-    // the card's bounding box from the 3rd–97th percentile of card-coloured pixels
-    const xs = [], ys = [];
-    let cardPx = 0;
-    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) {
-      if (isCard((y * W + x) * 4)) { cardPx++; if (cardPx % 7 === 0) { xs.push(x); ys.push(y); } }
+    const [cx0, cx1] = longest(colN, 0.2), [cy0, cy1] = longest(rowN, 0.2);
+    if (cx1 - cx0 < 20 || cy1 - cy0 < 20) return empty;
+    // 2. the working copy: ~12 px a mm from the card's short side (about 100 mm), never upscaled, at most 4000 px
+    const estSm = Math.min(cx1 - cx0, cy1 - cy0) / 100;
+    const want = Math.min(4000, Math.max(canvas.width, canvas.height), Math.round(Math.max(sw, sh) * 12 / Math.max(estSm, 0.01)));
+    const C = scaleCanvas(canvas, want), kk = C.width / sw;
+    const X0 = Math.max(0, Math.floor((cx0 - 2) * kk)), Y0 = Math.max(0, Math.floor((cy0 - 2) * kk));
+    const BW = Math.min(C.width, Math.ceil((cx1 + 3) * kk)) - X0, BH = Math.min(C.height, Math.ceil((cy1 + 3) * kk)) - Y0;
+    const d = C.getContext('2d').getImageData(X0, Y0, BW, BH).data, isC = cardOf(d);
+    const est = estSm * kk;                                 // px a mm, roughly (±30 %): tolerances only
+    // 3. each row's own card edges (the first and last run of card colour 3 px long)
+    const L = new Int32Array(BH).fill(-1), R = new Int32Array(BH).fill(-1);
+    let lumSum = 0, lumN = 0, cardRows = 0;
+    for (let y = 0; y < BH; y++) {
+      let run = 0;
+      for (let x = 0; x < BW; x++) { if (isC((y * BW + x) * 4)) { if (++run >= 3) { L[y] = x - 2; break; } } else run = 0; }
+      run = 0;
+      for (let x = BW - 1; x >= 0; x--) { if (isC((y * BW + x) * 4)) { if (++run >= 3) { R[y] = x + 2; break; } } else run = 0; }
+      if (L[y] >= 0) cardRows++;
+      if (y % 7 === 0 && L[y] >= 0) for (let x = L[y]; x <= R[y]; x += 11) { const i = (y * BW + x) * 4; if (isC(i)) { lumSum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; lumN++; } }
     }
-    let x0 = 0, y0 = 0, x1 = W - 1, y1 = H - 1, conf = 0;
-    if (xs.length > 50) {
-      xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
-      const q = (arr, p) => arr[Math.min(arr.length - 1, Math.floor(arr.length * p))];
-      x0 = q(xs, 0.03); x1 = q(xs, 0.97); y0 = q(ys, 0.03); y1 = q(ys, 0.97);
-      const area = Math.max(1, (x1 - x0) * (y1 - y0));
-      conf = Math.min(1, (cardPx * 4) / area);          // how much of the box is card colour
+    const cardLum = lumN ? lumSum / lumN : 200;
+    const darkLim = Math.min(125, 0.62 * cardLum);           // a dimmer photo: a dimmer insect
+    const mask = new Uint8Array(BW * BH);
+    for (let y = 0; y < BH; y++) {
+      if (L[y] < 0) continue;
+      for (let x = L[y]; x <= R[y]; x++) {
+        const i = (y * BW + x) * 4;
+        if (!isC(i) && 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < darkLim) mask[y * BW + x] = 1;
+      }
     }
-    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-    // pixels per millimetre: the printed 23 mm grid (0.11.49), else the card's length (the long side)
-    const longPx = Math.max(bw, bh), longMm = Math.max(Number(trap.width_cm) || 25, Number(trap.height_cm) || 10) * 10;
-    let grid = null;
-    try { grid = gridScale(d, W, H, x0, y0, bw, bh, isCard); } catch (e) { grid = null; }
-    const ppm = grid ? grid.ppm : longPx / longMm;
-    // dark, non-card pixels inside the box
-    const mask = new Uint8Array(bw * bh);
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const i = (y * W + x) * 4;
-      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      if (!isCard(i) && lum < 120) mask[(y - y0) * bw + (x - x0)] = 1;
+    const hr = new Uint16Array(BW * BH), vr = new Uint16Array(BW * BH);
+    const runs = () => {
+      for (let y = 0; y < BH; y++) { let s = -1; for (let x = 0; x <= BW; x++) { const on = x < BW && mask[y * BW + x]; if (on && s < 0) s = x; if (!on && s >= 0) { const n = Math.min(65535, x - s); for (let k = s; k < x; k++) hr[y * BW + k] = n; s = -1; } } }
+      for (let x = 0; x < BW; x++) { let s = -1; for (let y = 0; y <= BH; y++) { const on = y < BH && mask[y * BW + x]; if (on && s < 0) s = y; if (!on && s >= 0) { const n = Math.min(65535, y - s); for (let k = s; k < y; k++) vr[k * BW + x] = n; s = -1; } } }
+    };
+    runs();
+    // 4. the printed lines: long and thin, a tilt of a few degrees allowed (a band of rows or columns)
+    const longE = 5 * est, thinE = 2.2 * est;
+    const hl = new Uint8Array(BW * BH), vl = new Uint8Array(BW * BH);
+    for (let p = 0; p < BW * BH; p++) if (mask[p]) {
+      if (hr[p] >= longE && vr[p] <= thinE) hl[p] = 1;
+      if (vr[p] >= longE && hr[p] <= thinE) vl[p] = 1;
     }
-    // connected components (4-neighbour), iterative
-    const seen = new Uint8Array(bw * bh);
-    const stack = new Int32Array(bw * bh);
-    const counts = { tiny: 0, small: 0, medium: 0, large: 0 };
-    const minPx = Math.max(3, Math.round(0.6 * ppm * 0.6 * ppm));       // dust
-    const maxPx = Math.round(0.02 * bw * bh);                              // writing, edges, a fold
-    for (let p = 0; p < bw * bh; p++) {
+    // coverage: how much of the card's width (or height) a line crosses within a band
+    const lines = (across) => {
+      const len = across ? BH : BW, other = across ? BW : BH, band = Math.max(3, Math.round(0.06 * other));
+      const cov = new Float32Array(len);
+      // per line of the other direction, where its line pixels are; a position is covered when any lies within ±band/2
+      const last = new Int32Array(other).fill(-1e9), next = new Int32Array(other).fill(1e9);
+      const hits = []; for (let o = 0; o < other; o++) hits.push([]);
+      for (let y = 0; y < BH; y++) for (let x = 0; x < BW; x++) { const p = y * BW + x; if (across ? hl[p] : vl[p]) hits[across ? x : y].push(across ? y : x); }
+      const width = new Float32Array(len);
+      for (let t = 0; t < len; t++) width[t] = across ? (L[t] >= 0 ? R[t] - L[t] + 1 : 0) : cardRows;
+      for (let o = 0; o < other; o++) {
+        const h = hits[o]; if (!h.length) continue;
+        let j = 0;
+        for (let t = 0; t < len; t++) {
+          while (j < h.length && h[j] < t - band / 2) j++;
+          if (j < h.length && h[j] <= t + band / 2) cov[t]++;
+        }
+      }
+      const out = []; let s = -1;
+      for (let t = 0; t <= len; t++) {
+        const on = t < len && width[t] > 0 && cov[t] >= (across ? 0.45 * width[t] : 0.3 * Math.max(1, cardRows));   // glare breaks the lines down
+        if (on && s < 0) s = t;
+        if (!on && s >= 0) { out.push([s, t - 1, (s + t - 1) / 2]); s = -1; }
+      }
+      // one line: runs closer than 8 mm merge
+      const merged = [];
+      for (const r of out) { const m = merged[merged.length - 1]; if (m && r[0] - m[1] < 8 * est) { m[1] = r[1]; m[2] = (m[0] + m[1]) / 2; } else merged.push(r.slice()); }
+      merged.cov = cov; merged.width = width;
+      return merged;
+    };
+    const H = lines(true), V = lines(false);
+    const spacingOf = ls => { const g = []; for (let i = 1; i < ls.length; i++) { const s = ls[i][2] - ls[i - 1][2]; if (s > 15 * est && s < 35 * est) g.push(s); }
+      g.sort((a, b) => a - b); return g.length ? { px: g[Math.floor(g.length / 2)], n: g.length } : null; };
+    const sH = spacingOf(H), sV = spacingOf(V);
+    let ppm = null, scale = 'card';
+    if (sH && sV) ppm = Math.abs(sH.px - sV.px) / Math.min(sH.px, sV.px) <= 0.15 ? (sH.px * sH.n + sV.px * sV.n) / (sH.n + sV.n) / GRID_MM : (sH.n >= sV.n ? sH.px : sV.px) / GRID_MM;
+    else if (sH || sV) ppm = (sH || sV).px / GRID_MM;
+    if (ppm) scale = 'grid'; else ppm = est;
+    // where the grid starts: the first line across that is one square from the next (not the card's top edge or a
+    // finger), and where the lines down begin — which the header's print and writing cannot imitate
+    const S = ppm * GRID_MM, tiltM = Math.round(0.03 * BW);
+    let chain = null;
+    for (let i = 0; i < H.length - 1; i++) { const g = H[i + 1][2] - H[i][2]; if (H[i][2] > BH * 0.02 && Math.abs(g - S) < 0.15 * S) { chain = H[i]; break; } }
+    // up from there, a square at a time, while a line — however broken by glare — is where the next one should be,
+    // never beyond the card's rows (FarmLab's Insect Science cards: 7 rows of 23 mm squares, GRID_ROWS)
+    const lastH = H.length ? H[H.length - 1][2] : null, maxSpan = (GRID_ROWS + 0.25) * S;
+    if (chain) {
+      let cur = chain, g = S;
+      const i0 = H.indexOf(chain); if (i0 >= 0 && H[i0 + 1]) g = H[i0 + 1][2] - chain[2];
+      for (let step = 0; step < 8; step++) {
+        const want = cur[2] - g, lo = Math.max(0, Math.round(want - 0.2 * g)), hi = Math.round(want + 0.2 * g);
+        if (hi < BH * 0.02) break;
+        let bt = -1, bv = 0;
+        for (let t = lo; t <= hi && t < BH; t++) { const w = H.width[t] || BW; const v = H.cov[t] / Math.max(1, w); if (v > bv) { bv = v; bt = t; } }
+        if (bt < 0 || bv < 0.15 || (lastH != null && lastH - bt > maxSpan)) break;
+        let a = bt, b = bt; while (a > 0 && H.cov[a - 1] / Math.max(1, H.width[a - 1] || BW) >= 0.5 * bv) a--; while (b < BH - 1 && H.cov[b + 1] / Math.max(1, H.width[b + 1] || BW) >= 0.5 * bv) b++;
+        g = cur[2] - (a + b) / 2; cur = [a, b, (a + b) / 2];
+        if (g < 0.7 * S) break;
+      }
+      chain = cur;
+    }
+    const vTops = [];
+    for (const v of V) {
+      const xa = Math.max(0, Math.round(v[0] - 0.03 * BH)), xb = Math.min(BW - 1, Math.round(v[1] + 0.03 * BH));
+      const rowHas = new Uint8Array(BH);
+      for (let y = 0; y < BH; y++) for (let x = xa; x <= xb; x++) if (vl[y * BW + x]) { rowHas[y] = 1; break; }
+      // the longest stretch of the line, gaps under 3 mm bridged: its start is the grid's top here
+      let best = [0, -1], s0 = -1, lastOn = -1e9;
+      for (let y = 0; y <= BH; y++) {
+        if (y < BH && rowHas[y]) { if (s0 < 0 || y - lastOn > 3 * ppm) s0 = y; lastOn = y; if (lastOn - s0 > best[1] - best[0]) best = [s0, lastOn]; }
+      }
+      if (best[1] - best[0] > 2 * S) vTops.push(best[0]);
+    }
+    vTops.sort((a, b) => a - b);
+    const vTop = vTops.length >= 2 ? vTops[Math.floor(vTops.length / 2)] : null;
+    let gridTop = null, gridBy = 'none';
+    if (chain && vTop != null && vTop < chain[2] - 0.7 * S && (lastH == null || lastH - vTop <= maxSpan)) { gridTop = vTop; gridBy = 'lines down'; }   // lines above not seen at all
+    else if (chain) { gridTop = Math.round(chain[2]); gridBy = 'line'; }
+    else if (vTop != null) { gridTop = vTop; gridBy = 'lines down'; }
+    else { const f = H.find(l => l[2] > BH * 0.03 && l[2] < BH * 0.5); if (f) { gridTop = f[1]; gridBy = 'first line'; } }
+    // the card's rows are known: when fewer than 7 are seen above the bottom line and the card is whole at the bottom,
+    // the top lines are lost in glare — the grid starts 7 squares above its bottom line
+    const bottomWhole = !(cy1 >= sh - 2);
+    if (lastH != null && bottomWhole && BH - lastH < 1.2 * S && (gridTop == null || (lastH - gridTop) < (GRID_ROWS - 0.5) * S)) {
+      gridTop = Math.max(0, Math.round(lastH - GRID_ROWS * S)); gridBy = 'rows up';
+    }
+    const top = gridTop != null && gridTop < BH * 0.55 ? Math.min(BH - 1, gridTop + Math.round(0.012 * BW) + Math.round(ppm)) : 0;
+    // the card cut by the photo's edge: fewer insects than on the card, whatever the counting
+    const edges = [cy0 <= 1 && 'top', cy1 >= sh - 2 && 'bottom', cx0 <= 1 && 'left', cx1 >= sw - 2 && 'right'].filter(Boolean);
+    const rowsSeen = gridTop != null ? Math.round((BH - gridTop) / S * 10) / 10 : null;
+    // 5. the lines and their crossings out, then the thin rims they leave
+    const longP = 6 * ppm, thinP = Math.max(2, 1.4 * ppm);
+    for (let p = 0; p < BW * BH; p++) if (mask[p] && ((hr[p] >= longP && vr[p] <= thinP) || (vr[p] >= longP && hr[p] <= thinP) || (hr[p] >= longP && vr[p] >= longP))) mask[p] = 0;
+    // 6. the specks left, below the header, 8-neighbour
+    const counts = { tiny: 0, small: 0, medium: 0, large: 0 }, blobs = [];
+    const seen = new Uint8Array(BW * BH), stack = new Int32Array(BW * BH);
+    const minArea = Math.max(4, Math.round(0.3 * ppm * ppm)), minLen = 0.7 * ppm;
+    for (let p = top * BW; p < BW * BH; p++) {
       if (!mask[p] || seen[p]) continue;
-      let sp = 0, n = 0, minx = bw, maxx = 0, miny = bh, maxy = 0;
+      let sp = 0, n = 0, minx = BW, maxx = 0, miny = BH, maxy = 0;
       stack[sp++] = p; seen[p] = 1;
       while (sp) {
         const q = stack[--sp]; n++;
-        const qx = q % bw, qy = (q - qx) / bw;
+        const qx = q % BW, qy = (q - qx) / BW;
         if (qx < minx) minx = qx; if (qx > maxx) maxx = qx; if (qy < miny) miny = qy; if (qy > maxy) maxy = qy;
-        if (qx > 0 && mask[q - 1] && !seen[q - 1]) { seen[q - 1] = 1; stack[sp++] = q - 1; }
-        if (qx < bw - 1 && mask[q + 1] && !seen[q + 1]) { seen[q + 1] = 1; stack[sp++] = q + 1; }
-        if (qy > 0 && mask[q - bw] && !seen[q - bw]) { seen[q - bw] = 1; stack[sp++] = q - bw; }
-        if (qy < bh - 1 && mask[q + bw] && !seen[q + bw]) { seen[q + bw] = 1; stack[sp++] = q + bw; }
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = qx + dx, ny = qy + dy;
+          if (nx < 0 || ny < top || nx >= BW || ny >= BH) continue;
+          const r = ny * BW + nx;
+          if (mask[r] && !seen[r]) { seen[r] = 1; stack[sp++] = r; }
+        }
       }
-      if (n < minPx || n > maxPx) continue;
-      const w = maxx - minx + 1, h = maxy - miny + 1;
-      if (Math.max(w, h) > 8 * Math.min(w, h) + 4) continue;           // a line: pen stroke or card edge
-      // touching the box edge over a long stretch: the card's border, not an insect
-      if ((minx === 0 || maxx === bw - 1 || miny === 0 || maxy === bh - 1) && Math.max(w, h) > 6 * ppm) continue;
-      const mm = Math.max(w, h) / ppm;
-      if (mm > 9) continue;                                            // bigger than any trap insect: the code, a label, a leaf
+      const w = maxx - minx + 1, h = maxy - miny + 1, big = Math.max(w, h), small = Math.min(w, h);
+      if (n < minArea || big < minLen) continue;                    // dust, a pen dot
+      if (small < 0.35 * ppm) continue;                             // a sliver: the rim of a wiped line
+      if (big > 4.5 * small + 3) continue;                          // a piece of line left over, a scratch: an insect is at most ~3 : 1
+      const mm = big / ppm;
+      if (mm > 9) continue;                                         // writing, a leaf, a finger
+      blobs.push([X0 + minx, Y0 + miny, w, h, Math.round(mm * 10) / 10]);
       if (mm < 1.5) counts.tiny++; else if (mm < 3) counts.small++; else if (mm < 6) counts.medium++; else counts.large++;
     }
     const total = counts.tiny + counts.small + counts.medium + counts.large;
-    return { counts, total, confidence: Math.round(conf * 100) / 100, algorithm: grid ? 'blobs-v2-grid' : 'blobs-v1',
-             scale: grid ? 'grid' : 'card', px_per_mm: Math.round(ppm * 1000) / 1000 };
+    const area = (cx1 - cx0) * (cy1 - cy0);
+    return { counts, total, blobs, confidence: Math.round(Math.min(1, tot / Math.max(1, area)) * 100) / 100, algorithm: 'blobs-v3',
+             scale, px_per_mm: Math.round(ppm * 1000) / 1000, header_px: top, grid_by: gridBy, partial: edges.length ? edges.join(',') : null, rows_seen: rowsSeen, work_px: want, lines: [H.length, V.length] };
   }
   window.fbCountInsects = countInsects;   // for support: count a canvas from the console
 
