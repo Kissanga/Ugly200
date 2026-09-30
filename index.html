@@ -1107,7 +1107,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.81';
+  const CURRENT_VERSION = '0.11.82';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1268,6 +1268,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.82', '2026-09-30', 'A second photo after measuring', 'After measuring a fruit the next photo could crash the app (Aw, Snap): the outline tool kept its model and memory after the measurement, and the camera then ran the phone out of memory. The tool now runs apart and is closed, giving all its memory back, when the Tap the fruit sheet closes, when the camera opens and when the app goes to the background. The screen also stays responsive while it works.'],
     ['0.11.81', '2026-09-30', 'A stronger outline tool', 'Tapping the fruit now outlines it with Segment Anything (SlimSAM), which keeps a fruit apart from the card or the fruit beside it. Not right? Tap a part that does not belong to take it out, or a missing part to add it; Bigger and Smaller switch between its outlines. It uses the graphics chip when the browser allows (a few seconds a photo), loads once (about 40 MB, Wi-Fi is best) and then works offline. The Right and Start again buttons no longer show before the first tap.'],
     ['0.11.80', '2026-09-30', 'Tap the fruit to measure it', 'After a growth photo with the scale card the photo opens with Tap the fruit: one tap on it and the phone outlines it and measures it against the card, then asks Is this the fruit? (Right, Tap again, Measure by hand). The phone no longer guesses the object by itself: on 276 open crop photos it missed it about half the time, from a tap it is right. Only the FarmBox card marker is read now: the old magenta cards and a tape measure had been taken for it. Red and orange fruit are no longer cut out of the outline as skin.'],
     ['0.11.79', '2026-09-30', 'Is this the fruit?', 'After a growth photo with the scale card the phone draws what it measured: the edge in yellow, the length in blue and the width in pink, labelled in mm, the card framed, and asks Is this the fruit? Yes confirms the sizes, Tap the fruit measures what you tap, Measure by hand opens the ruler. Salads, leafy greens and herbs are measured as a head seen from above (diameter and width); Head is chosen by itself where the zone grows them and can be changed on the photo.'],
@@ -9553,7 +9554,7 @@ function sopOpen() {
         adj.classList.toggle('hidden', bigger.classList.contains('hidden') && smaller.classList.contains('hidden'));
         [yes, bigger, smaller, again, hand].forEach(b => { b.disabled = busy; });
       };
-      const close = () => { sheet.remove(); sizeSheetOpen = false; document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?._paintMs?.(); saveScDraft(); };
+      const close = () => { sheet.remove(); sizeSheetOpen = false; samRelease(); document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?._paintMs?.(); saveScDraft(); };
       const measure = async want => {
         busy = true; paint();
         let st = await sc.autoSize(p, pts.length ? pts : null, want);
@@ -10028,70 +10029,126 @@ function sopOpen() {
   // stays as the fallback when SAM cannot load (offline before its first use).
   const TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
   const SAM_ID = 'Xenova/slimsam-77-uniform';
-  // the graphics chip when the browser has WebGPU (half precision when it can: ~5 s a photo on a laptop's Iris Xe), the
-  // processor otherwise (~30 s on the same laptop — slow, but it works)
-  let samP = null, samReady = false, samWasm = false, samDevice = null;
-  function samModel() {
-    if (!samP) samP = (async () => {
-      const tf = await import(TF_URL);
+  // SAM runs in a Web Worker that is thrown away when it is not needed (0.11.82, owner: "impossible to have a second
+  // picture, it is crashing with Aw, Snap"). In the page itself the model, the ONNX runtime's memory (WebAssembly memory
+  // never shrinks), its graphics buffers (on a phone the same RAM) and every photo's encoding stayed alive after a
+  // measurement — the next camera stream and 4000 px photo then ran the page out of memory. Ending the worker gives all
+  // of it back: when the sheet closes, when the camera opens, when the app goes to the background, and 2 minutes idle.
+  // In the worker: the graphics chip when the browser has WebGPU (half precision when it can), the processor otherwise;
+  // one photo's encoding at a time.
+  function samWorkerMain() {
+    let S = null, cur = null;
+    async function load(m, wasm) {
+      if (S) return S;
+      const tf = await import(m.url);
       tf.env.allowLocalModels = false;
       let tries = [['q8', 'wasm']];
-      if (!samWasm && navigator.gpu) {
-        const ad = await navigator.gpu.requestAdapter().catch(() => null);
+      if (!wasm && self.navigator.gpu) {
+        const ad = await self.navigator.gpu.requestAdapter().catch(() => null);
         if (ad) tries = [[ad.features.has('shader-f16') ? 'fp16' : 'fp32', 'webgpu'], ...tries];
       }
       let model = null, device = null, err = null;
       for (const [dtype, dev] of tries) {
-        try { model = await tf.SamModel.from_pretrained(SAM_ID, { dtype, device: dev }); device = dev; break; } catch (e) { err = e; }
+        try { model = await tf.SamModel.from_pretrained(m.model, { dtype, device: dev }); device = dev; break; } catch (e) { err = e; }
       }
       if (!model) throw err;
-      const processor = await tf.AutoProcessor.from_pretrained(SAM_ID);
-      samReady = true; samDevice = device;
-      return { tf, model, processor, device };
-    })().catch(e => { samP = null; throw e; });
-    return samP;
-  }
-  const samPrepared = new WeakMap(), samState = new WeakMap();
-  // the photo at 1024 px, and SAM's encoding of it: once per photo (keyed by the photo itself, so a retake starts again)
-  function samPrepare(p) {
-    let job = samPrepared.get(p.full);
-    if (!job) {
-      job = (async () => {
-        const S = await samModel();
-        const k = Math.min(1, 1024 / Math.max(p.full_w || 1024, p.full_h || p.full_w || 1024));
-        const bmp = await createImageBitmap(p.full, { resizeWidth: Math.max(1, Math.round((p.full_w || 1024) * k)), resizeQuality: 'medium' });
-        const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
-        const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0); bmp.close?.();
-        const rgba = cx.getImageData(0, 0, c.width, c.height).data;
-        const inputs = await S.processor(new S.tf.RawImage(new Uint8ClampedArray(rgba), c.width, c.height, 4).rgb());
-        let emb;
-        try { emb = await S.model.get_image_embeddings(inputs); }
-        catch (e) {                                                       // the graphics chip refused: the processor
-          if (S.device !== 'webgpu') throw e;
-          samWasm = true; samP = null; samReady = false;
-          const S2 = await samModel(); emb = await S2.model.get_image_embeddings(inputs);
-          return { S: S2, c, rgba, inputs, emb };
-        }
-        return { S, c, rgba, inputs, emb };
-      })();
-      job.catch(() => samPrepared.delete(p.full));
-      samPrepared.set(p.full, job);
+      const processor = await tf.AutoProcessor.from_pretrained(m.model);
+      S = { tf, model, processor, device };
+      return S;
     }
-    return job;
+    self.onmessage = async ({ data: m }) => {
+      try {
+        if (m.type === 'encode') {
+          cur = null;                                                     // one photo at a time
+          let s = await load(m, m.wasm);
+          const inputs = await s.processor(new s.tf.RawImage(new Uint8ClampedArray(m.rgba), m.w, m.h, 4).rgb());
+          let emb;
+          try { emb = await s.model.get_image_embeddings(inputs); }
+          catch (e) {                                                     // the graphics chip refused: the processor
+            if (s.device !== 'webgpu') throw e;
+            try { await s.model.dispose(); } catch (e2) { /* gone anyway */ }
+            S = null; s = await load(m, true);
+            emb = await s.model.get_image_embeddings(inputs);
+          }
+          try { inputs.pixel_values.dispose(); } catch (e) { /* not every build has dispose */ }
+          cur = { key: m.key, emb, original_sizes: inputs.original_sizes, reshaped_input_sizes: inputs.reshaped_input_sizes };
+          self.postMessage({ id: m.id, ok: true, device: s.device });
+        } else if (m.type === 'decode') {
+          if (!S || !cur || cur.key !== m.key) throw new Error('not encoded');
+          const [rh, rw] = cur.reshaped_input_sizes[0];
+          const input_points = new S.tf.Tensor('float32', Float32Array.from(m.points.flatMap(q => [q[0] * rw, q[1] * rh])), [1, 1, m.points.length, 2]);
+          const input_labels = new S.tf.Tensor('int64', BigInt64Array.from(m.points.map(q => BigInt(q[2]))), [1, 1, m.points.length]);
+          const out = await S.model({ ...cur.emb, input_points, input_labels });
+          const masks = await S.processor.post_process_masks(out.pred_masks, cur.original_sizes, cur.reshaped_input_sizes);
+          const t = masks[0], d = t.data, bits = new Uint8Array(d.length);
+          for (let i = 0; i < d.length; i++) bits[i] = d[i] ? 1 : 0;
+          self.postMessage({ id: m.id, ok: true, dims: Array.from(t.dims), scores: Array.from(out.iou_scores.data), masks: bits }, [bits.buffer]);
+        }
+      } catch (e) { self.postMessage({ id: m.id, ok: false, error: String((e && e.message) || e) }); }
+    };
+  }
+  let samW = null, samSeq = 0, samIdle = null, samCur = null, samReady = false, samWasm = false, samDevice = null;
+  const samPend = new Map(), samState = new WeakMap();
+  function samWorker() {
+    if (!samW) {
+      const url = URL.createObjectURL(new Blob(['(' + samWorkerMain.toString() + ')();'], { type: 'text/javascript' }));
+      const w = new Worker(url, { type: 'module' });
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      w.onmessage = ({ data }) => {
+        const r = samPend.get(data.id); if (!r) return;
+        samPend.delete(data.id); data.ok ? r.res(data) : r.rej(new Error(data.error));
+      };
+      w.onerror = e => { e.preventDefault?.(); samRelease(new Error(e.message || 'the outline tool stopped')); };
+      samW = w;
+    }
+    return samW;
+  }
+  function samCall(msg, transfer) {
+    clearTimeout(samIdle);
+    return new Promise((res, rej) => {
+      const id = ++samSeq; samPend.set(id, { res, rej });
+      samWorker().postMessage({ ...msg, id, url: TF_URL, model: SAM_ID, wasm: samWasm }, transfer || []);
+    }).finally(() => { clearTimeout(samIdle); if (samW && !samPend.size) samIdle = setTimeout(() => samRelease(), 120000); });
+  }
+  // the worker ended: its model, runtime, graphics buffers and the photo's encoding go with it; the MagicTouch fallback too
+  function samRelease(err) {
+    clearTimeout(samIdle); samIdle = null;
+    if (samW) { samW.terminate(); samW = null; }
+    const e = err || new Error('released');
+    samPend.forEach(r => r.rej(e)); samPend.clear();
+    samCur = null;
+    if (segP) { const sp = segP; segP = null; sp.then(g => { try { g.close(); } catch (x) { /* closed */ } }, () => {}); }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) samRelease(); });
+  // the photo at 1024 px (kept here for the card and the drawing) and SAM's encoding of it in the worker, for the photo on
+  // screen only (keyed by the photo itself, so a retake starts again)
+  function samPrepare(p) {
+    if (samCur && samCur.full === p.full && samW) return samCur.job;
+    const cur = { full: p.full, key: Math.random().toString(36).slice(2) };
+    cur.job = (async () => {
+      const k = Math.min(1, 1024 / Math.max(p.full_w || 1024, p.full_h || p.full_w || 1024));
+      const bmp = await createImageBitmap(p.full, { resizeWidth: Math.max(1, Math.round((p.full_w || 1024) * k)), resizeQuality: 'medium' });
+      const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+      const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0); bmp.close?.();
+      const rgba = cx.getImageData(0, 0, c.width, c.height).data;
+      const copy = new Uint8ClampedArray(rgba);
+      const r = await samCall({ type: 'encode', key: cur.key, rgba: copy.buffer, w: c.width, h: c.height }, [copy.buffer]);
+      samReady = true; samDevice = r.device; if (r.device === 'wasm') samWasm = true;
+      return { c, rgba, key: cur.key };
+    })();
+    cur.job.catch(() => { if (samCur === cur) samCur = null; });
+    samCur = cur;
+    return cur.job;
   }
   // points [[x, y, 1 = the object | 0 = not the object]] as fractions of the photo; want +1 / −1 = the next bigger /
   // smaller of SAM's outlines than the one on screen
   function samMeasure(p, points, want) {
     const job = sizeBusy.then(async () => {
       if (!(p.full instanceof Blob) || !p.px_per_mm) return null;
-      const { S, c, rgba, inputs, emb } = await samPrepare(p);
+      const { c, rgba, key: ek } = await samPrepare(p);
       const W = c.width, H = c.height;
-      const [rh, rw] = inputs.reshaped_input_sizes[0];
-      const input_points = new S.tf.Tensor('float32', Float32Array.from(points.flatMap(([x, y]) => [x * rw, y * rh])), [1, 1, points.length, 2]);
-      const input_labels = new S.tf.Tensor('int64', BigInt64Array.from(points.map(q => BigInt(q[2]))), [1, 1, points.length]);
-      const out = await S.model({ ...emb, input_points, input_labels });
-      const masks = await S.processor.post_process_masks(out.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes);
-      const t = masks[0], n = t.dims[1], mh = t.dims[2], mw = t.dims[3], data = t.data, scores = Array.from(out.iou_scores.data);
+      const out = await samCall({ type: 'decode', key: ek, points });
+      const n = out.dims[1], mh = out.dims[2], mw = out.dims[3], data = out.masks, scores = out.scores;
       if (mw !== W || mh !== H) throw new Error(`mask ${mw}×${mh} for a ${W}×${H} photo`);
       const ppm = p.px_per_mm * (W / (p.full_w || W));
       const part = p.part === 'leaf' ? 'leaf' : p.part === 'head' ? 'head' : 'fruit';
@@ -10133,6 +10190,7 @@ function sopOpen() {
   }
   function autoMeasure(p, point, want) {
     if (point && Array.isArray(point[0])) return samMeasure(p, point, want).catch(e => {
+      if (e && e.message === 'released') return null;
       console.warn('SAM', e); samState.delete(p);
       const q = point.find(x => x[2] === 1) || point[0];
       return mtMeasure(p, [q[0], q[1]]);
@@ -10935,6 +10993,7 @@ function sopOpen() {
   // own camera app for its macro and its processing (a run killed meanwhile comes back from its draft).
   function takeTrapPhoto(code, hintText, purpose = 'trap') {
     return new Promise(async resolve => {
+      samRelease();                                                   // the camera and a 4000 px photo need the memory (0.11.82)
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
       const pref = camPref(purpose);
       if (pref.closeup && !pref.focus) { pref.focus = { manual: true, d: null }; delete pref.closeup; }   // 0.11.41's Close-up
