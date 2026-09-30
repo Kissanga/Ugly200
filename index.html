@@ -1088,7 +1088,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.68';
+  const CURRENT_VERSION = '0.11.69';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1249,6 +1249,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.69', '2026-09-30', 'A scale card the phone always finds', 'The scale card is a printed black and white marker with a 5 cm square (print it again from Pest and diseases, Scale card). The phone finds its four corners in any light and outlines it in green; two taps with Measure are read in the card plane, so a tilted card still measures right, and a card held very tilted is flagged. The magenta card is no longer used. The size the phone takes by itself stays a suggestion.'],
     ['0.11.68', '2026-09-30', 'The zones as standard task cards', 'Inside the Daily scouting card the five zones are the usual task cards: title, zone, minutes, inputs, state and timer, the family colour, swipe. The day line on top says how many are done and what is left.'],
     ['0.11.67', '2026-09-30', 'The daily scouting on one card', 'The day has one Daily scouting card again, showing its zones. Tap it for the list of zones, each a task of its own with its state and time (to do, in progress, done); Start the next zone, or tap any. When a zone is finished, or you go back, you return to this list for the next one.'],
     ['0.11.66', '2026-09-30', 'All zones', 'A task done across the unit says All zones instead of Whole unit.'],
@@ -8109,27 +8110,76 @@ function sopOpen() {
     try { return (await navigator.permissions?.query({ name: 'geolocation' }))?.state === 'granted'; } catch (e) { return false; }
   }
 
-  // ── the scale card: a magenta square of exactly 5 cm, printed and laminated ──
-  // Its pixels are counted on the 1600 px copy (strong red and blue, little green:
-  // no leaf, fruit or yellow trap looks like that); the square's side is the root
-  // of its area, so a card photographed a little turned still measures right.
-  const SCALE_MM = 50;
-  function findScale(canvas) {
-    const W = canvas.width, H = canvas.height;
-    const d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
-    let n = 0; const xs = [], ys = [];
-    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) {
-      const i = (y * W + x) * 4, r = d[i], g = d[i + 1], b = d[i + 2];
-      if (r > 140 && b > 80 && g < 120 && r - g > 70 && b - g > 25) { n++; if (n % 3 === 0) { xs.push(x); ys.push(y); } }
-    }
-    if (n < 100 || xs.length < 30) return null;
-    xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
-    const q = (a, p) => a[Math.min(a.length - 1, Math.floor(a.length * p))];
-    const bw = q(xs, 0.98) - q(xs, 0.02), bh = q(ys, 0.98) - q(ys, 0.02);
-    const area = n * 4;
-    if (!bw || !bh || area / (bw * bh) < 0.45 || bw / bh > 2.2 || bh / bw > 2.2) return null;
-    return { ppm: Math.sqrt(area) / SCALE_MM };
+  // ── the scale card (0.11.69): a printed marker whose black square is exactly 50 mm ──
+  // The magenta square was found by its colour, which printers and greenhouse light change, and the card had
+  // two squares close together (owner: "not square detection, wrong size"). The card is now an ArUco marker
+  // (MIP 36h12, id 0; console/scale-card.html): js-aruco2 (MIT, from jsDelivr, cached for offline days by the
+  // service worker) finds its four corners in any light; a homography from those corners to the 50 × 50 mm square
+  // measures two taps in the card's plane, so a tilted card still measures right. The object must be beside the
+  // card, at the same distance from the phone — the one error no algorithm can remove.
+  const MARKER_MM = 50;
+  const ARUCO = 'https://cdn.jsdelivr.net/npm/js-aruco2@2.0.0/src/';
+  let arP = null;
+  function arDetector() {
+    if (!arP) arP = (async () => {
+      if (!window.CV) await loadScript(ARUCO + 'cv.js');
+      if (!window.AR) await loadScript(ARUCO + 'aruco.js');
+      return new window.AR.Detector({ dictionaryName: 'ARUCO_MIP_36h12' });
+    })().catch(e => { arP = null; throw e; });
+    return arP;
   }
+  // the 3 × 3 homography taking four image points to four plane points (a small Gauss–Jordan on 8 unknowns)
+  function homography(src, dst) {
+    const A = [];
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = src[i], [u, v] = dst[i];
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
+    }
+    for (let c = 0; c < 8; c++) {
+      let p = c; for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+      [A[c], A[p]] = [A[p], A[c]];
+      if (Math.abs(A[c][c]) < 1e-12) return null;
+      for (let r = 0; r < 8; r++) if (r !== c) { const f = A[r][c] / A[c][c]; for (let k = c; k < 9; k++) A[r][k] -= f * A[c][k]; }
+    }
+    const h = A.map((row, i) => row[8] / row[i]);
+    return [...h, 1];
+  }
+  const applyH = (h, x, y) => { const w = h[6] * x + h[7] * y + h[8]; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; };
+  // the marker in a photo: its corners (as fractions of the photo), px per mm at the card, how square it looks
+  async function findMarker(canvas) {
+    let det;
+    try { det = await arDetector(); } catch (e) { return { error: 'offline' }; }
+    const W = canvas.width, H = canvas.height, big = Math.max(W, H);
+    for (const w of [960, 1600, 640]) {                     // the long side tried: the detector likes cells of ~8–30 px
+      const c = w >= big ? canvas : scaleCanvas(canvas, w);
+      let ms = [];
+      try { ms = det.detect(c.getContext('2d').getImageData(0, 0, c.width, c.height)); } catch (e) { ms = []; }
+      ms = ms.filter(m => m.id === 0 || ms.length === 1);
+      if (!ms.length) { if (w >= big) break; continue; }
+      const k = W / c.width;
+      const area = m => { const q = m.corners; let a = 0; for (let i = 0; i < 4; i++) { const p = q[i], n = q[(i + 1) % 4]; a += p.x * n.y - n.x * p.y; } return Math.abs(a) / 2; };
+      const m = ms.sort((x, y) => area(y) - area(x))[0];
+      const q = m.corners.map(p => [p.x * k, p.y * k]);
+      const sides = q.map((p, i) => Math.hypot(q[(i + 1) % 4][0] - p[0], q[(i + 1) % 4][1] - p[1]));
+      const side = sides.reduce((a, b) => a + b, 0) / 4;
+      if (side < 40) return null;                           // too small to trust
+      return { ppm: side / MARKER_MM, quad: q.map(([x, y]) => [x / W, y / H]), skew: Math.max(...sides) / Math.min(...sides), side: Math.round(side) };
+    }
+    return null;
+  }
+  // mm between two points of a photo drawn w × h, against the marker's plane (or the plain px/mm)
+  function mmBetween(p, a, b, w, h) {
+    if (p.scale_quad && p.scale_source === 'marker') {
+      const hm = homography(p.scale_quad.map(([x, y]) => [x * w, y * h]), [[0, 0], [MARKER_MM, 0], [MARKER_MM, MARKER_MM], [0, MARKER_MM]]);
+      if (hm) { const A = applyH(hm, a.x, a.y), B = applyH(hm, b.x, b.y); return Math.hypot(B[0] - A[0], B[1] - A[1]); }
+    }
+    const ppm = p.px_per_mm * (w / (p.full_w || w));
+    return Math.hypot(b.x - a.x, b.y - a.y) / ppm;
+  }
+  const scaleWords = p => p.scale_source === 'ruler' ? 'scale set on the ruler'
+    : p.scale_source === 'marker' ? 'Scale card found' + (p.scale_skew > 1.3 ? ' · card tilted, sizes less sure' : '')
+    : p.scale_source === 'card' ? 'Scale detected · 5 cm square' : '';
 
   // ── reading the trap's code off the card ────────────────────────────────
   // Tesseract.js, loaded from jsDelivr the first time a trap is photographed and
@@ -8681,7 +8731,7 @@ function sopOpen() {
             lines.push(posWords(fullPos(p.pos_code)) ? 'Position ' + fullPos(p.pos_code) : zoneLines.length === 1 ? (zoneLines[0].label || 'this zone') : '— no position');
             const ms = (p.measures || []).map(m => `${wordOf(MEASURE_WHAT, m.what).toLowerCase()} ${m.mm} mm${m.by === 'auto' ? ' 📐' : ''}`);
             if (ms.length) lines.push('Size: ' + ms.join(' · '));
-            else if (p.px_per_mm) lines.push(p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected');
+            else if (p.px_per_mm) lines.push(scaleWords(p));
             if (p.ai) lines.push('✦ ' + aiText(p));
           }
           lines.filter(Boolean).forEach(l => txt.append(el('div', l.startsWith('✦') ? 'fb-rv-ai' : 'fb-meta', l)));
@@ -8740,14 +8790,21 @@ function sopOpen() {
       } else {
         Object.assign(p, { pos_code: sc.lastPos || '', part: section === 'growth' ? 'fruit' : 'leaf', measures: [],
                            crop_id: crops.length === 1 ? crops[0].id : null });
-        // the scale card, on a growth photo and on a plant-health one (0.11.52)
-        { const s = findScale(c1600); if (s) { p.px_per_mm = Math.round(s.ppm * (p.full_w / c1600.width) * 1000) / 1000; p.scale_source = 'card'; } }
+        p.scale_state = 'busy';                 // the scale card is looked for once the card is on screen (0.11.69)
       }
       sc.photos.set(p.ref, p);
       const card = photoCard(p);
       lists[section].prepend(card);
       paintTabs(); paintCoverage(); saveScDraft();
-      if (section !== 'trap' && p.px_per_mm) sc.autoSize(p);         // the scale card is in it: measure the fruit or leaf
+      if (section !== 'trap') findMarker(c1600).then(m => {
+        p.scale_state = m?.error ? 'offline' : m ? 'found' : 'none';
+        if (m && !m.error) {
+          p.px_per_mm = Math.round(m.ppm * (p.full_w / c1600.width) * 1000) / 1000;
+          p.scale_source = 'marker'; p.scale_quad = m.quad; p.scale_skew = Math.round(m.skew * 100) / 100;
+        }
+        card._paintMs?.(); saveScDraft();
+        if (p.px_per_mm) sc.autoSize(p);                             // a first size by itself: a suggestion, 📏 is the measure
+      }).catch(e => { console.warn('scale card', e); p.scale_state = 'none'; card._paintMs?.(); });
       if (section === 'trap' && !p.code) {
         card._codeState?.('reading the code…');
         try {
@@ -9172,10 +9229,11 @@ function sopOpen() {
           paintMs = () => {
             ms.textContent = '';
             const growth = p.section === 'growth';
-            if (!growth && !p.px_per_mm && !(p.measures || []).length) { ms.classList.add('hidden'); return; }
+            if (!growth && !p.px_per_mm && !(p.measures || []).length && p.scale_state !== 'busy') { ms.classList.add('hidden'); return; }
             ms.classList.remove('hidden');
-            ms.append(el('span', 'fb-chip' + (p.px_per_mm ? ' ok' : ' late'),
-              !p.px_per_mm ? 'no scale card seen' : p.scale_source === 'ruler' ? 'scale set on the ruler' : 'Scale detected · 5 cm square'));
+            ms.append(el('span', 'fb-chip' + (p.px_per_mm ? (p.scale_skew > 1.3 ? ' late' : ' ok') : p.scale_state === 'busy' ? '' : ' late'),
+              p.px_per_mm ? scaleWords(p) : p.scale_state === 'busy' ? 'looking for the scale card…'
+                : p.scale_state === 'offline' ? 'no scale card read — the card reader needs a connection the first time' : 'no scale card seen'));
             (p.measures || []).forEach((m, i) => {
               const c = el('button', 'fb-btn' + (m.by === 'auto' ? ' fb-auto' : ''), `${m.by === 'auto' ? '📐 ' : ''}${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
               if (m.by === 'auto') c.title = 'Measured by the phone on the outline; ✕ removes it';
@@ -9206,7 +9264,7 @@ function sopOpen() {
         // tap the photo: full screen, pinch or double-tap to zoom, Measure inside
         img.onclick = () => photoViewer(p.full instanceof Blob ? p.full : p.thumb,
           { title: p.section === 'growth' ? 'Growth photo' : 'Plant photo', measure: p.full instanceof Blob ? () => measurePhoto(p, paintMs) : null,
-            scale: p.px_per_mm ? (p.scale_source === 'ruler' ? 'Scale set on the ruler' : 'Scale detected · 5 cm square') : null,
+            scale: p.px_per_mm ? scaleWords(p) : null,
             outline: p.auto_view || null,
             pick: p.full instanceof Blob && p.px_per_mm ? pt => sc.autoSize(p, pt) : null });
         card._paintMs = () => paintMs();
@@ -9252,8 +9310,8 @@ function sopOpen() {
         else {
           const two = p.part === 'fruit' ? 'diameter' : 'width';
           p.measures = [...(p.measures || []).filter(m => m.by !== 'auto'),
-            { what: 'length', mm: r.length_mm, by: 'auto', scale: p.scale_source || 'card' },
-            { what: two, mm: r.width_mm, by: 'auto', scale: p.scale_source || 'card' }];
+            { what: 'length', mm: r.length_mm, by: 'auto', scale: p.scale_source || 'marker' },
+            { what: two, mm: r.width_mm, by: 'auto', scale: p.scale_source || 'marker' }];
           p.auto_view = r.view; p.auto_point = r.point; p.auto_state = 'done';
         }
       } catch (e) { console.warn('measuring', e); p.auto_state = 'failed'; }
@@ -9382,7 +9440,7 @@ function sopOpen() {
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['One zone a task.', 'Each zone has its own scouting task (Zone 1, 2, 3, 4.1, 4.2): its traps only, its photos, its OK. In Zone 4 write the table in a card code: 4.1B6, 4.2B6.'],
       ['Plant health.', 'Anything that looks wrong: the zone comes from the task; write the row and metres if you want (B6), choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
-      ['Growth.', 'Fruit or leaves with the scale card beside them, flat; tap the photo, then two points to measure. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
+      ['Growth.', 'Fruit or leaves with the scale card beside them (the black 5 cm square, flat, the same distance from the phone, the whole square in the photo): the phone finds it and outlines it in green; 📏 Measure, then tap the two ends — the size is read in the card\u2019s plane, so a tilted card still measures right. The size the phone takes by itself is a suggestion. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
       ['Each tab ends the same way.', 'At the bottom of Traps, Plant health and Growth: one button, red until you tap it green when that section is OK. Still red? Say why in the note under it. The tab shows a red dot or a green ✓.'],
       ['Review.', 'The Review tab shows everything captured — every photo with its counts, sizes, position, AI note and comment, and each section’s result. Tap a photo to zoom, a line to go back to it.'],
@@ -9628,12 +9686,17 @@ function sopOpen() {
     const s = fit();
     let a = null, b = null, saved = '';
     const idle = () => calibrating
-      ? 'No scale card: tap two marks on the ruler or tape, far apart — like 0 and 30'
+      ? 'No scale card found: tap two marks on the ruler or tape, far apart — like 0 and 30'
       : (saved || 'Tap the two ends of what you measure');
     const draw = () => {
       const g = cv.getContext('2d');
       g.drawImage(bmp, 0, 0, cv.width, cv.height);
       g.lineWidth = 3; const col = calibrating ? '#ff4fb0' : '#ffeb3b'; g.strokeStyle = col; g.fillStyle = col;
+      if (p.scale_quad && p.scale_source === 'marker') {            // the card the phone found, outlined in green
+        g.save(); g.strokeStyle = '#3ddc84'; g.lineWidth = 3; g.beginPath();
+        p.scale_quad.forEach(([x, y], i) => { const X = x * bmp.width * s, Y = y * bmp.height * s; i ? g.lineTo(X, Y) : g.moveTo(X, Y); });
+        g.closePath(); g.stroke(); g.restore();
+      }
       for (const q of [a, b].filter(Boolean)) { g.beginPath(); g.arc(q.x * s, q.y * s, 7, 0, 7); g.fill(); }
       if (a && b) { g.beginPath(); g.moveTo(a.x * s, a.y * s); g.lineTo(b.x * s, b.y * s); g.stroke(); }
     };
@@ -9656,11 +9719,11 @@ function sopOpen() {
         };
         bar.append(cm, el('span', 'fb-cam-end', 'cm'), set);
       } else if (!calibrating && a && b) {
-        const mm = Math.round(Math.hypot(b.x - a.x, b.y - a.y) / ppm);
+        const mm = Math.round(p.scale_source === 'ruler' ? Math.hypot(b.x - a.x, b.y - a.y) / ppm : mmBetween(p, a, b, bmp.width, bmp.height));
         hint.textContent = `${mm} mm — what is it?`;
         MEASURE_WHAT.forEach(([v, l]) => {
           const k = el('button', 'fb-btn', l); k.type = 'button';
-          k.onclick = () => { p.measures = [...(p.measures || []), { what: v, mm, scale: p.scale_source || 'card' }]; a = b = null;
+          k.onclick = () => { p.measures = [...(p.measures || []), { what: v, mm, scale: p.scale_source || 'marker' }]; a = b = null;
             saved = `Saved: ${l.toLowerCase()} ${mm} mm. Tap two more points, or Done.`; draw(); paintBar(); saveScDraft(); };
           bar.append(k);
         });
