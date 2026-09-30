@@ -1094,7 +1094,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.72';
+  const CURRENT_VERSION = '0.11.73';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1255,6 +1255,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.73', '2026-09-30', 'A task of another day', 'Opening a task meant for a later day first offers the same task of today (for the scouting, the same zone) and otherwise asks before starting it early. The evening of 29 Sept had scouted Zone 1 on the task of the 30th, so the 30th showed one zone done with no photo. What is recorded early now counts for the day it was done.'],
     ['0.11.72', '2026-09-30', 'Fewer insects than last time', 'A card keeps its insects, so a count clearly lower than the card had before (3 or more and 5 % fewer) is questioned straight after the photo: Retake, New card (every insect on it counts as new) or Keep (this count is right, the one before counted too many). Far fewer than before asks first whether the card is new. The insects a day are now counted against the highest count the card has had, so one photo that missed insects no longer makes the next one look like a jump.'],
     ['0.11.71', '2026-09-30', 'Rows counted and a light check', 'After each trap side photo the card says how many of its 7 printed rows were counted: 7 of 7 in green when the whole card was read, fewer in orange with a request to retake it with the whole card in the photo. The light is checked too: a card against the sky, glare on the card or a card in the dark asks for a retake with what to change. A dark photo is brightened and counted again, and says so. Checked on the 20 FarmLab trap photos (no false warnings) and on the same photos made dark, with glare and against the sky (all 60 flagged).'],
     ['0.11.70', '2026-09-30', 'A trap count you can trust', 'The insects on a trap are counted on the full photo and only on the grid: the printed header (logo, text, phone number, the holes) is no longer counted, insects on a grid line are, and the whole card to its edges. Checked on the 20 FarmLab trap photos: the header had added up to 35 false insects a side. A card cut by the edge of the photo is flagged: retake it with the whole card. The AI counts without being told the phone number, so it is a real second opinion.'],
@@ -7604,6 +7605,16 @@ function sopOpen() {
       if (hasChecklist) return startRun(t, sop);
       if (confirm(`${t.title} — mark it done after all?`)) await markDone(t);
       return;
+    }
+    // a task of a later day (0.11.73, owner 30 Sept 2026: the evening of the 29th scouted Zone 1 on the task of the 30th, so
+    // the 30th said "1 of 5 done" with no photo): offer today's same task first, then ask before starting it early
+    if (t.planned_date > todayISO()) {
+      const when = fmtDay(t.planned_date);
+      const same = groups.flatMap(g => g.hub ? g.zones : [g]).find(g => g.key !== t.key && g.planned_date === todayISO()
+        && g.sop_id === t.sop_id && (g.area || '') === (t.area || '') && (g.farm_id || '') === (t.farm_id || '') && !isClosed(g.status));
+      if (same && confirm(`This is the task for ${when}.\n\nToday's "${t.title}"${t.area ? ' · ' + t.area : ''} is still open — do today's instead?`))
+        return openTask(same.key, fromHub);
+      if (!confirm(`This task is for ${when}, not today.\n\nDo it now anyway? What you record counts for today in the report.`)) return;
     }
     if (!hasChecklist) { if (confirm(`${t.title} — mark it done?`)) await markDone(t); return; }
     return startRun(t, sop);
