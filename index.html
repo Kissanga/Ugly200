@@ -799,6 +799,7 @@
     .fb-timer.paused { background: var(--surface-offset); }
     .fb-timer-text { flex: 1; font-weight: 800; font-size: var(--text-base); font-variant-numeric: tabular-nums; }
     .fb-chip.late { background: var(--coral-soft); color: var(--coral); }
+    .fb-trap-side .fb-chip.fb-rows, .fb-trap-side .fb-chip.late { display: block; width: fit-content; max-width: 100%; margin: 6px 0 2px; white-space: normal; }
     .fb-ink { background: var(--ink); color: var(--ink-text); border-radius: var(--radius-lg);
       padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
     .fb-ink .fb-meta, .fb-ink small { color: var(--ink-muted); }
@@ -1088,7 +1089,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.70';
+  const CURRENT_VERSION = '0.11.71';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1249,6 +1250,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.71', '2026-09-30', 'Rows counted and a light check', 'After each trap side photo the card says how many of its 7 printed rows were counted: 7 of 7 in green when the whole card was read, fewer in orange with a request to retake it with the whole card in the photo. The light is checked too: a card against the sky, glare on the card or a card in the dark asks for a retake with what to change. A dark photo is brightened and counted again, and says so. Checked on the 20 FarmLab trap photos (no false warnings) and on the same photos made dark, with glare and against the sky (all 60 flagged).'],
     ['0.11.70', '2026-09-30', 'A trap count you can trust', 'The insects on a trap are counted on the full photo and only on the grid: the printed header (logo, text, phone number, the holes) is no longer counted, insects on a grid line are, and the whole card to its edges. Checked on the 20 FarmLab trap photos: the header had added up to 35 false insects a side. A card cut by the edge of the photo is flagged: retake it with the whole card. The AI counts without being told the phone number, so it is a real second opinion.'],
     ['0.11.69', '2026-09-30', 'A scale card the phone always finds', 'The scale card is a printed black and white marker with a 5 cm square (print it again from Pest and diseases, Scale card). The phone finds its four corners in any light and outlines it in green; two taps with Measure are read in the card plane, so a tilted card still measures right, and a card held very tilted is flagged. The magenta card is no longer used. The size the phone takes by itself stays a suggestion.'],
     ['0.11.68', '2026-09-30', 'The zones as standard task cards', 'Inside the Daily scouting card the five zones are the usual task cards: title, zone, minutes, inputs, state and timer, the family colour, swipe. The day line on top says how many are done and what is left.'],
@@ -8847,9 +8849,11 @@ function sopOpen() {
       try {
         const r = countInsects(big.canvas, { colour: side });
         Object.assign(S, { counts: r.counts, total: r.total, algo_total: r.total, algorithm: r.algorithm, confidence: r.confidence, corrected: false,
-                           rows_seen: r.rows_seen ?? null });
+                           rows_seen: r.rows_seen ?? null, light: r.light || null });
+        const lc = lightCheck(r);
         if (r.partial) S.check = `part of the card is outside the photo (${r.partial.replace('bottom', 'the bottom').replace('top', 'the top')}) — retake it with the whole card`;
-        else if (r.rows_seen != null && r.rows_seen < GRID_ROWS - 0.6) S.check = 'not all of the grid was read — retake it square-on, the whole card in the photo';
+        else if (lc) S.check = lc;
+        if (r.scale === 'none') S.rows_seen = null;
       } catch (e) { S.total = null; }
       big = null;
       return { S, side, canvas };
@@ -9094,8 +9098,11 @@ function sopOpen() {
         } catch (e) { showToast('AI note: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); ai.disabled = false; ai.textContent = '✦ AI note'; }
       };
       const acts = el('div', 'fb-actions'); acts.append(ai, again);
-      b.append(img, row, lv);
+      b.append(img);
+      const rw = rowsWords(S);
+      if (rw) b.append(el('span', 'fb-chip fb-rows ' + (rw.ok ? 'ok' : 'late'), rw.text));
       if (S.check) b.append(el('span', 'fb-chip late', S.check));
+      b.append(row, lv);
       b.append(acts, aiBox);
       paintSide();
       return b;
@@ -10575,6 +10582,18 @@ function sopOpen() {
     // 1. the card, on a small copy
     const sm = scaleCanvas(canvas, 800), sw = sm.width, sh = sm.height;
     const sd = sm.getContext('2d').getImageData(0, 0, sw, sh).data, sIs = cardOf(sd);
+    // how light the photo is: its 95th brightest pixel (0.11.71). A dark photo is brightened once and counted
+    // again — the colour test needs a lit card — and says so, because a dim photo hides the smallest insects
+    const hist = new Uint32Array(256); let hN = 0;
+    for (let i = 0; i < sd.length; i += 16) { hist[Math.min(255, Math.round(0.299 * sd[i] + 0.587 * sd[i + 1] + 0.114 * sd[i + 2]))]++; hN++; }
+    let p95 = 255; for (let v = 255, acc = 0; v >= 0; v--) { acc += hist[v]; if (acc >= 0.05 * hN) { p95 = v; break; } }
+    if (!trap.gain && p95 < 150) {
+      const gain = Math.min(4, 210 / Math.max(20, p95));
+      const r = countInsects(brighten(canvas, gain), { ...trap, gain });
+      r.light = { ...(r.light || {}), gain: Math.round(gain * 10) / 10, photo_p95: p95 };
+      return r;
+    }
+    empty.light = { photo_p95: p95, gain: trap.gain || null };
     const colN = new Uint32Array(sw), rowN = new Uint32Array(sh); let tot = 0;
     for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) if (sIs((y * sw + x) * 4)) { colN[x]++; rowN[y]++; tot++; }
     if (tot < 400) return empty;
@@ -10592,6 +10611,13 @@ function sopOpen() {
     };
     const [cx0, cx1] = longest(colN, 0.2), [cy0, cy1] = longest(rowN, 0.2);
     if (cx1 - cx0 < 20 || cy1 - cy0 < 20) return empty;
+    // the light round the card: a card held against the sky is lit from behind
+    let bgSum = 0, bgN = 0, bgBright = 0;
+    for (let y = 0; y < sh; y += 3) for (let x = 0; x < sw; x += 3) {
+      if (x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1) continue;
+      const i = (y * sw + x) * 4, l = 0.299 * sd[i] + 0.587 * sd[i + 1] + 0.114 * sd[i + 2];
+      bgSum += l; bgN++; if (l > 235) bgBright++;
+    }
     // 2. the working copy: ~12 px a mm from the card's short side (about 100 mm), never upscaled, at most 4000 px
     const estSm = Math.min(cx1 - cx0, cy1 - cy0) / 100;
     const want = Math.min(4000, Math.max(canvas.width, canvas.height), Math.round(Math.max(sw, sh) * 12 / Math.max(estSm, 0.01)));
@@ -10602,16 +10628,26 @@ function sopOpen() {
     const est = estSm * kk;                                 // px a mm, roughly (±30 %): tolerances only
     // 3. each row's own card edges (the first and last run of card colour 3 px long)
     const L = new Int32Array(BH).fill(-1), R = new Int32Array(BH).fill(-1);
-    let lumSum = 0, lumN = 0, cardRows = 0;
+    let lumSum = 0, lumN = 0, cardRows = 0, satSum = 0, sampN = 0, glareN = 0, hardN = 0;
     for (let y = 0; y < BH; y++) {
       let run = 0;
       for (let x = 0; x < BW; x++) { if (isC((y * BW + x) * 4)) { if (++run >= 3) { L[y] = x - 2; break; } } else run = 0; }
       run = 0;
       for (let x = BW - 1; x >= 0; x--) { if (isC((y * BW + x) * 4)) { if (++run >= 3) { R[y] = x + 2; break; } } else run = 0; }
       if (L[y] >= 0) cardRows++;
-      if (y % 7 === 0 && L[y] >= 0) for (let x = L[y]; x <= R[y]; x += 11) { const i = (y * BW + x) * 4; if (isC(i)) { lumSum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; lumN++; } }
+      if (y % 7 === 0 && L[y] >= 0) for (let x = L[y]; x <= R[y]; x += 11) {
+        const i = (y * BW + x) * 4, r = d[i], g = d[i + 1], b = d[i + 2], l = 0.299 * r + 0.587 * g + 0.114 * b;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        sampN++; if (l > 215 && mx - mn < 60) glareN++;              // washed white: the card's colour lost in a reflection
+        if (l > 238 && mx - mn < 30) hardN++;                        // blown white: nothing of the card left
+        if (isC(i)) { lumSum += l; satSum += mx - mn; lumN++; }
+      }
     }
     const cardLum = lumN ? lumSum / lumN : 200;
+    const light = { card_lum: Math.round(cardLum), card_sat: lumN ? Math.round(satSum / lumN) : null,
+                    glare_pct: sampN ? Math.round(glareN / sampN * 1000) / 10 : 0,
+                    blown_pct: sampN ? Math.round(hardN / sampN * 1000) / 10 : 0,
+                    bg_lum: bgN ? Math.round(bgSum / bgN) : null, bg_bright_pct: bgN ? Math.round(bgBright / bgN * 1000) / 10 : 0 };
     const darkLim = Math.min(125, 0.62 * cardLum);           // a dimmer photo: a dimmer insect
     const mask = new Uint8Array(BW * BH);
     for (let y = 0; y < BH; y++) {
@@ -10759,9 +10795,42 @@ function sopOpen() {
     const total = counts.tiny + counts.small + counts.medium + counts.large;
     const area = (cx1 - cx0) * (cy1 - cy0);
     return { counts, total, blobs, confidence: Math.round(Math.min(1, tot / Math.max(1, area)) * 100) / 100, algorithm: 'blobs-v3',
-             scale, px_per_mm: Math.round(ppm * 1000) / 1000, header_px: top, grid_by: gridBy, partial: edges.length ? edges.join(',') : null, rows_seen: rowsSeen, work_px: want, lines: [H.length, V.length] };
+             scale, px_per_mm: Math.round(ppm * 1000) / 1000, header_px: top, grid_by: gridBy, partial: edges.length ? edges.join(',') : null, rows_seen: rowsSeen, work_px: want, lines: [H.length, V.length], light };
   }
   window.fbCountInsects = countInsects;   // for support: count a canvas from the console
+  function brighten(canvas, gain) {
+    const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+    const x = c.getContext('2d');
+    if ('filter' in x) { x.filter = `brightness(${gain})`; x.drawImage(canvas, 0, 0); x.filter = 'none'; return c; }
+    x.drawImage(canvas, 0, 0);
+    const im = x.getImageData(0, 0, c.width, c.height), a = im.data;
+    for (let i = 0; i < a.length; i += 4) { a[i] = Math.min(255, a[i] * gain); a[i + 1] = Math.min(255, a[i + 1] * gain); a[i + 2] = Math.min(255, a[i + 2] * gain); }
+    x.putImageData(im, 0, 0);
+    return c;
+  }
+  // Is the light good enough to trust the count? (0.11.71, owner 30 Sept 2026.) Limits from FarmLab's 20 real
+  // photos (card 97–189 bright, glare ≤ 1 % but one sheen at 9.5 %, blown white ≤ 0.2 %, background blown ≤ 7 %) against the same
+  // photos darkened, with a reflection and held against the sky. Null = nothing to say.
+  function lightCheck(r) {
+    const l = r?.light || {};
+    if (r?.scale === 'none') return l.photo_p95 != null && l.photo_p95 < 60
+      ? 'too dark to find the card — more light, or step out of the shade'
+      : 'the card was not found — the whole card in the photo, square-on, close enough to fill most of it';
+    if (l.bg_bright_pct >= 25 && l.bg_lum - l.card_lum >= 60) return 'the card is against the light — turn so the light falls on the card, not behind it';
+    if (l.glare_pct >= 12 || l.blown_pct >= 3) return `glare on ${Math.round(l.glare_pct)} % of the card — tilt it a little or step aside from the light`;
+    if (l.card_lum != null && l.card_lum < 75) return 'the card is dark — more light, or turn it towards the light';
+    if (l.gain) return 'the photo was dark — counted after brightening it; with more light the smallest insects count better';
+    return null;
+  }
+  // How many of the card's printed rows were counted: all of them, or the card was not all in the photo
+  function rowsWords(S) {
+    if (S.total == null) return null;
+    if (S.rows_seen == null) return { ok: false, text: `grid not found — retake it square-on, the whole card in the photo` };
+    const all = S.rows_seen >= GRID_ROWS - 0.6;
+    const n = all ? GRID_ROWS : Math.max(0, Math.round(S.rows_seen));
+    return all ? { ok: true, text: `${n} of ${GRID_ROWS} rows counted ✓` }
+               : { ok: false, text: `${n} of ${GRID_ROWS} rows counted — the whole card must be in the photo: retake it` };
+  }
 
   // The key of an answer: the step's seq, or item|seq when the checklist runs
   // once per item (FarmBox 0078: a sump check answered for each sump).
