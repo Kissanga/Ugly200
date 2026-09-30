@@ -765,8 +765,6 @@
     .fb-sizecheck-img.picking { outline: 3px dashed var(--accent, #1bbfa8); cursor: crosshair; }
     .fb-sizecheck-sizes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
     .fb-sizecheck .hidden { display: none !important; }   /* the sheet sits on <body>, outside #viewFarmbox's rule */
-    .fb-autosend { top: auto; bottom: calc(env(safe-area-inset-bottom) + 12px); flex-wrap: wrap; }
-    .fb-autosend span { flex: 1 1 160px; }
     .fb-undo span { flex:1; }
     .fb-undo .fb-link { color: var(--accent); font-weight:800; }
     .fb-sheet { position:fixed; inset:0; z-index:1400; background: rgba(0,0,0,.45); display:flex; align-items:flex-end; }
@@ -1107,7 +1105,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.82';
+  const CURRENT_VERSION = '0.11.83';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1268,6 +1266,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.83', '2026-09-30', 'Scouting: sent when you press Finish', 'The zone no longer sends itself with a 5 second countdown once the minimum photos are in: take as many photos as you like and press Finish when the zone is done. The outline tool says it downloads about 40 MB only the very first time on the phone; after that it says Preparing, because it is read from the phone storage and uses no data.'],
     ['0.11.82', '2026-09-30', 'A second photo after measuring', 'After measuring a fruit the next photo could crash the app (Aw, Snap): the outline tool kept its model and memory after the measurement, and the camera then ran the phone out of memory. The tool now runs apart and is closed, giving all its memory back, when the Tap the fruit sheet closes, when the camera opens and when the app goes to the background. The screen also stays responsive while it works.'],
     ['0.11.81', '2026-09-30', 'A stronger outline tool', 'Tapping the fruit now outlines it with Segment Anything (SlimSAM), which keeps a fruit apart from the card or the fruit beside it. Not right? Tap a part that does not belong to take it out, or a missing part to add it; Bigger and Smaller switch between its outlines. It uses the graphics chip when the browser allows (a few seconds a photo), loads once (about 40 MB, Wi-Fi is best) and then works offline. The Right and Start again buttons no longer show before the first tap.'],
     ['0.11.80', '2026-09-30', 'Tap the fruit to measure it', 'After a growth photo with the scale card the photo opens with Tap the fruit: one tap on it and the phone outlines it and measures it against the card, then asks Is this the fruit? (Right, Tap again, Measure by hand). The phone no longer guesses the object by itself: on 276 open crop photos it missed it about half the time, from a tap it is right. Only the FarmBox card marker is read now: the old magenta cards and a tape measure had been taken for it. Red and orange fruit are no longer cut out of the outline as skin.'],
@@ -8706,7 +8705,7 @@ function sopOpen() {
       if (k === 'trap') return traps.length ? `${traps.filter(trapDone).length} of ${traps.length} traps` : n ? `${n} photographed` : 'every trap';
       return met(k) ? `${n} photo${n === 1 ? '' : 's'}` : `${n} of ${MIN_PHOTOS[k]} min`;
     };
-    let paintTabs = function () { paintTabsNow(); maybeAuto(); };
+    const paintTabs = function () { paintTabsNow(); };
     const paintTabsNow = function () {
       SC_TABS.forEach(([k, label]) => {
         const b = tabBtns[k];
@@ -8733,56 +8732,8 @@ function sopOpen() {
     };
     sc.goTab = k => { if (k !== 'review' && !shown(k)) sc.extra.add(k); sc.tab = k; paintTabs(); };
 
-    // ── the zone sends itself once it is complete (0.11.75, owner 30 Sept 2026: "send each scouting report automatically,
-    // zone by zone"): every section required today at its minimum (all dots green) → a bar "Zone complete — sending in
-    // 5 s · Keep scouting", then the zone's report goes like Finish. A section whose OK button was never tapped goes as OK
-    // (its inputs are there); one with a note saying what is wrong goes as Not OK. Keep scouting holds it until something
-    // is added or removed; Finish still works by hand; Edit what was sent adds more later.
-    let autoTimer = null, autoBar = null;
-    const autoSig = () => [...sc.photos.values()].map(p => p.ref + ':' + Object.keys(p.sides || {}).join('')).join(',') + '|' + [...sc.status.keys()].join(',') + (sc.noTraps ? '|none' : '');
-    const cancelAuto = () => { clearInterval(autoTimer); autoTimer = null; autoBar?.remove(); autoBar = null; };
-    const requiredToday = () => SC_TABS.map(([k]) => k).filter(k => need(k));
-    const zoneComplete = () => { const r = requiredToday(); return r.length > 0 && r.every(met) && (sc.photos.size + sc.status.size > 0 || !!sc.noTraps); };
-    sc.cancelAuto = cancelAuto;
-    function maybeAuto() {
-      if (run.edit || sc.autoSent || run.sc !== sc) return;
-      if (!zoneComplete()) { cancelAuto(); return; }
-      const sig = autoSig();
-      if (sc.autoHold === sig || autoTimer) return;
-      // not while the camera, a sheet or the viewer is open: the next repaint after it closes starts it
-      if (document.querySelector('.fb-cam, .fb-sheet, .fb-viewer, .fb-measure')) return;
-      let left = 5;
-      autoBar = el('div', 'fb-undo fb-autosend show');
-      const txt = el('span', null, '');
-      const keep = el('button', 'fb-btn', 'Keep scouting'); keep.type = 'button';
-      const now = el('button', 'fb-btn fb-btn-primary', 'Send now'); now.type = 'button';
-      const paintBar = () => { txt.textContent = `${zoneShortName()} complete — sending in ${left} s`; };
-      keep.onclick = () => { sc.autoHold = sig; cancelAuto(); };
-      now.onclick = () => { cancelAuto(); autoSend(sig); };
-      autoBar.append(txt, keep, now);
-      document.body.append(autoBar);
-      paintBar();
-      autoTimer = setInterval(() => {
-        if (run.sc !== sc || !zoneComplete() || autoSig() !== sig) { cancelAuto(); return; }
-        left -= 1;
-        if (left <= 0) { cancelAuto(); autoSend(sig); } else paintBar();
-      }, 1000);
-    }
-    const zoneShortName = () => { const z = run.task.positions.find(x => x.area_zone_id); return z?.label || 'Zone'; };
-    async function autoSend(sig) {
-      if (run.sc !== sc || sc.autoSent) return;
-      const R = run;
-      requiredToday().forEach(k => {
-        const v = sc.verdict[k] || (sc.verdict[k] = { ok: false, note: '' });
-        if (!v.ok && !String(v.note || '').trim()) v.ok = true;          // nothing said against it: OK
-      });
-      // a section left red on purpose (its note) goes as not OK without asking again
-      sc.sentRed = SC_TABS.map(([k]) => k).filter(k => sc.shown?.(k) && !sc.verdict[k]?.ok).join();
-      sc.autoSent = true;
-      paintTabs();
-      await finishScouting();
-      if (run === R && run.sc === sc) { sc.autoSent = false; sc.autoHold = sig; }   // stopped on something to fix: say it, send by hand
-    }
+    // (0.11.75's automatic send — a bar "Zone complete, sending in 5 s" once every minimum was met — was removed in 0.11.83,
+    // owner: "I prefer the user has time to take more than the minimum 2 photos": the zone goes when the person presses Finish.)
 
     // ── each section ends the same way (0.11.63): one red → green button, and a note that says why when it stays red ──
     const verdicts = {};
@@ -9539,8 +9490,10 @@ function sopOpen() {
         sizes.textContent = '';
         if (done && !picking) (p.measures || []).filter(m => m.by === 'auto').forEach(m =>
           sizes.append(el('span', 'fb-chip ok', `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm`)));
-        hint.textContent = note || (busy ? (!samReady ? `Loading the outline tool (the first time only, about 40 MB — Wi-Fi is best) and outlining the ${what}…`
+        // the 40 MB only the first time on this phone (0.11.83: it was said at every launch, the flag lived in memory only)
+        hint.textContent = note || (busy ? (!samKnown() ? `Loading the outline tool (the first time only, about 40 MB) and outlining the ${what}…`
             : samDevice === 'wasm' ? `Outlining the ${what}… this phone's browser has no graphics acceleration, so the first outline of a photo can take up to a minute.`
+            : !samReady ? `Preparing the outline tool and outlining the ${what}…`
             : `Outlining the ${what}…`)
           : picking ? `Tap the middle of the ${what} on the photo — the phone outlines it and measures it against the card.`
           : st ? `Yellow edge = what was measured. Not right? Tap a part that does not belong to take it out, or a missing part to add it.`
@@ -10088,6 +10041,9 @@ function sopOpen() {
     };
   }
   let samW = null, samSeq = 0, samIdle = null, samCur = null, samReady = false, samWasm = false, samDevice = null;
+  // loaded once on this phone: its files are then read from the phone's storage (kept across updates)
+  const samKnown = () => { try { return localStorage.getItem('fb_sam_ok') === '1'; } catch (e) { return false; } };
+  try { samDevice = localStorage.getItem('fb_sam_dev') || null; } catch (e) { /* private mode */ }
   const samPend = new Map(), samState = new WeakMap();
   function samWorker() {
     if (!samW) {
@@ -10114,6 +10070,7 @@ function sopOpen() {
   function samRelease(err) {
     clearTimeout(samIdle); samIdle = null;
     if (samW) { samW.terminate(); samW = null; }
+    samReady = false;                                               // the next photo prepares the tool again (from storage)
     const e = err || new Error('released');
     samPend.forEach(r => r.rej(e)); samPend.clear();
     samCur = null;
@@ -10134,6 +10091,7 @@ function sopOpen() {
       const copy = new Uint8ClampedArray(rgba);
       const r = await samCall({ type: 'encode', key: cur.key, rgba: copy.buffer, w: c.width, h: c.height }, [copy.buffer]);
       samReady = true; samDevice = r.device; if (r.device === 'wasm') samWasm = true;
+      try { localStorage.setItem('fb_sam_ok', '1'); localStorage.setItem('fb_sam_dev', r.device); } catch (e) { /* private mode */ }
       return { c, rgba, key: cur.key };
     })();
     cur.job.catch(() => { if (samCur === cur) samCur = null; });
