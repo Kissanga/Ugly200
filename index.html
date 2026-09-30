@@ -764,6 +764,7 @@
     .fb-sizecheck-img { display: block; width: 100%; max-height: 62vh; object-fit: contain; border-radius: var(--radius-md); background: #000; margin: 8px 0; }
     .fb-sizecheck-img.picking { outline: 3px dashed var(--accent, #1bbfa8); cursor: crosshair; }
     .fb-sizecheck-sizes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+    .fb-sizecheck .hidden { display: none !important; }   /* the sheet sits on <body>, outside #viewFarmbox's rule */
     .fb-autosend { top: auto; bottom: calc(env(safe-area-inset-bottom) + 12px); flex-wrap: wrap; }
     .fb-autosend span { flex: 1 1 160px; }
     .fb-undo span { flex:1; }
@@ -1106,7 +1107,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.80';
+  const CURRENT_VERSION = '0.11.81';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1169,7 +1170,7 @@
       }
       if (window.caches) {
         const keys = await caches.keys();
-        await Promise.all(keys.filter(k => k !== 'fb-lib-v1').map(k => caches.delete(k)));   // the text reader and the measuring model stay
+        await Promise.all(keys.filter(k => k !== 'fb-lib-v1' && k !== 'transformers-cache').map(k => caches.delete(k)));   // the text reader and the measuring models stay
       }
     } catch (_) {}
     sessionStorage.setItem('nb_update_target', newVersion);
@@ -1267,6 +1268,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.81', '2026-09-30', 'A stronger outline tool', 'Tapping the fruit now outlines it with Segment Anything (SlimSAM), which keeps a fruit apart from the card or the fruit beside it. Not right? Tap a part that does not belong to take it out, or a missing part to add it; Bigger and Smaller switch between its outlines. It uses the graphics chip when the browser allows (a few seconds a photo), loads once (about 40 MB, Wi-Fi is best) and then works offline. The Right and Start again buttons no longer show before the first tap.'],
     ['0.11.80', '2026-09-30', 'Tap the fruit to measure it', 'After a growth photo with the scale card the photo opens with Tap the fruit: one tap on it and the phone outlines it and measures it against the card, then asks Is this the fruit? (Right, Tap again, Measure by hand). The phone no longer guesses the object by itself: on 276 open crop photos it missed it about half the time, from a tap it is right. Only the FarmBox card marker is read now: the old magenta cards and a tape measure had been taken for it. Red and orange fruit are no longer cut out of the outline as skin.'],
     ['0.11.79', '2026-09-30', 'Is this the fruit?', 'After a growth photo with the scale card the phone draws what it measured: the edge in yellow, the length in blue and the width in pink, labelled in mm, the card framed, and asks Is this the fruit? Yes confirms the sizes, Tap the fruit measures what you tap, Measure by hand opens the ruler. Salads, leafy greens and herbs are measured as a head seen from above (diameter and width); Head is chosen by itself where the zone grows them and can be changed on the photo.'],
     ['0.11.78', '2026-09-30', 'Closed today on top', 'On the day list, the folded Closed today line now sits at the top of today, under its heading, and the open work follows it.'],
@@ -9423,10 +9425,11 @@ function sopOpen() {
               ms.append(est);
             }
             if (p.auto_state === 'busy') ms.append(el('span', 'fb-chip', '📐 measuring…'));
-            else if (p.auto_state === 'none') ms.append(el('span', 'fb-chip late', '📐 could not outline it — tap the photo, then Re-measure'));
-            else if (p.auto_state === 'failed') ms.append(el('span', 'fb-chip late', '📐 the measuring tool needs a connection the first time'));
-            else if (p.px_per_mm && p.section === 'growth' && p.auto_state !== 'done') {
-              const t = el('button', 'fb-btn fb-btn-primary', '📐 Tap the fruit to measure'); t.type = 'button';
+            else if (p.px_per_mm && p.full instanceof Blob && p.auto_state !== 'done') {
+              const t = el('button', 'fb-btn fb-btn-primary',
+                p.auto_state === 'none' ? '📐 Nothing outlined — tap it again'
+                : p.auto_state === 'failed' ? '📐 The outline tool needs a connection the first time — try again'
+                : p.section === 'growth' ? '📐 Tap the fruit to measure' : '📐 Tap the leaf or fruit to measure'); t.type = 'button';
               t.onclick = () => sc.sizeCheck(p);
               ms.append(t);
             }
@@ -9451,7 +9454,7 @@ function sopOpen() {
           { title: p.section === 'growth' ? 'Growth photo' : 'Plant photo', measure: p.full instanceof Blob ? () => measurePhoto(p, paintMs) : null,
             scale: p.px_per_mm ? scaleWords(p) : null,
             outline: p.auto_view || null,
-            pick: p.full instanceof Blob && p.px_per_mm ? pt => sc.autoSize(p, pt) : null });
+            pick: p.full instanceof Blob && p.px_per_mm ? pt => sc.autoSize(p, [[pt[0], pt[1], 1]]) : null });
         card._paintMs = () => paintMs();
         note.placeholder = p.section === 'growth' ? 'Comment (optional)' : 'Comment: what you see (optional)';
         const more = el('button', 'fb-link', '⋯'); more.type = 'button'; more.setAttribute('aria-label', 'More');
@@ -9485,19 +9488,19 @@ function sopOpen() {
     const zoneName = new Map(task.positions.filter(x => x.area_zone_id).map(x => [x.area_zone_id, x.label || x.zone_name]));
     sc.open = new Set(); sc.menu = null;
     // the phone measures the fruit or leaf (0.11.53): at the centre by itself, or where the person tapped in the viewer
-    sc.autoSize = async (p, point) => {
+    sc.autoSize = async (p, point, want) => {
       if (!(p.full instanceof Blob) || !p.px_per_mm) return;
       const card = document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`);
       p.auto_state = 'busy'; card?._paintMs?.();
       try {
-        const r = await autoMeasure(p, point || null);
+        const r = await autoMeasure(p, point || null, want);
         if (!r) p.auto_state = 'none';
         else {
           const [one, two] = r.part === 'fruit' ? ['length', 'diameter'] : r.part === 'head' ? ['diameter', 'width'] : ['length', 'width'];
           p.measures = [...(p.measures || []).filter(m => m.by !== 'auto'),
             { what: one, mm: r.length_mm, by: 'auto', scale: p.scale_source || 'marker' },
             { what: two, mm: r.width_mm, by: 'auto', scale: p.scale_source || 'marker' }];
-          p.auto_view = r.view; p.auto_point = r.point; p.auto_state = 'done'; p.size_ok = false;
+          p.auto_view = r.view; p.auto_point = r.point; p.auto_algo = r.algorithm; p.auto_state = 'done'; p.size_ok = false;
         }
       } catch (e) { console.warn('measuring', e); p.auto_state = 'failed'; }
       card?._paintMs?.(); saveScDraft();
@@ -9511,6 +9514,7 @@ function sopOpen() {
       while (document.querySelector('.fb-cam, .fb-viewer, .fb-measure, .fb-sheet')) await new Promise(r => setTimeout(r, 500));
       if (run.sc !== sc || !sc.photos.has(p.ref) || sizeSheetOpen || !p.px_per_mm) return;
       sizeSheetOpen = true;
+      samPrepare(p).catch(() => {});                                   // encoded while the person looks for the fruit
       const what = p.part === 'head' ? 'head' : p.part === 'leaf' ? 'leaf' : 'fruit';
       const sheet = el('div', 'fb-sheet');
       const box = el('div', 'fb-sheet-card fb-sizecheck');
@@ -9519,45 +9523,71 @@ function sopOpen() {
       const sizes = el('div', 'fb-sizecheck-sizes');
       const hint = el('div', 'fb-meta', '');
       const yes = el('button', 'fb-btn fb-btn-primary', '✓ Right'); yes.type = 'button';
-      const again = el('button', 'fb-btn', 'Tap again'); again.type = 'button';
+      const bigger = el('button', 'fb-btn', '⊕ Bigger'); bigger.type = 'button';
+      const smaller = el('button', 'fb-btn', '⊖ Smaller'); smaller.type = 'button';
+      const again = el('button', 'fb-btn', 'Start again'); again.type = 'button';
       const hand = el('button', 'fb-btn', '📏 Measure by hand'); hand.type = 'button';
       const later = el('button', 'fb-link', 'Not now'); later.type = 'button';
       const measured = () => p.auto_state === 'done' && !!p.auto_view;
-      let picking = !measured(), busy = false;
+      let picking = !measured(), busy = false, note = '';
+      let pts = (samState.get(p)?.points || []).slice();
       const paint = () => {
-        const done = measured();
+        const done = measured(), st = samState.get(p);
         title.textContent = busy ? 'Measuring…' : picking ? `Tap the ${what}` : `Is this the ${what}?`;
-        img.src = (done && !(picking && !p.auto_view)) ? p.auto_view : (p.thumb || p.auto_view || '');
+        img.src = (done && !picking) ? p.auto_view : (p.thumb || p.auto_view || '');
         sizes.textContent = '';
         if (done && !picking) (p.measures || []).filter(m => m.by === 'auto').forEach(m =>
           sizes.append(el('span', 'fb-chip ok', `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm`)));
-        hint.textContent = busy ? `Outlining the ${what}…`
+        hint.textContent = note || (busy ? (!samReady ? `Loading the outline tool (the first time only, about 40 MB — Wi-Fi is best) and outlining the ${what}…`
+            : samDevice === 'wasm' ? `Outlining the ${what}… this phone's browser has no graphics acceleration, so the first outline of a photo can take up to a minute.`
+            : `Outlining the ${what}…`)
           : picking ? `Tap the middle of the ${what} on the photo — the phone outlines it and measures it against the card.`
-          : `Yellow edge = what was measured. Blue = ${what === 'head' ? 'diameter' : 'length'}, pink = ${what === 'fruit' ? 'diameter' : 'width'}.`;
-        img.classList.toggle('picking', picking && !busy);
+          : st ? `Yellow edge = what was measured. Not right? Tap a part that does not belong to take it out, or a missing part to add it.`
+          : `Yellow edge = what was measured. Blue = ${what === 'head' ? 'diameter' : 'length'}, pink = ${what === 'fruit' ? 'diameter' : 'width'}.`);
+        note = '';
+        img.classList.toggle('picking', !busy);
         yes.classList.toggle('hidden', picking || !done);
         again.classList.toggle('hidden', picking || !done);
-        [yes, again, hand].forEach(b => { b.disabled = busy; });
+        bigger.classList.toggle('hidden', picking || !done || !st?.bigger);
+        smaller.classList.toggle('hidden', picking || !done || !st?.smaller);
+        adj.classList.toggle('hidden', bigger.classList.contains('hidden') && smaller.classList.contains('hidden'));
+        [yes, bigger, smaller, again, hand].forEach(b => { b.disabled = busy; });
       };
       const close = () => { sheet.remove(); sizeSheetOpen = false; document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?._paintMs?.(); saveScDraft(); };
+      const measure = async want => {
+        busy = true; paint();
+        let st = await sc.autoSize(p, pts.length ? pts : null, want);
+        if (st !== 'done' && pts.length > 1) {                           // the last tap took everything away: undo it
+          pts.pop(); st = await sc.autoSize(p, pts);
+          note = 'That tap took the whole outline away — tap nearer the edge of the part to take out.';
+        } else if (st !== 'done') { pts = []; note = `Nothing outlined there — tap the middle of the ${what}, or measure by hand.`; }
+        busy = false; picking = st !== 'done';
+        paint();
+      };
       yes.onclick = () => { p.size_ok = true; (p.measures || []).forEach(m => { if (m.by === 'auto') m.confirmed = true; }); close(); };
-      again.onclick = () => { picking = true; paint(); };
+      bigger.onclick = () => measure(1);
+      smaller.onclick = () => measure(-1);
+      again.onclick = () => { pts = []; samState.delete(p); picking = true; paint(); };
       hand.onclick = () => { close(); measurePhoto(p, () => document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?._paintMs?.()); };
       later.onclick = close;
       img.onclick = async e => {
-        if (!picking || busy) return;
+        if (busy) return;
         // the picture inside the frame (object-fit: contain leaves bars on two sides)
         const rc = img.getBoundingClientRect(), ar = (img.naturalWidth || 1) / (img.naturalHeight || 1);
         const dw = Math.min(rc.width, rc.height * ar), dh = dw / ar, ox = rc.left + (rc.width - dw) / 2, oy = rc.top + (rc.height - dh) / 2;
         const fx = (e.clientX - ox) / dw, fy = (e.clientY - oy) / dh;
         if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;             // a tap on the bars
-        busy = true; paint();
-        const st = await sc.autoSize(p, [fx, fy]);
-        busy = false; picking = st !== 'done';
-        paint();
-        if (st !== 'done') hint.textContent = `Nothing outlined there — tap the middle of the ${what}, or measure by hand.`;
+        const st = samState.get(p);
+        if (picking || !st) pts = [[fx, fy, 1]];                          // the object
+        else {                                                             // inside the outline: not this; outside: this too
+          const inside = st.m[Math.round(fy * (st.h - 1)) * st.w + Math.round(fx * (st.w - 1))];
+          pts = [...pts, [fx, fy, inside ? 0 : 1]];
+          if (pts.length > 10) pts = [pts[0], ...pts.slice(-9)];
+        }
+        await measure(0);
       };
-      box.append(title, img, sizes, hint);
+      const adj = el('div', 'fb-actions'); adj.append(smaller, bigger);
+      box.append(title, img, sizes, adj, hint);
       const acts = el('div', 'fb-actions'); acts.append(yes, again, hand);
       box.append(acts, later);
       sheet.append(box);
@@ -9989,7 +10019,127 @@ function sopOpen() {
     const shape = part === 'head' ? (s.L / Math.max(1, s.W) <= 2.2 ? 1 : 0.4) : 1;
     return Math.pow(sol, 4) * near * clear * sizeOK * shape * (0.6 + 0.4 * Math.min(1, rel / 2));
   }
-  function autoMeasure(p, point) {
+  // ── SAM (0.11.81, owner 30 Sept 2026: "it is not working … a more reliable and strong library"; what failed: "Wrong
+  // outline"). A tap is a prompt for Segment Anything — SlimSAM (Xenova/slimsam-77-uniform, quantised) through
+  // transformers.js, loaded once and kept offline in transformers.js's own cache. The photo is encoded once, while the
+  // person looks for the fruit; each tap is then fast. SAM answers three outlines (a part, the object, the object and what
+  // is round it) with its own score: the best is drawn, Bigger / Smaller switch. More taps refine it — outside the outline
+  // adds that part, inside it takes that part out — which MagicTouch (one point, one answer) could not do. MagicTouch
+  // stays as the fallback when SAM cannot load (offline before its first use).
+  const TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+  const SAM_ID = 'Xenova/slimsam-77-uniform';
+  // the graphics chip when the browser has WebGPU (half precision when it can: ~5 s a photo on a laptop's Iris Xe), the
+  // processor otherwise (~30 s on the same laptop — slow, but it works)
+  let samP = null, samReady = false, samWasm = false, samDevice = null;
+  function samModel() {
+    if (!samP) samP = (async () => {
+      const tf = await import(TF_URL);
+      tf.env.allowLocalModels = false;
+      let tries = [['q8', 'wasm']];
+      if (!samWasm && navigator.gpu) {
+        const ad = await navigator.gpu.requestAdapter().catch(() => null);
+        if (ad) tries = [[ad.features.has('shader-f16') ? 'fp16' : 'fp32', 'webgpu'], ...tries];
+      }
+      let model = null, device = null, err = null;
+      for (const [dtype, dev] of tries) {
+        try { model = await tf.SamModel.from_pretrained(SAM_ID, { dtype, device: dev }); device = dev; break; } catch (e) { err = e; }
+      }
+      if (!model) throw err;
+      const processor = await tf.AutoProcessor.from_pretrained(SAM_ID);
+      samReady = true; samDevice = device;
+      return { tf, model, processor, device };
+    })().catch(e => { samP = null; throw e; });
+    return samP;
+  }
+  const samPrepared = new WeakMap(), samState = new WeakMap();
+  // the photo at 1024 px, and SAM's encoding of it: once per photo (keyed by the photo itself, so a retake starts again)
+  function samPrepare(p) {
+    let job = samPrepared.get(p.full);
+    if (!job) {
+      job = (async () => {
+        const S = await samModel();
+        const k = Math.min(1, 1024 / Math.max(p.full_w || 1024, p.full_h || p.full_w || 1024));
+        const bmp = await createImageBitmap(p.full, { resizeWidth: Math.max(1, Math.round((p.full_w || 1024) * k)), resizeQuality: 'medium' });
+        const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+        const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0); bmp.close?.();
+        const rgba = cx.getImageData(0, 0, c.width, c.height).data;
+        const inputs = await S.processor(new S.tf.RawImage(new Uint8ClampedArray(rgba), c.width, c.height, 4).rgb());
+        let emb;
+        try { emb = await S.model.get_image_embeddings(inputs); }
+        catch (e) {                                                       // the graphics chip refused: the processor
+          if (S.device !== 'webgpu') throw e;
+          samWasm = true; samP = null; samReady = false;
+          const S2 = await samModel(); emb = await S2.model.get_image_embeddings(inputs);
+          return { S: S2, c, rgba, inputs, emb };
+        }
+        return { S, c, rgba, inputs, emb };
+      })();
+      job.catch(() => samPrepared.delete(p.full));
+      samPrepared.set(p.full, job);
+    }
+    return job;
+  }
+  // points [[x, y, 1 = the object | 0 = not the object]] as fractions of the photo; want +1 / −1 = the next bigger /
+  // smaller of SAM's outlines than the one on screen
+  function samMeasure(p, points, want) {
+    const job = sizeBusy.then(async () => {
+      if (!(p.full instanceof Blob) || !p.px_per_mm) return null;
+      const { S, c, rgba, inputs, emb } = await samPrepare(p);
+      const W = c.width, H = c.height;
+      const [rh, rw] = inputs.reshaped_input_sizes[0];
+      const input_points = new S.tf.Tensor('float32', Float32Array.from(points.flatMap(([x, y]) => [x * rw, y * rh])), [1, 1, points.length, 2]);
+      const input_labels = new S.tf.Tensor('int64', BigInt64Array.from(points.map(q => BigInt(q[2]))), [1, 1, points.length]);
+      const out = await S.model({ ...emb, input_points, input_labels });
+      const masks = await S.processor.post_process_masks(out.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes);
+      const t = masks[0], n = t.dims[1], mh = t.dims[2], mw = t.dims[3], data = t.data, scores = Array.from(out.iou_scores.data);
+      if (mw !== W || mh !== H) throw new Error(`mask ${mw}×${mh} for a ${W}×${H} photo`);
+      const ppm = p.px_per_mm * (W / (p.full_w || W));
+      const part = p.part === 'leaf' ? 'leaf' : p.part === 'head' ? 'head' : 'fruit';
+      const card = p.scale_quad && p.scale_source === 'marker' ? cardMask(rgba, W, H, p.scale_quad) : null;
+      const pos = points.filter(q => q[2] === 1), seedOf = q => Math.round(q[1] * (H - 1)) * W + Math.round(q[0] * (W - 1));
+      const cands = [];
+      for (let i = 0; i < n; i++) {
+        // the card is never the object; the piece joined to a tap of the object
+        const m = new Uint8Array(W * H), o = i * W * H;
+        for (let q = 0; q < W * H; q++) if (data[o + q] && !(card && card.m[q])) m[q] = 1;
+        const seed = pos.map(seedOf).find(x => m[x]);
+        if (seed == null) continue;
+        const piece = maskPiece(m, W, H, seed);
+        const sz = outlineSize2(piece, W, H, part);
+        if (sz) cands.push({ i, m: piece, s: sz, score: scores[i], npx: sz.npx, seed });
+      }
+      if (!cands.length) { samState.delete(p); return null; }
+      const key = JSON.stringify(points), prev = samState.get(p);
+      // SAM's own score, an outline running off the photo (canopy, table) less likely
+      const rank = x => x.score * (x.s.edge > 0.02 ? 0.6 : 1);
+      let pick = cands.reduce((b, x) => rank(x) > rank(b) ? x : b);
+      if (want && prev && prev.key === key) {
+        const bigger = cands.filter(x => x.npx > prev.npx * 1.08).sort((a, b) => a.npx - b.npx)[0];
+        const smaller = cands.filter(x => x.npx < prev.npx / 1.08).sort((a, b) => b.npx - a.npx)[0];
+        pick = (want > 0 ? bigger : smaller) || cands.find(x => x.i === prev.i) || pick;
+      }
+      let { m, s: sz } = pick;
+      if (part === 'fruit' || part === 'head') {                      // a stalk or a leaf joined by a thin bridge
+        const m2 = openAt(m, W, H, pick.seed, Math.round(sz.W * (part === 'head' ? 0.12 : 0.2)));
+        const s2 = m2 !== m && outlineSize2(m2, W, H, part);
+        if (s2 && s2.npx > 0.85 * sz.npx) { m = m2; sz = s2; }
+      }
+      samState.set(p, { points, key, i: pick.i, npx: pick.npx, m, w: W, h: H,
+        bigger: cands.some(x => x.npx > pick.npx * 1.08), smaller: cands.some(x => x.npx < pick.npx / 1.08) });
+      return sizeResult(c, { w: W, h: H }, m, sz, part, ppm, card, [pos[0][0], pos[0][1]], points, 'size-sam');
+    });
+    sizeBusy = job.catch(() => {});
+    return job;
+  }
+  function autoMeasure(p, point, want) {
+    if (point && Array.isArray(point[0])) return samMeasure(p, point, want).catch(e => {
+      console.warn('SAM', e); samState.delete(p);
+      const q = point.find(x => x[2] === 1) || point[0];
+      return mtMeasure(p, [q[0], q[1]]);
+    });
+    return mtMeasure(p, point);
+  }
+  function mtMeasure(p, point) {
     const job = sizeBusy.then(async () => {
       if (!(p.full instanceof Blob) || !p.px_per_mm) return null;
       const seg = await segmenter();
@@ -10041,7 +10191,13 @@ function sopOpen() {
 
       }
       if (!best) return null;
-      const { s, m, r } = best;
+      return sizeResult(c, best.r, best.m, best.s, part, ppm, card, [best.x, best.y], null, 'size-v2');
+    });
+    sizeBusy = job.catch(() => {});
+    return job;
+  }
+  // the contour on a copy of the photo; the taps too (green = the object, red = not the object)
+  function sizeResult(c, r, m, s, part, ppm, card, point, points, algorithm) {
       // the contour on a copy of the photo (0.11.79): the object's edge drawn, its length and its width lines labelled in
       // millimetres, the card framed — so what was measured shows at a glance
       const v = document.createElement('canvas'); const vk = Math.min(1, 900 / Math.max(c.width, c.height));
@@ -10085,11 +10241,14 @@ function sopOpen() {
       label(`${lw[0]} ${Lmm} mm`, ln[0][0], ln[0][1] - 12);
       label(`${lw[1]} ${Wmm} mm`, mid[0] + ty0 * half + 50, mid[1] - tx0 * half);
       if (card) { vx.strokeStyle = '#00e676'; vx.lineWidth = 2; card.polys.forEach(pl => { vx.beginPath(); pl.forEach(([px, py], i) => i ? vx.lineTo(px * vk, py * vk) : vx.moveTo(px * vk, py * vk)); vx.closePath(); vx.stroke(); }); }
-      return { length_mm: Math.round(s.L / (ppm * r.w / c.width)), width_mm: Math.round(s.W / (ppm * r.w / c.width)), point: [best.x, best.y],
-               view: v.toDataURL('image/jpeg', 0.78), algorithm: 'size-v2', part };
-    });
-    sizeBusy = job.catch(() => {});
-    return job;
+      (points || []).forEach(([px, py, lab]) => {
+        const x = px * v.width, y = py * v.height;
+        vx.beginPath(); vx.arc(x, y, 11, 0, 2 * Math.PI); vx.fillStyle = lab ? '#00c853' : '#ff1744'; vx.fill();
+        vx.lineWidth = 3; vx.strokeStyle = '#fff'; vx.stroke();
+        vx.fillStyle = '#fff'; vx.fillRect(x - 6, y - 1.5, 12, 3); if (lab) vx.fillRect(x - 1.5, y - 6, 3, 12);
+      });
+      return { length_mm: Math.round(s.L / (ppm * r.w / c.width)), width_mm: Math.round(s.W / (ppm * r.w / c.width)), point,
+               view: v.toDataURL('image/jpeg', 0.78), algorithm, part };
   }
 
   // ── a photo full screen (0.11.52): pinch, wheel or double-tap to zoom (to 8×), drag to move ──

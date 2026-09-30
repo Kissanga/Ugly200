@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v168';
+const CACHE_NAME = 'ugly200-v169';
 // the scouting's text reader (Tesseract.js from jsDelivr, 0.11.40): kept across releases for offline days
 const LIB_CACHE = 'fb-lib-v1';
 const STATIC_ASSETS = [
@@ -32,7 +32,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME && k !== LIB_CACHE).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE_NAME && k !== LIB_CACHE && k !== 'transformers-cache').map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
