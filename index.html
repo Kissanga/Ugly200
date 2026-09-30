@@ -799,6 +799,11 @@
     .fb-timer.paused { background: var(--surface-offset); }
     .fb-timer-text { flex: 1; font-weight: 800; font-size: var(--text-base); font-variant-numeric: tabular-nums; }
     .fb-chip.late { background: var(--coral-soft); color: var(--coral); }
+    .fb-sc-few { margin: 6px 0; padding: 8px 10px; border-radius: var(--radius-sm, 8px); background: var(--coral-soft); color: var(--coral); font-size: 0.86rem; }
+    .fb-sc-few .fb-sc-few-t { margin-bottom: 6px; }
+    .fb-sc-few .fb-actions { margin: 0; flex-wrap: wrap; }
+    .fb-sc-few.done { background: var(--success-bg); color: var(--success); }
+    .fb-sc-few.done .fb-btn { padding: 2px 10px; min-height: 0; }
     .fb-trap-side .fb-chip.fb-rows, .fb-trap-side .fb-chip.late { display: block; width: fit-content; max-width: 100%; margin: 6px 0 2px; white-space: normal; }
     .fb-ink { background: var(--ink); color: var(--ink-text); border-radius: var(--radius-lg);
       padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
@@ -1089,7 +1094,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.71';
+  const CURRENT_VERSION = '0.11.72';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1250,6 +1255,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.72', '2026-09-30', 'Fewer insects than last time', 'A card keeps its insects, so a count clearly lower than the card had before (3 or more and 5 % fewer) is questioned straight after the photo: Retake, New card (every insect on it counts as new) or Keep (this count is right, the one before counted too many). Far fewer than before asks first whether the card is new. The insects a day are now counted against the highest count the card has had, so one photo that missed insects no longer makes the next one look like a jump.'],
     ['0.11.71', '2026-09-30', 'Rows counted and a light check', 'After each trap side photo the card says how many of its 7 printed rows were counted: 7 of 7 in green when the whole card was read, fewer in orange with a request to retake it with the whole card in the photo. The light is checked too: a card against the sky, glare on the card or a card in the dark asks for a retake with what to change. A dark photo is brightened and counted again, and says so. Checked on the 20 FarmLab trap photos (no false warnings) and on the same photos made dark, with glare and against the sky (all 60 flagged).'],
     ['0.11.70', '2026-09-30', 'A trap count you can trust', 'The insects on a trap are counted on the full photo and only on the grid: the printed header (logo, text, phone number, the holes) is no longer counted, insects on a grid line are, and the whole card to its edges. Checked on the 20 FarmLab trap photos: the header had added up to 35 false insects a side. A card cut by the edge of the photo is flagged: retake it with the whole card. The AI counts without being told the phone number, so it is a real second opinion.'],
     ['0.11.69', '2026-09-30', 'A scale card the phone always finds', 'The scale card is a printed black and white marker with a 5 cm square (print it again from Pest and diseases, Scale card). The phone finds its four corners in any light and outlines it in green; two taps with Measure are read in the card plane, so a tilted card still measures right, and a card held very tilted is flagged. The magenta card is no longer used. The size the phone takes by itself stays a suggestion.'],
@@ -8555,10 +8561,10 @@ function sopOpen() {
         const ref = 'tr-' + r.trap_id;
         const p = sc.photos.get(ref) || { ref, section: 'trap', trap_id: r.trap_id, code: shortCode(r.code), code_text: shortCode(r.code), code_ok: true,
                                           taken_at: r.read_at, replaced: false, note: '', code_read: r.code_read, code_source: r.code_source || 'list', gps: r.gps, sides: {} };
-        p.replaced = p.replaced || !!r.replaced; p.note = p.note || r.notes || '';
+        p.replaced = p.replaced || !!r.replaced; p.new_card = p.new_card || !!r.new_card; p.note = p.note || r.notes || '';
         p.sides[r.side === 'blue' ? 'blue' : 'yellow'] = { thumb: r.photo_data, photo_path: r.photo_path, total: r.total, algo_total: r.algo_total,
           counts: r.counts, corrected: r.corrected, algorithm: r.algorithm, confidence: r.confidence, ai: r.ai, taken_at: r.read_at,
-          week_rate: r.week_rate, orig_total: r.total };
+          week_rate: r.week_rate, orig_total: r.total, lower_ok: !!r.lower_ok };
         sc.photos.set(ref, p);
       });
       (detail.observations || []).forEach(o => sc.photos.set(o.client_ref, { ref: o.client_ref, section: o.section || 'health', taken_at: o.taken_at,
@@ -8974,10 +8980,23 @@ function sopOpen() {
       const last = t?.last_sides?.[k];
       if (!last || last.total == null || !last.at || Date.now() - new Date(last.at) > 21 * 864e5) return null;
       const since = new Date(last.at), days = (new Date(S.taken_at) - since) / 864e5;
-      const fresh = last.replaced ? S.total
-        : (S.total < last.total && last.total - S.total >= 3 && S.total < last.total * 0.6) ? S.total
-        : Math.max(0, S.total - last.total);
+      const high = last.high ?? last.total;          // the card's highest count since it went up (FarmBox 0176)
+      const fresh = last.replaced || p.new_card ? S.total
+        : S.lower_ok && S.total < high ? 0
+        : (S.total < high && high - S.total >= 3 && S.total < high * 0.6) ? S.total
+        : Math.max(0, S.total - high);
       return days >= 0.5 ? { rate: Math.round(fresh / days * 10) / 10, fresh, since } : null;
+    }
+    // A card keeps its insects: a count clearly lower than the card's high (3 or more and 5 % fewer) means this
+    // photo missed some, the one before counted too many, or the card is new (0.11.72, owner 30 Sept 2026)
+    function fewerOf(p, k) {
+      const S = p.sides?.[k];
+      if (!S || S.total == null || run.edit) return null;
+      const last = trapById.get(p.trap_id)?.last_sides?.[k];
+      if (!last || last.total == null || !last.at || last.replaced || Date.now() - new Date(last.at) > 21 * 864e5) return null;
+      const high = last.high ?? last.total;
+      if (!(high - S.total >= 3 && S.total < high * 0.95)) return null;
+      return { high, at: new Date(last.at), hard: S.total < high * 0.6 };
     }
     const toneOf = rate => rate >= th.over ? 'red' : rate >= th.watch ? 'orange' : 'green';
     function trapLevel(p) {
@@ -9074,7 +9093,7 @@ function sopOpen() {
       const lv = el('div', 'fb-meta');
       const paintSide = () => { const r = sideRate(p, k); lv.textContent = r ? `${r.rate} a day${r.fresh != null ? ` · +${r.fresh}` : ''}` : 'count starts'; };
       num.oninput = () => { const n = parseInt(num.value, 10); S.total = isNaN(n) ? null : n; S.corrected = S.algo_total != null && S.total !== S.algo_total;
-                            said.textContent = S.algo_total != null ? (S.corrected ? `phone said ${S.algo_total}` : 'counted') : ''; paintSide(); paintTotal(); saveScDraft(); };
+                            said.textContent = S.algo_total != null ? (S.corrected ? `phone said ${S.algo_total}` : 'counted') : ''; paintSide(); paintFew(); paintTotal(); saveScDraft(); };
       const row = el('div', 'fb-actions'); row.append(num, said);
       const aiBox = el('div', 'fb-sc-ai' + (S.ai ? '' : ' hidden'), S.ai ? aiText({ section: 'trap', ai: S.ai }) : '');
       const again = el('button', 'fb-link', 'Retake'); again.type = 'button'; again.onclick = () => addSide(p, k, card);
@@ -9102,9 +9121,38 @@ function sopOpen() {
       const rw = rowsWords(S);
       if (rw) b.append(el('span', 'fb-chip fb-rows ' + (rw.ok ? 'ok' : 'late'), rw.text));
       if (S.check) b.append(el('span', 'fb-chip late', S.check));
-      b.append(row, lv);
+      const few = el('div', 'fb-sc-few');
+      const paintFew = () => {
+        few.textContent = ''; few.className = 'fb-sc-few';
+        const btn = (t, fn, primary) => { const x = el('button', 'fb-btn' + (primary ? ' fb-btn-primary' : ''), t); x.type = 'button'; x.onclick = fn; return x; };
+        const redraw = () => { saveScDraft(); card._paintTrap?.(); paintCoverage(); };
+        if (p.new_card) {
+          few.classList.add('done');
+          few.append(el('span', '', 'New card: every insect on it counts as new. '), btn('Undo', () => { p.new_card = false; redraw(); }));
+          return;
+        }
+        if (S.lower_ok) {
+          few.classList.add('done');
+          few.append(el('span', '', `Kept ${S.total}: the count before was too high, the card goes on from ${S.total}. `), btn('Undo', () => { S.lower_ok = false; redraw(); }));
+          return;
+        }
+        const f = fewerOf(p, k);
+        if (!f) { few.classList.add('hidden'); return; }
+        const day = f.at.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        few.append(el('div', 'fb-sc-few-t', f.hard
+          ? `${S.total} insects — far fewer than the ${f.high} this card already had (last photo ${day}). Is it a new card?`
+          : `${S.total} insects — fewer than the ${f.high} this card already had (last photo ${day}). A card keeps its insects: retake it with the whole card, square-on, in good light — or say what happened.`));
+        const acts = el('div', 'fb-actions');
+        const retake = btn('Retake', () => addSide(p, k, card), !f.hard);
+        const fresh = btn('New card', () => { p.new_card = true; redraw(); }, f.hard);
+        const keep = btn(`Keep ${S.total}`, () => { S.lower_ok = true; redraw(); });
+        keep.title = 'This count is right: the one before counted too many';
+        if (f.hard) acts.append(fresh, retake, keep); else acts.append(retake, fresh, keep);
+        few.append(acts);
+      };
+      b.append(few, row, lv);
       b.append(acts, aiBox);
-      paintSide();
+      paintSide(); paintFew();
       return b;
     }
     const codeWords = p => {
@@ -9888,7 +9936,8 @@ function sopOpen() {
       traps: trapsP.flatMap(p => SIDES.map(([k]) => [k, p.sides[k]]).map(([k, S]) => ({ trap_id: p.trap_id, code: p.code, side: k, colour: k,
         photo_data: S.thumb || null, photo_path: S.photo_path || null,
         counts: S.counts || {}, total: S.total ?? 0, algo_total: S.algo_total ?? null, algorithm: S.algorithm || null, confidence: S.confidence ?? null,
-        corrected: !!S.corrected, replaced: !!p.replaced, notes: p.note || null, read_at: S.taken_at || p.taken_at, code_read: p.code_read || null,
+        corrected: !!S.corrected, replaced: !!p.replaced, new_card: !!p.new_card, lower_ok: !!S.lower_ok,
+        notes: p.note || null, read_at: S.taken_at || p.taken_at, code_read: p.code_read || null,
         code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: null, ai: S.ai || null }))),
       observations: plants.map(p => ({ client_ref: p.ref, section: p.section, part: p.part || 'other', crop_id: p.crop_id || null,
         zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, taken_at: p.taken_at,
