@@ -754,6 +754,9 @@
     .fb-undo.show { display:flex; animation: fb-undo-in .18s ease-out; }
     @keyframes fb-undo-in { from { transform: translateY(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
     @media (prefers-reduced-motion: reduce) { .fb-undo.show { animation: none; } }
+    .fb-auto-view { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md);
+      background: var(--surface); color: var(--text-muted); font: inherit; font-size: var(--text-xs); text-align: left; cursor: pointer; }
+    .fb-auto-view img { height: 72px; width: auto; border-radius: 6px; flex: none; }
     .fb-autosend { top: auto; bottom: calc(env(safe-area-inset-bottom) + 12px); flex-wrap: wrap; }
     .fb-autosend span { flex: 1 1 160px; }
     .fb-undo span { flex:1; }
@@ -1096,7 +1099,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.75';
+  const CURRENT_VERSION = '0.11.76';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1257,6 +1260,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.76', '2026-09-30', 'Sizes measured on the fruit, not the card', 'On the photos of 30 Sept the scale was read right but the phone outlined the white card, not the cucumber (186 x 115 mm instead of about 363 x 41). Now the card is found from its marker and left out, the phone looks for the fruit round the card and keeps the outline that is long, solid and near the card, and a curved fruit is measured along its curve. The card shows the outline it measured: not the fruit, tap it and tap the fruit. The measuring runs on the phone graphics chip, about a second a photo.'],
     ['0.11.75', '2026-09-30', 'A zone sends itself when complete', 'As soon as every section required today has its minimum (all tab dots green), a bar says the zone is complete and sends its report after 5 seconds, then goes back to the zones; no Finish needed. Keep scouting holds it until something is added or removed, Send now sends at once. A section whose OK button was never tapped goes as OK, one with a note saying what is wrong goes as not OK. More can still be added afterwards with Edit what was sent.'],
     ['0.11.74', '2026-09-30', 'Scouting: what is still required', 'Each scouting tab has a dot: red while it is required today and its minimum is not reached, green when it is or when it is not required today (not today). The minimum: every trap of the zone on both sides (or marked taken down or out of reach), 2 plant-health photos and 2 growth photos; more is always welcome. The tab says how far: 2 of 4 traps, 1 of 2 min. Finish asks once about a section under its minimum. How the scouting works is folded under the title instead of the question-mark tab.'],
     ['0.11.73', '2026-09-30', 'A task of another day', 'Opening a task meant for a later day first offers the same task of today (for the scouting, the same zone) and otherwise asks before starting it early. The evening of 29 Sept had scouted Zone 1 on the task of the 30th, so the 30th showed one zone done with no photo. What is recorded early now counts for the day it was done.'],
@@ -9377,6 +9381,14 @@ function sopOpen() {
             if (p.auto_state === 'busy') ms.append(el('span', 'fb-chip', '📐 measuring…'));
             else if (p.auto_state === 'none') ms.append(el('span', 'fb-chip late', '📐 could not outline it — tap the photo, then Re-measure'));
             else if (p.auto_state === 'failed') ms.append(el('span', 'fb-chip late', '📐 the measuring tool needs a connection the first time'));
+            else if (p.auto_state === 'done' && p.auto_view) {
+              // what the phone measured, on the photo (0.11.76): a wrong object shows at once
+              const b = el('button', 'fb-auto-view'); b.type = 'button';
+              const im = el('img'); im.src = p.auto_view; im.alt = 'What the phone measured';
+              b.append(im, el('span', null, 'Measured the outlined object. Not the fruit? Tap here, then 📐 Re-measure and tap the fruit.'));
+              b.onclick = () => img.onclick();
+              ms.append(b);
+            }
             const aiSizes = (p.ai?.measures || []).map(m => `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1].toLowerCase()} ≈ ${m.mm} mm`);
             if (aiSizes.length) ms.append(el('span', 'fb-chip ok', '✦ ' + aiSizes.join(' · ')));
           };
@@ -9576,6 +9588,7 @@ function sopOpen() {
 
   // ── the size of the fruit or leaf, measured on the phone (0.11.53, owner: "yes automatic estimation … not library
   // available?") ── Google's MediaPipe interactive segmenter (MagicTouch, free, on the phone, cached for offline days)
+  // (0.11.76: sizing v2 below — the card found and left out, points round it, the centre line's length.) It
   // outlines the object at a point: the photo's centre, where the fruit or leaf is framed, then points round it when the
   // outline runs edge to edge (a tape, a stem, the whole canopy). The outline keeps only its piece at the point and, when
   // it holds two clearly different hues (a cucumber and the yellow tape beside it), the larger one. Length = its main
@@ -9589,7 +9602,10 @@ function sopOpen() {
     if (!segP) segP = (async () => {
       const mp = await import(MP_URL + '/vision_bundle.mjs');
       const files = await mp.FilesetResolver.forVisionTasks(MP_URL + '/wasm');
-      return mp.InteractiveSegmenter.createFromOptions(files, { baseOptions: { modelAssetPath: SEG_MODEL }, outputCategoryMask: true, outputConfidenceMasks: false });
+      const opts = d => ({ baseOptions: { modelAssetPath: SEG_MODEL, ...(d ? { delegate: d } : {}) }, outputCategoryMask: true, outputConfidenceMasks: false });
+      // the graphics chip first (0.11.76: ~100 ms an outline instead of ~900 on the processor), the processor if it fails
+      try { return await mp.InteractiveSegmenter.createFromOptions(files, opts('GPU')); }
+      catch (e) { return mp.InteractiveSegmenter.createFromOptions(files, opts(null)); }
     })().catch(e => { segP = null; throw e; });
     return segP;
   }
@@ -9639,28 +9655,159 @@ function sopOpen() {
     }
     return m;
   }
-  // length along the main axis, thickness across; whether it runs edge to edge
-  function outlineSize(m, w, h, part) {
-    let n = 0, sx = 0, sy = 0; const t = { l: 0, r: 0, t: 0, b: 0 }, xs = [], ys = [];
+  let sizeBusy = Promise.resolve();
+  // ── sizing v2 (0.11.76, owner 30 Sept 2026: "the scale algorithm is not good … very low errors") ──
+  // On FarmLab's photos of 30 Sept the marker was found right (7.9 and 11.0 px a mm) but the object measured was the
+  // white card itself: the photo's centre falls between the fruit and the card held beside it. Now:
+  //   1. the card is found from the marker outwards (the white paper round it) and never counts as the object;
+  //   2. candidate points round the card (the card lies beside the fruit or leaf), on green, not on sky or paper;
+  //      each is outlined and the outlines are scored — a fruit is long, solid, near the card and clear of the photo's
+  //      edges; a leaf is large and solid — the best is kept;
+  //   3. the length is the centre line's length (a curved cucumber measured along its curve, not its chord), the
+  //      thickness is measured across that line.
+  // A tap still measures another object; the outline is on the photo so a wrong one shows at once.
+  // the card, from the marker: the printed card is 95 × 68 mm with its 50 mm marker 7 mm from the top left, so its outline
+  // is the marker's plane mapped back onto the photo (a tilted card included); a card printed beside it (above, below,
+  // left or right on the sheet, often cut out together) counts too when that area of the photo is white paper
+  function cardMask(rgba, w, h, quad) {
+    const img = quad.map(([x, y]) => [x * w, y * h]);
+    const hm = homography([[0, 0], [MARKER_MM, 0], [MARKER_MM, MARKER_MM], [0, MARKER_MM]], img);
+    if (!hm) return null;
+    const toImg = (u, v) => applyH(hm, u, v);
+    const polyOf = (u0, v0, u1, v1) => [toImg(u0, v0), toImg(u1, v0), toImg(u1, v1), toImg(u0, v1)];
+    const inPoly = (poly, x, y) => { let sgn = 0; for (let i = 0; i < 4; i++) { const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % 4];
+      const c = (bx - ax) * (y - ay) - (by - ay) * (x - ax); if (c !== 0) { const s1 = Math.sign(c); if (sgn && s1 !== sgn) return false; sgn = s1; } } return true; };
+    const lum = i => 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+    const own = polyOf(-7, -7, 88, 61);
+    // the paper's own brightness: the card's text area (right of the marker)
+    const ref = []; for (let u = 62; u <= 84; u += 4) for (let v = 5; v <= 50; v += 5) { const [x, y] = toImg(u, v); const px = Math.round(x), py = Math.round(y);
+      if (px >= 0 && py >= 0 && px < w && py < h) ref.push(lum((py * w + px) * 4)); }
+    ref.sort((p, q) => p - q); const white = ref.length ? ref[Math.floor(ref.length * 0.7)] : 200;
+    const paper = (px, py) => { if (px < 0 || py < 0 || px >= w || py >= h) return false; const i = (py * w + px) * 4, mx = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]), mn = Math.min(rgba[i], rgba[i + 1], rgba[i + 2]);
+      return lum(i) > 0.72 * white && mx - mn < 45; };
+    const polys = [own], near = [[0, -68], [0, 68], [-95, 0], [95, 0]].map(([du, dv]) => polyOf(-7 + du, -7 + dv, 88 + du, 61 + dv));
+    const pts = [own, ...near].flat();
+    const x0 = Math.max(0, Math.floor(Math.min(...pts.map(p => p[0])))), x1 = Math.min(w - 1, Math.ceil(Math.max(...pts.map(p => p[0]))));
+    const y0 = Math.max(0, Math.floor(Math.min(...pts.map(p => p[1])))), y1 = Math.min(h - 1, Math.ceil(Math.max(...pts.map(p => p[1]))));
+    const m = new Uint8Array(w * h), st = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (inPoly(own, x + 0.5, y + 0.5)) { m[y * w + x] = 1; st.push(y * w + x); }
+    // the paper joined to the card, only where another card may lie (so a fruit in front of that place stays whole)
+    const may = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && near.some(p => inPoly(p, x + 0.5, y + 0.5));
+    while (st.length) {
+      const p = st.pop(), px = p % w, py = (p - px) / w;
+      for (const [qx, qy] of [[px - 1, py], [px + 1, py], [px, py - 1], [px, py + 1]]) {
+        if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
+        const q = qy * w + qx;
+        if (m[q] || !paper(qx, qy) || !may(qx, qy)) continue;
+        m[q] = 1; st.push(q);
+      }
+    }
+    const side = Math.hypot(img[1][0] - img[0][0], img[1][1] - img[0][1]);
+    let bx0 = w, bx1 = 0, by0 = h, by1 = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (m[y * w + x]) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y; }
+    return { m, w, h, x0: bx0, x1: bx1, y0: by0, y1: by1, side, polys, paper };
+  }
+  // points worth outlining: on green, off the card, the sky and the edges, nearest the card first, spread out
+  function sizeCandidates(rgba, w, h, card) {
+    const out = [];
+    for (let gy = 1; gy < 14; gy++) for (let gx = 1; gx < 10; gx++) {
+      const x = gx / 10, y = gy / 14, px = Math.round(x * (w - 1)), py = Math.round(y * (h - 1));
+      if (card && card.m[py * w + px]) continue;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) {
+        const qx = Math.min(w - 1, Math.max(0, px + dx)), qy = Math.min(h - 1, Math.max(0, py + dy)), i = (qy * w + qx) * 4;
+        r += rgba[i]; g += rgba[i + 1]; b += rgba[i + 2]; n++;
+      }
+      r /= n; g /= n; b /= n;
+      if (!(g > r + 6 && g > b - 10 && g < 215)) continue;            // green, not sky, paper or a hand
+      const d = card ? Math.hypot(px - (card.x0 + card.x1) / 2, py - (card.y0 + card.y1) / 2) / Math.max(w, h)
+                     : Math.hypot(x - 0.5, y - 0.5);
+      out.push({ x, y, d, dark: 255 - g });
+    }
+    out.sort((a, b) => a.d - b.d);
+    const pick = [];
+    for (const c of out) { if (pick.every(p => Math.hypot(p.x - c.x, p.y - c.y) > 0.09)) pick.push(c); if (pick.length >= 10) break; }
+    return pick.map(c => [c.x, c.y]);
+  }
+  // a square box filter on a mask: erode (all in the box) or dilate (any in the box), radius r
+  function boxMask(m, w, h, r, erode) {
+    const I = new Int32Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += m[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; } }
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const xa = Math.max(0, x - r), xb = Math.min(w - 1, x + r), ya = Math.max(0, y - r), yb = Math.min(h - 1, y + r);
+      const sum = I[(yb + 1) * (w + 1) + xb + 1] - I[ya * (w + 1) + xb + 1] - I[(yb + 1) * (w + 1) + xa] + I[ya * (w + 1) + xa];
+      out[y * w + x] = erode ? (sum === (xb - xa + 1) * (yb - ya + 1) ? 1 : 0) : (sum > 0 ? 1 : 0);
+    }
+    return out;
+  }
+  // the fruit's piece without the leaves it touches: open (erode, keep the seed's piece, dilate) by a fifth of its width
+  function openAt(m, w, h, seed, r) {
+    if (r < 2) return m;
+    // only the object's box (and a margin) is filtered: the rest of the photo is empty
+    let x0 = w, x1 = -1, y0 = h, y1 = -1;
+    for (let i = 0; i < m.length; i++) if (m[i]) { const x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return m;
+    x0 = Math.max(0, x0 - r - 1); y0 = Math.max(0, y0 - r - 1); x1 = Math.min(w - 1, x1 + r + 1); y1 = Math.min(h - 1, y1 + r + 1);
+    const cw = x1 - x0 + 1, ch = y1 - y0 + 1, cm = new Uint8Array(cw * ch);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) cm[y * cw + x] = m[(y + y0) * w + x + x0];
+    const e = boxMask(cm, cw, ch, r, true);
+    const sx = seed % w - x0, sy = (seed - seed % w) / w - y0;
+    let s0 = sy * cw + sx;
+    if (!(sx >= 0 && sy >= 0 && sx < cw && sy < ch) || !e[s0]) { let best = -1, bd = 1e9;
+      for (let y = Math.max(0, sy - 3 * r); y <= Math.min(ch - 1, sy + 3 * r); y++) for (let x = Math.max(0, sx - 3 * r); x <= Math.min(cw - 1, sx + 3 * r); x++)
+        if (e[y * cw + x]) { const d = (x - sx) ** 2 + (y - sy) ** 2; if (d < bd) { bd = d; best = y * cw + x; } }
+      if (best < 0) return m; s0 = best; }
+    const piece = maskPiece(e, cw, ch, s0), d = boxMask(piece, cw, ch, r, false);
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const i = (y + y0) * w + x + x0; out[i] = d[y * cw + x] & m[i]; }
+    return out;
+  }
+  // the centre line's length and the thickness across it; area, fill, whether it runs to the photo's edges
+  function outlineSize2(m, w, h, part) {
+    let n = 0, sx = 0, sy = 0, edge = 0; const xs = [], ys = [];
     for (let i = 0; i < m.length; i++) if (m[i]) { const px = i % w, py = (i - px) / w; n++; sx += px; sy += py; xs.push(px); ys.push(py);
-      if (px === 0) t.l++; if (px === w - 1) t.r++; if (py === 0) t.t++; if (py === h - 1) t.b++; }
-    if (!n) return null;
+      if (px < 2 || py < 2 || px > w - 3 || py > h - 3) edge++; }
+    if (n < 50) return null;
     const mx = sx / n, my = sy / n; let cxx = 0, cyy = 0, cxy = 0;
     for (let i = 0; i < n; i += 3) { const dx = xs[i] - mx, dy = ys[i] - my; cxx += dx * dx; cyy += dy * dy; cxy += dx * dy; }
     const ang = 0.5 * Math.atan2(2 * cxy, cxx - cyy), ux = Math.cos(ang), uy = Math.sin(ang);
     const along = new Float32Array(n), across = new Float32Array(n);
     for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; along[i] = dx * ux + dy * uy; across[i] = -dx * uy + dy * ux; }
-    const sorted = Float32Array.from(along).sort(), lo = sorted[Math.floor(n * 0.003)], hi = sorted[Math.min(n - 1, Math.floor(n * 0.997))], L = hi - lo;
-    const B = 40, mins = new Array(B).fill(Infinity), maxs = new Array(B).fill(-Infinity);
-    for (let i = 0; i < n; i++) { const b = Math.min(B - 1, Math.max(0, Math.floor((along[i] - lo) / L * B))); if (across[i] < mins[b]) mins[b] = across[i]; if (across[i] > maxs[b]) maxs[b] = across[i]; }
-    const widths = mins.map((v, b) => maxs[b] - v).filter(x => isFinite(x) && x > 0);
+    const srt = Float32Array.from(along).sort(), lo = srt[Math.floor(n * 0.002)], hi = srt[Math.min(n - 1, Math.floor(n * 0.998))], L = Math.max(1, hi - lo);
+    const B = 60, mins = new Array(B).fill(Infinity), maxs = new Array(B).fill(-Infinity), cnt = new Array(B).fill(0);
+    for (let i = 0; i < n; i++) { const b = Math.min(B - 1, Math.max(0, Math.floor((along[i] - lo) / L * B))); cnt[b]++;
+      if (across[i] < mins[b]) mins[b] = across[i]; if (across[i] > maxs[b]) maxs[b] = across[i]; }
+    const step = L / B, valid = cnt.map(c => c > 0);
+    const cen = mins.map((v, b) => valid[b] ? (v + maxs[b]) / 2 : null);
+    // smooth the centre line over 5 slices
+    const sm = cen.map((v, b) => { if (v == null) return null; let s = 0, k = 0; for (let j = b - 2; j <= b + 2; j++) if (cen[j] != null) { s += cen[j]; k++; } return s / k; });
+    let arc = 0, prev = null; const line = [];
+    for (let b = 0; b < B; b++) {
+      if (sm[b] == null) continue;
+      const a = lo + (b + 0.5) * step;
+      if (prev) arc += Math.hypot(a - prev[0], sm[b] - prev[1]);
+      prev = [a, sm[b]]; line.push([mx + ux * a - uy * sm[b], my + uy * a + ux * sm[b]]);
+    }
+    arc += step;                                                        // the half slices at both ends
+    const widths = [];
+    for (let b = 0; b < B; b++) {
+      if (!valid[b]) continue;
+      const b0 = Math.max(0, b - 2), b1 = Math.min(B - 1, b + 2);
+      const slope = sm[b1] != null && sm[b0] != null ? (sm[b1] - sm[b0]) / ((b1 - b0) * step || 1) : 0;
+      widths.push((maxs[b] - mins[b]) * Math.cos(Math.atan(slope)));
+    }
     const mid = widths.slice(Math.floor(widths.length * 0.2), Math.ceil(widths.length * 0.8)).sort((p, q) => p - q);
-    const W = part === 'fruit' ? mid[Math.floor(mid.length / 2)] : [...widths].sort((p, q) => p - q)[Math.floor(widths.length * 0.9)];
-    const e = k => t[k] > 3, spans = (e('l') && e('r')) || (e('t') && e('b'));
-    return { L, W, area: n / (w * h), spans, mx, my, ux, uy, lo, hi };
+    const W = part === 'leaf' ? [...widths].sort((p, q) => p - q)[Math.floor(widths.length * 0.9)] : mid[Math.floor(mid.length * 0.4)];
+    return { L: arc, chord: L, W, area: n / (w * h), npx: n, fill: n / Math.max(1, arc * W), edge: edge / n, mx, my, line };
   }
-  let sizeBusy = Promise.resolve();
-  // the measurement of one photo: {length_mm, width_mm, point, view (a small picture of the outline)} or null
+  function sizeScore(s, card, w, h, part) {
+    const near = card ? 1 / (1 + Math.max(0, Math.hypot(s.mx - (card.x0 + card.x1) / 2, s.my - (card.y0 + card.y1) / 2) - card.side * 1.5) / (card.side * 4)) : 1;
+    const clear = s.edge > 0.02 ? 0.3 : 1;                           // an outline running off the photo is a canopy or a stem
+    if (part === 'leaf') return Math.sqrt(s.area) * Math.min(1, s.fill) * near * clear;
+    const elong = Math.min(14, s.L / Math.max(1, s.W));
+    return elong * Math.min(1, s.fill) * near * clear * (s.area > 0.01 ? 1 : 0.6);
+  }
   function autoMeasure(p, point) {
     const job = sizeBusy.then(async () => {
       if (!(p.full instanceof Blob) || !p.px_per_mm) return null;
@@ -9671,24 +9818,62 @@ function sopOpen() {
       const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0); bmp.close?.();
       const rgba = cx.getImageData(0, 0, c.width, c.height).data;
       const ppm = p.px_per_mm * (c.width / (p.full_w || c.width));
-      const pts = point ? [point] : [[0.5, 0.5], [0.5, 0.4], [0.5, 0.6], [0.42, 0.5], [0.58, 0.5], [0.42, 0.4], [0.58, 0.6]];
+      const part = p.part === 'leaf' ? 'leaf' : 'fruit';
+      const card = p.scale_quad && p.scale_source === 'marker' ? cardMask(rgba, c.width, c.height, p.scale_quad) : null;
+      const pts = point ? [point] : sizeCandidates(rgba, c.width, c.height, card);
+      let best = null; const seen = [];
       for (const [x, y] of pts) {
+        // a point inside an object already outlined is the same object: not outlined again
+        if (seen.some(o => o.m[Math.round(y * (o.h - 1)) * o.w + Math.round(x * (o.w - 1))])) continue;
         const r = await segmentAt(seg, c, x, y);
-        const m = cleanMask(r, x, y, rgba), s = outlineSize(m, r.w, r.h, p.part);
-        if (!s || s.area < 0.004 || s.area > 0.6 || (!point && s.spans)) continue;
-        // the outline on a small copy: the object tinted, its long axis drawn
-        const v = document.createElement('canvas'); const vk = Math.min(1, 640 / Math.max(c.width, c.height));
-        v.width = Math.round(c.width * vk); v.height = Math.round(c.height * vk);
-        const vx = v.getContext('2d'); vx.drawImage(c, 0, 0, v.width, v.height);
-        const tint = document.createElement('canvas'); tint.width = r.w; tint.height = r.h;
-        const tx = tint.getContext('2d'), im = tx.createImageData(r.w, r.h);
-        for (let i = 0; i < m.length; i++) if (m[i]) { im.data[i * 4] = 255; im.data[i * 4 + 1] = 0; im.data[i * 4 + 2] = 200; im.data[i * 4 + 3] = 110; }
-        tx.putImageData(im, 0, 0); vx.drawImage(tint, 0, 0, v.width, v.height);
-        vx.strokeStyle = '#ffeb3b'; vx.lineWidth = 3; vx.beginPath();
-        vx.moveTo((s.mx + s.ux * s.lo) * vk, (s.my + s.uy * s.lo) * vk); vx.lineTo((s.mx + s.ux * s.hi) * vk, (s.my + s.uy * s.hi) * vk); vx.stroke();
-        return { length_mm: Math.round(s.L / ppm), width_mm: Math.round(s.W / ppm), point: [x, y], view: v.toDataURL('image/jpeg', 0.7) };
+        let m = cleanMask(r, x, y, rgba);
+        // the card and the hands are never part of the object
+        { const kx = c.width / r.w, ky = c.height / r.h;
+          for (let yy = 0; yy < r.h; yy++) for (let xx = 0; xx < r.w; xx++) {
+            const q = yy * r.w + xx; if (!m[q]) continue;
+            const cx0 = Math.min(c.width - 1, Math.round(xx * kx)), cy0 = Math.min(c.height - 1, Math.round(yy * ky));
+            if (card && card.m[cy0 * c.width + cx0]) { m[q] = 0; continue; }
+            const i = (cy0 * c.width + cx0) * 4, R = rgba[i], G = rgba[i + 1], Bl = rgba[i + 2];
+            if (R > G + 18 && R > Bl + 25) { m[q] = 0; continue; }       // skin, a flower
+            if (card && card.paper(cx0, cy0)) m[q] = 0;                     // any white paper
+          }
+          const seedP = Math.round(y * (r.h - 1)) * r.w + Math.round(x * (r.w - 1));
+          if (!m[seedP]) continue;                                          // the point fell on the card or a hand
+          m = maskPiece(m, r.w, r.h, seedP);
+        }
+        let s = outlineSize2(m, r.w, r.h, part);
+        if (!s) continue;
+        if (part === 'fruit') {                                         // cut the bridges into the leaves behind it
+          const seedP = Math.round(y * (r.h - 1)) * r.w + Math.round(x * (r.w - 1));
+          const m2 = openAt(m, r.w, r.h, seedP, Math.round(s.W * 0.2));
+          const s2 = m2 !== m && outlineSize2(m2, r.w, r.h, part);
+          if (s2 && s2.npx > 0.4 * s.npx) { m = m2; s = s2; }
+        }
+        if (!point && (s.area < 0.003 || s.area > 0.5)) continue;
+        const pmm = ppm * r.w / c.width;
+        if (!point && part === 'fruit' && (s.W / pmm < 8 || s.L / Math.max(1, s.W) > 25)) continue;   // a stem, a string
+        const score = point ? 1 : sizeScore(s, card && { x0: card.x0 * r.w / c.width, x1: card.x1 * r.w / c.width, y0: card.y0 * r.h / c.height, y1: card.y1 * r.h / c.height, side: card.side * r.w / c.width }, r.w, r.h, part);
+        seen.push({ m, w: r.w, h: r.h });
+        if (!best || score > best.score) best = { score, s, m, r, x, y };
+        if (point) break;
+
       }
-      return null;
+      if (!best) return null;
+      const { s, m, r } = best;
+      // the outline on a small copy: the object tinted, its centre line drawn, the card framed
+      const v = document.createElement('canvas'); const vk = Math.min(1, 640 / Math.max(c.width, c.height));
+      v.width = Math.round(c.width * vk); v.height = Math.round(c.height * vk);
+      const vx = v.getContext('2d'); vx.drawImage(c, 0, 0, v.width, v.height);
+      const tint = document.createElement('canvas'); tint.width = r.w; tint.height = r.h;
+      const tx = tint.getContext('2d'), im = tx.createImageData(r.w, r.h);
+      for (let i = 0; i < m.length; i++) if (m[i]) { im.data[i * 4] = 255; im.data[i * 4 + 1] = 0; im.data[i * 4 + 2] = 200; im.data[i * 4 + 3] = 110; }
+      tx.putImageData(im, 0, 0); vx.drawImage(tint, 0, 0, v.width, v.height);
+      const kv = v.width / r.w;
+      vx.strokeStyle = '#ffeb3b'; vx.lineWidth = 3; vx.beginPath();
+      s.line.forEach(([lx, ly], i) => i ? vx.lineTo(lx * kv, ly * kv) : vx.moveTo(lx * kv, ly * kv)); vx.stroke();
+      if (card) { vx.strokeStyle = '#00e676'; vx.lineWidth = 2; card.polys.forEach(pl => { vx.beginPath(); pl.forEach(([px, py], i) => i ? vx.lineTo(px * vk, py * vk) : vx.moveTo(px * vk, py * vk)); vx.closePath(); vx.stroke(); }); }
+      return { length_mm: Math.round(s.L / (ppm * r.w / c.width)), width_mm: Math.round(s.W / (ppm * r.w / c.width)), point: [best.x, best.y],
+               view: v.toDataURL('image/jpeg', 0.7), algorithm: 'size-v2' };
     });
     sizeBusy = job.catch(() => {});
     return job;
