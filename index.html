@@ -754,6 +754,8 @@
     .fb-undo.show { display:flex; animation: fb-undo-in .18s ease-out; }
     @keyframes fb-undo-in { from { transform: translateY(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
     @media (prefers-reduced-motion: reduce) { .fb-undo.show { animation: none; } }
+    .fb-sc-notraps { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+    .fb-dim { opacity: 0.4; pointer-events: none; }
     .fb-auto-view { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md);
       background: var(--surface); color: var(--text-muted); font: inherit; font-size: var(--text-xs); text-align: left; cursor: pointer; }
     .fb-auto-view img { height: 72px; width: auto; border-radius: 6px; flex: none; }
@@ -1099,7 +1101,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.76';
+  const CURRENT_VERSION = '0.11.77';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1260,6 +1262,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.77', '2026-09-30', 'No traps today', 'The Traps tab has a No traps today button: the section counts as done without a trap photo, its dot turns green and the zone report says Traps: No traps today; nothing is counted and no trap is marked missing. Undo takes it back, and photographing a trap after all takes it back by itself.'],
     ['0.11.76', '2026-09-30', 'Sizes measured on the fruit, not the card', 'On the photos of 30 Sept the scale was read right but the phone outlined the white card, not the cucumber (186 x 115 mm instead of about 363 x 41). Now the card is found from its marker and left out, the phone looks for the fruit round the card and keeps the outline that is long, solid and near the card, and a curved fruit is measured along its curve. The card shows the outline it measured: not the fruit, tap it and tap the fruit. The measuring runs on the phone graphics chip, about a second a photo.'],
     ['0.11.75', '2026-09-30', 'A zone sends itself when complete', 'As soon as every section required today has its minimum (all tab dots green), a bar says the zone is complete and sends its report after 5 seconds, then goes back to the zones; no Finish needed. Keep scouting holds it until something is added or removed, Send now sends at once. A section whose OK button was never tapped goes as OK, one with a note saying what is wrong goes as not OK. More can still be added afterwards with Edit what was sent.'],
     ['0.11.74', '2026-09-30', 'Scouting: what is still required', 'Each scouting tab has a dot: red while it is required today and its minimum is not reached, green when it is or when it is not required today (not today). The minimum: every trap of the zone on both sides (or marked taken down or out of reach), 2 plant-health photos and 2 growth photos; more is always welcome. The tab says how far: 2 of 4 traps, 1 of 2 min. Finish asks once about a section under its minimum. How the scouting works is folded under the title instead of the question-mark tab.'],
@@ -8116,7 +8119,7 @@ function sopOpen() {
     scDraftTimer = setTimeout(async () => {
       try {
         await setKV(scDraftKey(r.task), { saved: Date.now(), tab: r.sc.tab, outcome: r.sc.outcome, outcomeNote: r.sc.outcomeNote, verdict: r.sc.verdict,
-          lastPos: r.sc.lastPos, extra: [...r.sc.extra], status: [...r.sc.status], photos: [...r.sc.photos.values()] });
+          lastPos: r.sc.lastPos, extra: [...r.sc.extra], status: [...r.sc.status], noTraps: !!r.sc.noTraps, photos: [...r.sc.photos.values()] });
       } catch (e) { console.warn('scouting draft not saved', e); }
     }, 250);
   }
@@ -8575,7 +8578,7 @@ function sopOpen() {
         sc.photos.set(p.ref, p);
       });
       Object.assign(sc, { tab: draft.tab || 'trap', outcome: draft.outcome || null, outcomeNote: draft.outcomeNote || '', lastPos: draft.lastPos || '',
-                          extra: new Set(draft.extra || []), status: new Map(draft.status || []), verdict: draft.verdict || {} });
+                          extra: new Set(draft.extra || []), status: new Map(draft.status || []), verdict: draft.verdict || {}, noTraps: !!draft.noTraps });
     } else if (detail) {
       // editing a scouting already sent: what the server holds
       (detail.traps || []).forEach(r => {
@@ -8654,11 +8657,12 @@ function sopOpen() {
     const need = k => !!sc.due[k];
     const trapPhotos = () => [...sc.photos.values()].filter(p => p.section === 'trap');
     const met = k => k === 'trap'
-      ? (traps.length ? traps.every(trapDone) : trapPhotos().length > 0 && trapPhotos().every(p => SIDES.every(([sk]) => p.sides?.[sk])))
+      ? sc.noTraps || (traps.length ? traps.every(trapDone) : trapPhotos().length > 0 && trapPhotos().every(p => SIDES.every(([sk]) => p.sides?.[sk])))
       : count(k) >= MIN_PHOTOS[k];
     sc.need = need; sc.met = met; sc.minPhotos = MIN_PHOTOS;
     const tabSub = (k, n) => {
       if (!need(k)) return n ? `not today · ${n} photo${n === 1 ? '' : 's'}` : 'not today';
+      if (k === 'trap' && sc.noTraps) return 'no traps today';
       if (k === 'trap') return traps.length ? `${traps.filter(trapDone).length} of ${traps.length} traps` : n ? `${n} photographed` : 'every trap';
       return met(k) ? `${n} photo${n === 1 ? '' : 's'}` : `${n} of ${MIN_PHOTOS[k]} min`;
     };
@@ -8695,10 +8699,10 @@ function sopOpen() {
     // (its inputs are there); one with a note saying what is wrong goes as Not OK. Keep scouting holds it until something
     // is added or removed; Finish still works by hand; Edit what was sent adds more later.
     let autoTimer = null, autoBar = null;
-    const autoSig = () => [...sc.photos.values()].map(p => p.ref + ':' + Object.keys(p.sides || {}).join('')).join(',') + '|' + [...sc.status.keys()].join(',');
+    const autoSig = () => [...sc.photos.values()].map(p => p.ref + ':' + Object.keys(p.sides || {}).join('')).join(',') + '|' + [...sc.status.keys()].join(',') + (sc.noTraps ? '|none' : '');
     const cancelAuto = () => { clearInterval(autoTimer); autoTimer = null; autoBar?.remove(); autoBar = null; };
     const requiredToday = () => SC_TABS.map(([k]) => k).filter(k => need(k));
-    const zoneComplete = () => { const r = requiredToday(); return r.length > 0 && r.every(met) && sc.photos.size + sc.status.size > 0; };
+    const zoneComplete = () => { const r = requiredToday(); return r.length > 0 && r.every(met) && (sc.photos.size + sc.status.size > 0 || !!sc.noTraps); };
     sc.cancelAuto = cancelAuto;
     function maybeAuto() {
       if (run.edit || sc.autoSent || run.sc !== sc) return;
@@ -9530,6 +9534,8 @@ function sopOpen() {
         lists.trap.append(el('div', 'fb-tl-zone', `${z} · ${done} of ${ts.length}`));
         ts.forEach(t => lists.trap.append(trapRow(t, photoOf(t))));
       }
+      if (sc.noTraps && photosT.length) sc.noTraps = false;
+      sc.paintNone?.();
       paintTabs();
     }
     const missedLine = k => sc.missed[k] ? el('div', 'fb-hold fb-sc-missed', `Not done ${/^(Yesterday|Today|Tomorrow)$/.test(fmtDay(sc.missed[k])) ? fmtDay(sc.missed[k]).toLowerCase() : 'on ' + fmtDay(sc.missed[k])} — due today.`) : '';
@@ -9540,9 +9546,35 @@ function sopOpen() {
     const scanGal = el('button', 'fb-btn', '🖼'); scanGal.type = 'button'; scanGal.title = 'From the gallery'; scanGal.setAttribute('aria-label', 'Trap photo from the gallery');
     scanBtn.onclick = () => shoot('trap'); scanGal.onclick = () => shoot('trap', null, true);
     scan.append(scanBtn, scanGal);
+    // no trap photo today (0.11.77, owner 30 Sept 2026): the section counts as done, the report says so, nothing is counted
+    const noneRow = el('div', 'fb-sc-notraps');
+    const paintNone = () => {
+      noneRow.textContent = '';
+      const hasPhotos = [...sc.photos.values()].some(p => p.section === 'trap');
+      if (sc.noTraps) {
+        noneRow.append(el('span', 'fb-chip ok', '✓ No traps today — nothing counted'));
+        const undo = el('button', 'fb-link', 'Undo'); undo.type = 'button';
+        undo.onclick = () => { sc.noTraps = false; if (sc.verdict.trap?.note === 'No traps today') sc.verdict.trap = { ok: false, note: '' }; paintNone(); paintCoverage(); saveScDraft(); };
+        noneRow.append(undo);
+      } else if (!hasPhotos) {
+        const b = el('button', 'fb-btn', 'No traps today'); b.type = 'button';
+        b.title = 'Skip the traps in this zone today: no trap photo, the report says No traps today';
+        b.onclick = () => {
+          sc.noTraps = true;
+          const v = sc.verdict.trap || (sc.verdict.trap = { ok: false, note: '' });
+          v.ok = true; if (!String(v.note || '').trim()) v.note = 'No traps today';
+          paintNone(); paintCoverage(); saveScDraft();
+        };
+        noneRow.append(b);
+      }
+      lists.trap.classList.toggle('fb-dim', !!sc.noTraps);
+      scan.classList.toggle('hidden', !!sc.noTraps);
+    };
+    sc.paintNone = paintNone;
     panes.trap.append(missedLine('trap'),
       el('div', 'config-hint', traps.length ? 'Tap a trap to photograph it: one side, then the other. Tap a done trap for its counts.' : 'Photograph every card: the phone reads its position and adds it.'),
-      cover, lists.trap, scan, verdictBlock('trap', 'Traps'));
+      cover, lists.trap, scan, noneRow, verdictBlock('trap', 'Traps'));
+    paintNone();
     // Plant health
     lists.health = el('div');
     panes.health.append(el('div', 'config-hint', 'A photo of anything that looks wrong on a plant: where in the zone if you want (row and metres, B6), a comment, the AI note if you want it. Tap a photo to zoom.'),
@@ -10119,7 +10151,7 @@ function sopOpen() {
       } else if (ref) { sc.reveal?.(ref); document.querySelector(`.fb-sc-card[data-ref="${ref}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     };
     // every trap of the zone photographed, or marked taken down / out of reach (0.11.65)
-    if (sc.due?.trap && !trapsP.length && (!sc.traps.length || sc.traps.some(t => !sc.status.has(t.id))))
+    if (sc.due?.trap && !sc.noTraps && !trapsP.length && (!sc.traps.length || sc.traps.some(t => !sc.status.has(t.id))))
       return stop('trap', sc.traps.length ? 'Take at least one trap photo — the traps are due today.' : 'First round: photograph every trap.');
     const noCode = trapsP.find(p => !p.code);
     if (noCode) return stop('trap', 'A trap has no position — write the one on the card (1B6).', noCode.ref);
@@ -10165,7 +10197,7 @@ function sopOpen() {
     sc.outcomeNote = secs.map(k => String(sc.verdict[k]?.note || '').trim() ? `${LABEL[k]}: ${String(sc.verdict[k].note).trim()}` : null).filter(Boolean).join(' · ');
     // the traps of the list not photographed on a trap day: taken down, forgotten, or out of reach (0146)
     const photographed = new Set(trapsP.map(p => p.trap_id).filter(Boolean));
-    const missing = !run.edit && sc.due?.trap ? sc.traps.filter(t => !photographed.has(t.id)) : [];
+    const missing = !run.edit && sc.due?.trap && !sc.noTraps ? sc.traps.filter(t => !photographed.has(t.id)) : [];
     const open = missing.filter(t => { const x = sc.status.get(t.id); return !x || (x.status === 'unreachable' && !String(x.note || '').trim()); });
     // only the ones still open: a trap already marked in its row (0.11.50) is not asked about again
     if (open.length) { $('runHint').textContent = ''; return missingTraps(open); }
