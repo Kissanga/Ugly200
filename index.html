@@ -754,6 +754,8 @@
     .fb-undo.show { display:flex; animation: fb-undo-in .18s ease-out; }
     @keyframes fb-undo-in { from { transform: translateY(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
     @media (prefers-reduced-motion: reduce) { .fb-undo.show { animation: none; } }
+    .fb-autosend { top: auto; bottom: calc(env(safe-area-inset-bottom) + 12px); flex-wrap: wrap; }
+    .fb-autosend span { flex: 1 1 160px; }
     .fb-undo span { flex:1; }
     .fb-undo .fb-link { color: var(--accent); font-weight:800; }
     .fb-sheet { position:fixed; inset:0; z-index:1400; background: rgba(0,0,0,.45); display:flex; align-items:flex-end; }
@@ -1094,7 +1096,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.74';
+  const CURRENT_VERSION = '0.11.75';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1255,6 +1257,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.75', '2026-09-30', 'A zone sends itself when complete', 'As soon as every section required today has its minimum (all tab dots green), a bar says the zone is complete and sends its report after 5 seconds, then goes back to the zones; no Finish needed. Keep scouting holds it until something is added or removed, Send now sends at once. A section whose OK button was never tapped goes as OK, one with a note saying what is wrong goes as not OK. More can still be added afterwards with Edit what was sent.'],
     ['0.11.74', '2026-09-30', 'Scouting: what is still required', 'Each scouting tab has a dot: red while it is required today and its minimum is not reached, green when it is or when it is not required today (not today). The minimum: every trap of the zone on both sides (or marked taken down or out of reach), 2 plant-health photos and 2 growth photos; more is always welcome. The tab says how far: 2 of 4 traps, 1 of 2 min. Finish asks once about a section under its minimum. How the scouting works is folded under the title instead of the question-mark tab.'],
     ['0.11.73', '2026-09-30', 'A task of another day', 'Opening a task meant for a later day first offers the same task of today (for the scouting, the same zone) and otherwise asks before starting it early. The evening of 29 Sept had scouted Zone 1 on the task of the 30th, so the 30th showed one zone done with no photo. What is recorded early now counts for the day it was done.'],
     ['0.11.72', '2026-09-30', 'Fewer insects than last time', 'A card keeps its insects, so a count clearly lower than the card had before (3 or more and 5 % fewer) is questioned straight after the photo: Retake, New card (every insect on it counts as new) or Keep (this count is right, the one before counted too many). Far fewer than before asks first whether the card is new. The insects a day are now counted against the highest count the card has had, so one photo that missed insects no longer makes the next one look like a jump.'],
@@ -8655,7 +8658,8 @@ function sopOpen() {
       if (k === 'trap') return traps.length ? `${traps.filter(trapDone).length} of ${traps.length} traps` : n ? `${n} photographed` : 'every trap';
       return met(k) ? `${n} photo${n === 1 ? '' : 's'}` : `${n} of ${MIN_PHOTOS[k]} min`;
     };
-    let paintTabs = function () {
+    let paintTabs = function () { paintTabsNow(); maybeAuto(); };
+    const paintTabsNow = function () {
       SC_TABS.forEach(([k, label]) => {
         const b = tabBtns[k];
         b.textContent = '';
@@ -8680,6 +8684,57 @@ function sopOpen() {
       $('finish').textContent = run.edit ? 'Save the changes' : 'Finish';
     };
     sc.goTab = k => { if (k !== 'review' && !shown(k)) sc.extra.add(k); sc.tab = k; paintTabs(); };
+
+    // ── the zone sends itself once it is complete (0.11.75, owner 30 Sept 2026: "send each scouting report automatically,
+    // zone by zone"): every section required today at its minimum (all dots green) → a bar "Zone complete — sending in
+    // 5 s · Keep scouting", then the zone's report goes like Finish. A section whose OK button was never tapped goes as OK
+    // (its inputs are there); one with a note saying what is wrong goes as Not OK. Keep scouting holds it until something
+    // is added or removed; Finish still works by hand; Edit what was sent adds more later.
+    let autoTimer = null, autoBar = null;
+    const autoSig = () => [...sc.photos.values()].map(p => p.ref + ':' + Object.keys(p.sides || {}).join('')).join(',') + '|' + [...sc.status.keys()].join(',');
+    const cancelAuto = () => { clearInterval(autoTimer); autoTimer = null; autoBar?.remove(); autoBar = null; };
+    const requiredToday = () => SC_TABS.map(([k]) => k).filter(k => need(k));
+    const zoneComplete = () => { const r = requiredToday(); return r.length > 0 && r.every(met) && sc.photos.size + sc.status.size > 0; };
+    sc.cancelAuto = cancelAuto;
+    function maybeAuto() {
+      if (run.edit || sc.autoSent || run.sc !== sc) return;
+      if (!zoneComplete()) { cancelAuto(); return; }
+      const sig = autoSig();
+      if (sc.autoHold === sig || autoTimer) return;
+      // not while the camera, a sheet or the viewer is open: the next repaint after it closes starts it
+      if (document.querySelector('.fb-cam, .fb-sheet, .fb-viewer, .fb-measure')) return;
+      let left = 5;
+      autoBar = el('div', 'fb-undo fb-autosend show');
+      const txt = el('span', null, '');
+      const keep = el('button', 'fb-btn', 'Keep scouting'); keep.type = 'button';
+      const now = el('button', 'fb-btn fb-btn-primary', 'Send now'); now.type = 'button';
+      const paintBar = () => { txt.textContent = `${zoneShortName()} complete — sending in ${left} s`; };
+      keep.onclick = () => { sc.autoHold = sig; cancelAuto(); };
+      now.onclick = () => { cancelAuto(); autoSend(sig); };
+      autoBar.append(txt, keep, now);
+      document.body.append(autoBar);
+      paintBar();
+      autoTimer = setInterval(() => {
+        if (run.sc !== sc || !zoneComplete() || autoSig() !== sig) { cancelAuto(); return; }
+        left -= 1;
+        if (left <= 0) { cancelAuto(); autoSend(sig); } else paintBar();
+      }, 1000);
+    }
+    const zoneShortName = () => { const z = run.task.positions.find(x => x.area_zone_id); return z?.label || 'Zone'; };
+    async function autoSend(sig) {
+      if (run.sc !== sc || sc.autoSent) return;
+      const R = run;
+      requiredToday().forEach(k => {
+        const v = sc.verdict[k] || (sc.verdict[k] = { ok: false, note: '' });
+        if (!v.ok && !String(v.note || '').trim()) v.ok = true;          // nothing said against it: OK
+      });
+      // a section left red on purpose (its note) goes as not OK without asking again
+      sc.sentRed = SC_TABS.map(([k]) => k).filter(k => sc.shown?.(k) && !sc.verdict[k]?.ok).join();
+      sc.autoSent = true;
+      paintTabs();
+      await finishScouting();
+      if (run === R && run.sc === sc) { sc.autoSent = false; sc.autoHold = sig; }   // stopped on something to fix: say it, send by hand
+    }
 
     // ── each section ends the same way (0.11.63): one red → green button, and a note that says why when it stays red ──
     const verdicts = {};
