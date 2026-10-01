@@ -797,6 +797,7 @@
     .fb-runnote { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: var(--radius-lg, 12px);
       border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
     .fb-chip.run { background: var(--primary); color: var(--text-inverse); }
+    .fb-chip.run.other { background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1.5px var(--primary); }   /* somebody else has it running */
     .fb-chip.paused { background: color-mix(in srgb, var(--warning, #b7791f) 16%, var(--surface)); color: var(--text); }
     .fb-chip.todo { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
     .fb-going { display:flex; align-items:center; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); padding: 10px 12px;
@@ -1105,7 +1106,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.83';
+  const CURRENT_VERSION = '0.11.84';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1266,6 +1267,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.84', '2026-10-01', 'Who is on each task', 'Every task says who: In progress with the name of the person doing it, Paused and Not done with who worked on it, Done with who finished it. The list refreshes by itself every minute. Opening a task somebody else is doing asks first, and the phone says so when somebody else is on it or has already sent it. If two people do send the same task, the first report stays the one of the task and the second is kept as a second report.'],
     ['0.11.83', '2026-09-30', 'Scouting: sent when you press Finish', 'The zone no longer sends itself with a 5 second countdown once the minimum photos are in: take as many photos as you like and press Finish when the zone is done. The outline tool says it downloads about 40 MB only the very first time on the phone; after that it says Preparing, because it is read from the phone storage and uses no data.'],
     ['0.11.82', '2026-09-30', 'A second photo after measuring', 'After measuring a fruit the next photo could crash the app (Aw, Snap): the outline tool kept its model and memory after the measurement, and the camera then ran the phone out of memory. The tool now runs apart and is closed, giving all its memory back, when the Tap the fruit sheet closes, when the camera opens and when the app goes to the background. The screen also stays responsive while it works.'],
     ['0.11.81', '2026-09-30', 'A stronger outline tool', 'Tapping the fruit now outlines it with Segment Anything (SlimSAM), which keeps a fruit apart from the card or the fruit beside it. Not right? Tap a part that does not belong to take it out, or a missing part to add it; Bigger and Smaller switch between its outlines. It uses the graphics chip when the browser allows (a few seconds a photo), loads once (about 40 MB, Wi-Fi is best) and then works offline. The Right and Start again buttons no longer show before the first tap.'],
@@ -6712,11 +6714,12 @@ function sopOpen() {
     return farm;
   }
 
-  async function sync(full) {
+  async function sync(full, quiet) {
     if (syncing || !session) return;
     syncing = true; $('sync').classList.add('spin');
     try {
       await pickFarm();
+      const timesBefore = quiet ? JSON.stringify((await getKV('task_times')) || []) : null;
       const since = full ? null : await getKV('cursor');
       const d = await api('/rest/v1/rpc/sync_since', {
         method: 'POST',
@@ -6771,10 +6774,15 @@ function sopOpen() {
       await setKV('synced_at', Date.now());
       await flush();
       // a sync never pulls anybody out of a task or a checklist they have open (0.11.39)
-      if ($('task').classList.contains('hidden') && $('run').classList.contains('hidden')) showWeek(); else paintFoot();
+      // the minute's quiet sync (0.11.84) redraws the day only when a task, a name or somebody's timer moved
+      const moved = !quiet || (d.tasks || []).length > 0 || (d.deleted || []).length > 0
+        || JSON.stringify(d.task_times || []) !== timesBefore;
+      if ($('task').classList.contains('hidden') && $('run').classList.contains('hidden')) {
+        if (moved && !(quiet && document.querySelector('.fb-sheet, .fb-undo.show'))) showWeek(); else paintFoot();
+      } else paintFoot();
     } catch (e) {
       console.warn('sync failed:', e);
-      showToast('Sync failed — ' + String(e.message || e).slice(0, 60), 'error');
+      if (!quiet) showToast('Sync failed — ' + String(e.message || e).slice(0, 60), 'error');
     } finally { syncing = false; $('sync').classList.remove('spin'); }
   }
 
@@ -6824,8 +6832,13 @@ function sopOpen() {
         }
         else if (row.payload.__timer) {
           try {
-            await api('/rest/v1/rpc/task_timer', { method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id,
+            const r = await api('/rest/v1/rpc/task_timer', { method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id,
               p_action: row.payload.action, p_at: row.payload.at, p_client: row.payload.client_run_id }) });
+            // FarmBox 0186: said at the moment the checklist opens — somebody else is on it, or it is already done
+            if (row.payload.action === 'start' && Date.now() - new Date(row.payload.at).getTime() < 120000) {
+              if (r && r.ignored && r.status === 'done') showToast(`Already done${r.done_by ? ' by ' + firstName(r.done_by) : ''} — check before doing it again`, 'error');
+              else if (r && Array.isArray(r.others) && r.others.length) showToast(`${r.others.map(firstName).join(' and ')} ${r.others.length > 1 ? 'are' : 'is'} also on this task now`, 'info');
+            }
           } catch (e) { if (!refusedForGood(e)) throw e; }   // a task gone or closed: the event has nothing left to do
         }
         else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
@@ -6866,7 +6879,12 @@ function sopOpen() {
             }
             delete t.photo_blob;
           }
-          await api('/rest/v1/rpc/submit_run', { method: 'POST', body: JSON.stringify({ p: row.payload }) });
+          const sent = await api('/rest/v1/rpc/submit_run', { method: 'POST', body: JSON.stringify({ p: row.payload }) });
+          // FarmBox 0186: somebody had already sent this task — this one is kept as a second report
+          if (sent && sent.already) {
+            const at = sent.already.at ? new Date(sent.already.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            showToast(`Already sent${sent.already.by ? ' by ' + firstName(sent.already.by) : ''}${at ? ' at ' + at : ''} — yours is kept as a second report`, 'info');
+          }
         }
         await del('outbox', row.id);
       } catch (e) {
@@ -6960,9 +6978,11 @@ function sopOpen() {
   // Mine live here (KV timers: task id → { segs: [[start ms, stop ms | null], …] }) and go up through the outbox,
   // so it works offline; the server's sums (sync task_times) add everybody else's time on the task.
   // One running task a person; a timer still running at 18:00 stops there (a forgotten one is not all night).
-  let TIMERS = {}, TTIMES = new Map();
+  let TIMERS = {}, TTIMES = new Map(), WNAMES = new Map();
+  const firstName = n => String(n || '').trim().split(/\s+/)[0] || '';
   async function loadTimers() {
     try { TIMERS = (await getKV('timers')) || {}; } catch (e) { TIMERS = {}; }
+    try { WNAMES = new Map((await all('workers')).map(w => [w.id, w.name])); } catch (e) { WNAMES = new Map(); }
     try { TTIMES = new Map(((await getKV('task_times')) || []).map(x => [x.task_id, x])); } catch (e) { TTIMES = new Map(); }
   }
   const saveTimers = () => setKV('timers', TIMERS).catch(() => {});
@@ -6977,6 +6997,14 @@ function sopOpen() {
     return sv ? num(sv.minutes) : 0;
   }
   const groupMinutes = g => (g.members || []).reduce((a, m) => a + taskMinutes(m.id), 0);
+  // who (FarmBox 0186, 0.11.84 — owner: "everyone must see if a task is ongoing or finished, and by whom"):
+  // the other people with a timer running on it, everybody else who timed it, and who closed it
+  const uniq = xs => [...new Set(xs.filter(Boolean))];
+  const peopleOn = (g, pick) => uniq((g.members || []).flatMap(m => ((TTIMES.get(m.id) || {}).by || []).filter(pick).map(b => firstName(b.name))));
+  const othersRunning = g => peopleOn(g, b => b.running && !b.me);
+  const othersTimed = g => peopleOn(g, b => !b.me);
+  const doneBy = g => uniq((g.members || []).filter(m => m.status === 'done').map(m => firstName(WNAMES.get(m.done_by))));
+  const names = xs => xs.length > 2 ? `${xs[0]} +${xs.length - 1}` : xs.join(' + ');
   const groupRunning = g => (g.members || []).some(m => timerRunning(m.id));
   const timerTaskOf = g => (g.members || []).find(m => !isClosed(m.status)) || null;
   const timerEvent = (id, action, ms) => ({ __timer: true, client_run_id: `tmr-${id}-${action[0]}-${ms}`, task_id: id, action, at: new Date(ms).toISOString() });
@@ -7027,7 +7055,8 @@ function sopOpen() {
     const m = groupMinutes(g), on = groupRunning(g);
     if (g.status === 'done') {
       const over = m >= 1 && num(g.minutes) > 0 && m > num(g.minutes) * 1.25;
-      const c = el('span', 'fb-chip ok' + (over ? ' over' : ''), m >= 1 ? `Done · ${fmtWork(m)}` : 'Done');
+      const by = doneBy(g);
+      const c = el('span', 'fb-chip ok' + (over ? ' over' : ''), ['Done', by.length ? names(by) : null, m >= 1 ? fmtWork(m) : null].filter(Boolean).join(' · '));
       if (over) c.title = `planned ${fmtMin(g.minutes)}`;
       return c;
     }
@@ -7037,13 +7066,18 @@ function sopOpen() {
       if (x.skip_note) c.title = x.skip_note;
       return c;
     }
+    const also = othersRunning(g);
     if (on) {
-      const c = el('span', 'fb-chip run', `In progress · ${fmtClock(m)}`);
-      c.dataset.timerIds = g.members.map(x => x.id).join(','); c.dataset.timerWord = 'In progress · {t}';
+      const word = 'In progress · ' + (also.length ? `you + ${names(also)} · ` : '') + '{t}';
+      const c = el('span', 'fb-chip run', word.replace('{t}', fmtClock(m)));
+      c.dataset.timerIds = g.members.map(x => x.id).join(','); c.dataset.timerWord = word;
       return c;
     }
-    if (late) return el('span', 'fb-chip late', 'Not done' + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
-    if (m >= 1) return el('span', 'fb-chip paused', `Paused · ${fmtWork(m)}`);
+    // somebody else has it running (as of the last sync, a minute at most)
+    if (also.length) return el('span', 'fb-chip run other', `In progress · ${names(also)}` + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
+    const was = othersTimed(g);
+    if (late) return el('span', 'fb-chip late', ['Not done', was.length ? names(was) : null, m >= 1 ? fmtWork(m) : null].filter(Boolean).join(' · '));
+    if (m >= 1) return el('span', 'fb-chip paused', ['Paused', was.length ? names(was) : null, fmtWork(m)].filter(Boolean).join(' · '));
     if (g.status === 'partial') return el('span', 'fb-chip', `In part · ${g.doneCount}/${g.members.length}`);
     return el('span', 'fb-chip todo', 'To do');
   }
@@ -7637,6 +7671,11 @@ function sopOpen() {
         return openTask(same.key, fromHub);
       if (!confirm(`This task is for ${when}, not today.\n\nDo it now anyway? What you record counts for today in the report.`)) return;
     }
+    // somebody else has this task running (0.11.84): two people sending the same task makes two reports
+    await loadTimers();
+    const busy = othersRunning(t);
+    if (busy.length && !groupRunning(t)
+        && !confirm(`${names(busy)} ${busy.length > 1 ? 'are' : 'is'} doing this task now.\n\nOpen it anyway? If you both send it, there will be two reports for the same task.`)) return;
     if (!hasChecklist) { if (confirm(`${t.title} — mark it done?`)) await markDone(t); return; }
     return startRun(t, sop);
   }
@@ -11936,9 +11975,14 @@ function sopOpen() {
 
   const netPill = () => $('net')?.classList.toggle('hidden', navigator.onLine);
   addEventListener('online', () => { netPill(); session ? sync(false) : flush(); });
+  // who is doing what stays current (0.11.84): a quiet sync every minute while the app is on screen and connected
+  setInterval(() => {
+    if (!document.hidden && navigator.onLine && session && document.body.classList.contains('src-cloud')
+        && !document.querySelector('.fb-cam')) sync(false, true);
+  }, 60000);
   addEventListener('offline', netPill);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && document.body.classList.contains('src-cloud')) { flush(); }
+    if (!document.hidden && document.body.classList.contains('src-cloud')) { (session && navigator.onLine) ? sync(false, true) : flush(); }
   });
 
   window.fbOpen = fbOpen;
