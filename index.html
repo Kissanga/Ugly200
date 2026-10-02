@@ -1139,7 +1139,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.89';
+  const CURRENT_VERSION = '0.11.90';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1300,6 +1300,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.90', '2026-10-02', 'Send recovers photos whose task is gone', 'Send now also sends the photos of a scouting whose task has left the list (cancelled, replanned or more than a week old): on that task when the farm still has it, otherwise as photos of the day with the position written on them. One item that fails no longer holds back everything behind it, and the list says why anything is still waiting.'],
     ['0.11.89', '2026-10-02', 'Send sends half-done checklists too (for now)', 'While the app is being developed, the Send button at the top also sends any checklist that was started and not finished: the answers given so far and their photos go to Naked Heart as they stand. The task stays open, and Finish later completes the same report. This is temporary and will be locked again.'],
     ['0.11.88', '2026-10-02', 'Send sends the scouting as it stands', 'The Send button at the top now sends a scouting that is not finished as it stands: its plant photos and every trap side that has its position and a count, with the count as the phone made it or as you corrected it so far. The report is in Naked Heart at once; the task stays open, and Finish later completes the same report. Only a trap photo with no position or no count stays on the phone.'],
     ['0.11.87', '2026-10-02', 'Send everything now', 'A Send button at the top of Tasks, beside ⟳. It sends everything this phone still holds: what is waiting or was refused, the full photos on any connection (the Wi-Fi-only choice is lifted for that once), and the plant photos of a scouting that was started or changed but never finished — before, those stayed on the phone until Finish. It then lists what was sent and what could not be: trap photos and unfinished checklists still need their own Finish, because their counts and answers have to be checked.'],
@@ -6962,6 +6963,7 @@ function sopOpen() {
         const dead = refusedForGood(e);
         await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 160), dead }]);
         if (dead) continue;               // set aside, shown in the footer; the rest still goes
+        if (uploadForce) continue;        // Send everything now (0.11.90): one row that fails does not hold the 147 behind it
         break;                            // keep the order; try again next time
       }
     }
@@ -12273,6 +12275,9 @@ function sopOpen() {
       const kv = await all('kv');
       const groups = (await loadGroups()).flatMap(g => g.hub ? [g, ...(g.zones || [])] : [g]);
       // 1. the scouting drafts
+      const allTasks = await all('tasks');
+      const scoutVer = (groups.find(x => (x.generation_key || x.members?.[0]?.generation_key || '').startsWith('routine:scouting:')) || {}).sop_version_id
+        || (allTasks.find(x => String(x.generation_key || '').startsWith('routine:scouting:')) || {}).sop_version_id || null;
       for (const row of kv.filter(r => String(r.id).startsWith('scout2:'))) {
         const draft = row.v || {}, key = String(row.id).slice(7);
         const photos = draft.photos || [];
@@ -12284,20 +12289,28 @@ function sopOpen() {
           .filter(([, S]) => S && S.full instanceof Blob && !S.sent).map(([k, S]) => [q, k, S]));
         const sides = sidesAll.filter(([q, , S]) => q.code && S.total != null);
         const trapsLeft = sidesAll.length - sides.length;
-        if (!g) { if (fresh.length || sidesAll.length) say(`A scouting no longer on this phone holds ${fresh.length + sidesAll.length} photo${fresh.length + sidesAll.length === 1 ? '' : 's'} — not sent (its task is gone).`, true); continue; }
-        const name = g.area || g.title || 'Scouting';
+        // its task left the list (cancelled, replanned, older than a week): the photos still go (0.11.90, owner: "how to
+        // recover these pics") — on that task when the server still has it, else on a run with no task, which Naked Heart
+        // shows under the day's zones by the position written on each photo
+        let lone = null;
+        if (!g) {
+          const m = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(key);
+          lone = (m && allTasks.find(x => x.id === m[0])) || (m ? { id: m[0] } : {});
+        }
+        const name = g ? (g.area || g.title || 'Scouting') : `A scouting no longer in the list${lone.area ? ' (' + lone.area + ')' : ''}`;
         const noScale = fresh.filter(q => q.section === 'growth' && !q.px_per_mm);
         const go = fresh.filter(q => !noScale.includes(q));
         if (go.length || sides.length) {
           try {
-            const t = g.members.find(m => m.status !== 'done') || g.members[0];
+            const t = g ? (g.members.find(m => m.status !== 'done') || g.members[0]) : lone;
             let d = null;
-            try { d = await api('/rest/v1/rpc/run_detail', { method: 'POST', body: JSON.stringify({ p_task: t.id }) }); } catch (e) { d = null; }
+            if (t.id) { try { d = await api('/rest/v1/rpc/run_detail', { method: 'POST', body: JSON.stringify({ p_task: t.id }) }); } catch (e) { d = null; } }
+            if (!g && !d) t.id = null;                                   // the server no longer has the task
             const done = (d?.status || t.status) === 'done';
             const now = new Date().toISOString();
-            const cid = d?.run?.client_run_id || draft.cid || ('run-' + t.id + '-' + Date.now());
+            const cid = d?.run?.client_run_id || draft.cid || ('run-' + (t.id || 'recovered') + '-' + Date.now());
             const payload = {
-              farm_id: t.farm_id || farm.id, task_id: t.id, sop_version_id: t.sop_version_id || g.sop_version_id,
+              farm_id: t.farm_id || farm.id, task_id: t.id || null, sop_version_id: t.sop_version_id || g?.sop_version_id || scoutVer,
               client_run_id: cid, status: done ? 'completed' : 'partial',
               started_at: d?.run?.started_at || [...go.map(q => q.taken_at), ...sides.map(([q, , S]) => S.taken_at || q.taken_at)].filter(Boolean).sort()[0] || now,
               finished_at: d?.run?.finished_at || now,
@@ -12308,7 +12321,7 @@ function sopOpen() {
                 notes: q.note || null, read_at: S.taken_at || q.taken_at, code_read: q.code_read || null,
                 code_source: q.code_source || null, code_confirmed: !!q.code_ok, gps: null, ai: S.ai || null })) } : {}),
               observations: go.map(q => ({ client_ref: q.ref, section: q.section, part: q.part || 'other', crop_id: q.crop_id || null,
-                zone_id: q.zone_id || null, item_id: q.item_id || null, note: q.note || null, photo_data: q.thumb || null, taken_at: q.taken_at,
+                zone_id: q.zone_id || t.zone_id || null, item_id: q.item_id || null, note: q.note || null, photo_data: q.thumb || null, taken_at: q.taken_at,
                 pos_code: parsePos(String(q.pos_code || '').toUpperCase().replace(/\s/g, '')) ? String(q.pos_code).toUpperCase().replace(/\s/g, '') : null,
                 gps: null, measures: q.measures || [], px_per_mm: q.px_per_mm ?? null, ai: q.ai || null })),
             };
@@ -12380,7 +12393,11 @@ function sopOpen() {
       const went = before.length - after.filter(r => before.some(b => b.id === r.id)).length;
       if (went > 0) say(`${went} item${went === 1 ? '' : 's'} went up (reports and their full photos).`);
       const dead = after.filter(r => r.dead), left = after.filter(r => !r.dead);
-      if (left.length) say(`${left.length} still waiting — the connection dropped or the server did not answer; press Send again.`, true);
+      if (left.length) {
+        const why = new Map();
+        left.forEach(r => { const k = r.error ? String(r.error).slice(0, 120) : (r.payload?.__upload ? 'a photo not tried yet' : 'not tried yet'); why.set(k, (why.get(k) || 0) + 1); });
+        say(`${left.length} still waiting — press Send again. Why: ${[...why.entries()].map(([k, n]) => `${n} × ${k}`).join(' · ')}`, true);
+      }
       dead.forEach(r => say(`Refused by the server: ${String(r.error || 'no reason given').replace(/^\d+ /, '').slice(0, 140)}`, true));
       // 3. what only its own Finish can send
       const started = kv.filter(r => /^(harvdraft|trapdraft):/.test(String(r.id))).length;
