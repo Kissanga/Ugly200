@@ -997,6 +997,13 @@
     .fb-trap-side.blue { border-color: #2f7de1; }
     .fb-trap-side img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
     .fb-trap-side input.fb-num { width: 72px; }
+    /* a picture's ✕, in its top right corner (0.11.86) */
+    .fb-pic { position: relative; flex: none; line-height: 0; }
+    .fb-trap-side .fb-pic { width: 100%; }
+    .fb-pic-x { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+      font: 800 13px/1 inherit; color: #fff; background: rgba(0,0,0,.62); border: 1.5px solid rgba(255,255,255,.75); cursor: pointer; }
+    .fb-pic-x:active { background: var(--danger, #d64545); }
+    .fb-noscale-img { display: block; width: 100%; max-height: 38vh; object-fit: contain; border-radius: var(--radius-md); background: #000; margin: 8px 0; }
     .fb-trap-side .fb-btn { min-height: 34px; padding: 4px 10px; font-size: var(--text-xs); }
     .fb-how { margin: 0 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
     .fb-how > summary { cursor: pointer; padding: 10px 14px; font-weight: 700; font-size: var(--text-sm); list-style: none; }
@@ -1127,7 +1134,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.85';
+  const CURRENT_VERSION = '0.11.86';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1288,6 +1295,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.86', '2026-10-02', 'A ✕ on every picture; growth needs the scale card', 'Every picture you take — plant health, growth, each side of a trap, the photos of a checklist — has a small ✕ in its top right corner: tap it to remove the picture (it asks first). The Remove link and the ⋯ menu under a scouting photo are gone. A growth photo is now only kept when the phone finds the printed scale card in it: without the card it says so straight away and offers to take the photo again, because the sizes are measured against the card.'],
     ['0.11.85', '2026-10-02', 'Feedback on a task', 'When the farm switches it on, every task has a 💬 button (on its card and at the top of its checklist). It opens a page to say what should change in the task, its checklist or the app: record a voice note, write a note, add photos or a short video, and say which step it is about. It works offline and is sent when there is signal. The voice is written down and put in points for the manager; under the form you see what was already said on the task and the answer you got.'],
     ['0.11.84', '2026-10-01', 'Who is on each task', 'Every task says who: In progress with the name of the person doing it, Paused and Not done with who worked on it, Done with who finished it. The list refreshes by itself every minute. Opening a task somebody else is doing asks first, and the phone says so when somebody else is on it or has already sent it. If two people do send the same task, the first report stays the one of the task and the second is kept as a second report.'],
     ['0.11.83', '2026-09-30', 'Scouting: sent when you press Finish', 'The zone no longer sends itself with a 5 second countdown once the minimum photos are in: take as many photos as you like and press Finish when the zone is done. The outline tool says it downloads about 40 MB only the very first time on the phone; after that it says Preparing, because it is read from the phone storage and uses no data.'],
@@ -8250,10 +8258,9 @@ function sopOpen() {
         f = b || f;
       } catch (e) { /* the file as it is */ }
       const list = run.media.get(key) || []; list.push(f); run.media.set(key, list);
-      const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'photo — tap to remove';
+      const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'photo';
       img.onload = () => URL.revokeObjectURL(img.src);
-      img.onclick = () => { if (!confirm('Remove this photo?')) return; const l = run.media.get(key) || [], i = l.indexOf(f); if (i >= 0) l.splice(i, 1); img.remove(); saveRunDraft(); };
-      shot.insertBefore(img, btn);
+      shot.insertBefore(picX(img, pic => { const l = run.media.get(key) || [], i = l.indexOf(f); if (i >= 0) l.splice(i, 1); pic.remove(); saveRunDraft(); }), btn);
       saveRunDraft();
     };
     btn.onclick = async () => {
@@ -8453,6 +8460,16 @@ function sopOpen() {
   const MEASURE_WHAT = [['diameter', 'Diameter'], ['length', 'Length'], ['width', 'Width'], ['height', 'Height']];
   const SC_TABS = [['trap', 'Traps'], ['health', 'Plant health'], ['growth', 'Growth']];
   const SIDES = [['yellow', 'Yellow side'], ['blue', 'Blue side']];              // the two faces of every trap card (0149)   // OK / Not OK sit above Finish (0.11.43)
+  // a picture with its ✕ in the top right corner (0.11.86, owner 2 Oct 2026: "the possibility to remove the taken picture
+  // by clicking the top right corner of all pictures with a small x"): asks once, then remove(pic)
+  function picX(img, remove, ask = 'Remove this photo?') {
+    const pic = el('div', 'fb-pic');
+    const x = el('button', 'fb-pic-x', '✕'); x.type = 'button';
+    x.setAttribute('aria-label', 'Remove this photo'); x.title = 'Remove this photo';
+    x.onclick = e => { e.preventDefault(); e.stopPropagation(); if (!confirm(ask)) return; remove(pic); };
+    pic.append(img, x);
+    return pic;
+  }
   const scDraftKey = task => 'scout2:' + (task.key || task.id);
   let scDraftTimer = null;
   function saveScDraft() {
@@ -9202,10 +9219,11 @@ function sopOpen() {
           p.scale_source = 'marker'; p.scale_quad = m.quad; p.scale_skew = Math.round(m.skew * 100) / 100;
         }
         card._paintMs?.(); saveScDraft();
+        if (section === 'growth' && !p.px_per_mm) { noScale(p, card); return; }
         // one tap by the person says which object (0.11.80, owner: "can I help the algorithm? maybe just 2 points") — on
         // 276 Open Images crops the phone's own guess missed the object on about half; from a tap the outline is right
         if (p.px_per_mm && p.section === 'growth') sc.sizeCheck?.(p);
-      }).catch(e => { console.warn('scale card', e); p.scale_state = 'none'; card._paintMs?.(); });
+      }).catch(e => { console.warn('scale card', e); p.scale_state = 'none'; card._paintMs?.(); if (section === 'growth') noScale(p, card); });
       if (section === 'trap' && !p.code) {
         card._codeState?.('reading the code…');
         try {
@@ -9216,6 +9234,29 @@ function sopOpen() {
         } catch (e) { console.warn('text reader', e); }
         card._paintTrap?.(); paintCoverage(); saveScDraft();
       }
+    }
+    // A growth photo is only kept with the scale card in it (0.11.86, owner 2 Oct 2026: "do not accept picture in growth
+    // without the scale detected"): the sizes are measured against the card, and a growth photo without a size says
+    // nothing on the curve. The photo is refused in a sheet — take it again, or leave it out.
+    function noScale(p, card) {
+      if (!sc.photos.has(p.ref)) return;
+      const out = () => { sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
+      const sheet = el('div', 'fb-sheet');
+      const box = el('div', 'fb-sheet-card');
+      const img = el('img', 'fb-noscale-img'); img.src = p.thumb || ''; img.alt = 'The photo';
+      const offline = p.scale_state === 'offline';
+      box.append(el('h3', null, offline ? 'The scale card could not be read' : 'No scale card in this photo'), img,
+        el('div', 'fb-meta', offline
+          ? 'The card reader needs a connection the first time on this phone. Connect once, then take the photo again — a growth photo is only kept with its scale card.'
+          : 'A growth photo is only kept with the printed scale card in the picture: the fruit or leaf is measured against it. Hold the card flat beside what you photograph, all of it in view, and take it again.'));
+      const again = el('button', 'fb-btn fb-btn-primary', '📷 Take it again'); again.type = 'button';
+      const drop = el('button', 'fb-btn', 'Leave it out'); drop.type = 'button';
+      again.onclick = () => { sheet.remove(); out(); shoot('growth'); };
+      drop.onclick = () => { sheet.remove(); out(); };
+      const acts = el('div', 'fb-actions'); acts.append(again, drop);
+      box.append(acts);
+      sheet.append(box);
+      document.body.append(sheet);
     }
     // The code of a trap: a known trap, or a new position added by itself. What the phone (or the AI) read is
     // a PROPOSAL until the person confirms it — typed or read, one ✓ Confirm, which opens the other side (0149).
@@ -9509,7 +9550,13 @@ function sopOpen() {
         } catch (e) { showToast('AI note: ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 90), 'error'); ai.disabled = false; ai.textContent = '✦ AI note'; }
       };
       const acts = el('div', 'fb-actions'); acts.append(ai, again);
-      b.append(img);
+      // the ✕ takes this side's photo away; the last side takes the trap with it
+      b.append(picX(img, () => {
+        delete p.sides[k];
+        if (!SIDES.some(([s2]) => p.sides[s2])) { sc.photos.delete(p.ref); card.remove(); paintTabs(); }
+        else card._paintTrap();
+        paintCoverage(); saveScDraft();
+      }));
       const rw = rowsWords(S);
       if (rw) b.append(el('span', 'fb-chip fb-rows ' + (rw.ok ? 'ok' : 'late'), rw.text));
       if (S.check) b.append(el('span', 'fb-chip late', S.check));
@@ -9659,15 +9706,14 @@ function sopOpen() {
       const top = el('div', 'fb-shot');
       const img = el('img'); img.src = p.thumb || ''; img.alt = '';
       const side = el('div', 'fb-sc-side');
-      top.append(img, side);
+      const dropIt = () => { sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
+      top.append(picX(img, dropIt), side);
       card.append(top);
       const aiBox = el('div', 'fb-sc-ai' + (p.ai ? '' : ' hidden'), aiText(p));
       const note = el('input', 'fb-note'); note.type = 'text'; note.value = p.note || '';
       note.oninput = () => { p.note = note.value; saveScDraft(); };
       const acts = el('div', 'fb-actions');
       card.append(el('div', 'fb-sc-when', new Date(p.taken_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })));
-      const drop = el('button', 'fb-link', 'Remove'); drop.type = 'button';
-      drop.onclick = () => { if (!confirm('Remove this photo?')) return; sc.photos.delete(p.ref); card.remove(); paintTabs(); paintCoverage(); saveScDraft(); };
 
       {
         const pos = positionRow(p);
@@ -9740,11 +9786,8 @@ function sopOpen() {
             pick: p.full instanceof Blob && p.px_per_mm ? pt => sc.autoSize(p, [[pt[0], pt[1], 1]]) : null });
         card._paintMs = () => paintMs();
         note.placeholder = p.section === 'growth' ? 'Comment (optional)' : 'Comment: what you see (optional)';
-        const more = el('button', 'fb-link', '⋯'); more.type = 'button'; more.setAttribute('aria-label', 'More');
-        drop.classList.add('hidden');
-        more.onclick = () => drop.classList.toggle('hidden');
-        const aiBtn = aiButton(p, card, aiBox);
-        acts.append(aiBtn, more, drop);
+        const aiBtn = aiButton(p, card, aiBox);       // Remove is the ✕ on the photo now (0.11.86), no ⋯ menu
+        acts.append(aiBtn);
         card.append(note, acts, aiBox);
       }
       return card;
@@ -10862,6 +10905,10 @@ function sopOpen() {
         return stop(short[0], `${SHORT_LABEL[short[0]]}: at least ${sc.minPhotos?.[short[0]] ?? 2} photos today.`);
       sc.sentShort = short.join();
     }
+    // a growth photo taken on this phone and still without its scale card (0.11.86) — one restored from a draft before
+    // the card was looked for; the photos of a report sent earlier are left as they are
+    const bare = plants.find(p => p.section === 'growth' && !p.px_per_mm && p.full instanceof Blob);
+    if (bare) return stop('growth', 'A growth photo has no scale card — remove it (✕) and take it again with the card in the picture.', bare.ref);
     // one zone a task (0.11.65): the zone is known; a task over several zones still needs where
     const oneZone = run.task.positions.filter(x => x.area_zone_id).length === 1;
     const lost = oneZone ? null : plants.find(p => !parsePos(p.pos_code));
@@ -11959,18 +12006,16 @@ function sopOpen() {
       card._addPhoto = f => {
         const list = run.media.get(key) || [];
         list.push(f); run.media.set(key, list);
-        const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'evidence — tap to remove';
+        const img = el('img'); img.src = URL.createObjectURL(f); img.alt = 'evidence';
         img.onload = () => URL.revokeObjectURL(img.src);
-        // a wrong photo can go: tap it
-        img.onclick = () => {
-          if (!confirm('Remove this photo?')) return;
+        // a wrong photo can go: the ✕ in its corner (0.11.86; it was a tap on the photo)
+        shot.insertBefore(picX(img, pic => {
           const l = run.media.get(key) || [], i = l.indexOf(f);
           if (i >= 0) l.splice(i, 1);
-          img.remove();
+          pic.remove();
           if (!l.length && !shot.querySelector('.fb-chip')) shot.append(el('span', 'fb-chip', 'required'));
           saveRunDraft();
-        };
-        shot.insertBefore(img, btn);
+        }), btn);
         shot.querySelector('.fb-chip')?.remove();
       };
       pick.onchange = () => { const f = pick.files[0]; pick.value = ''; if (f) addStepPhoto(f); };
