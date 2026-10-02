@@ -798,6 +798,7 @@
       border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
     .fb-chip.run { background: var(--primary); color: var(--text-inverse); }
     .fb-chip.run.other { background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1.5px var(--primary); }   /* somebody else has it running */
+    .fb-chip.ok.wait { box-shadow: inset 0 0 0 1.5px var(--warning, #d98a1f); }   /* done here, not on the server yet */
     .fb-chip.paused { background: color-mix(in srgb, var(--warning, #b7791f) 16%, var(--surface)); color: var(--text); }
     .fb-chip.todo { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
     .fb-going { display:flex; align-items:center; gap: var(--space-2); margin: var(--space-2) 0 var(--space-3); padding: 10px 12px;
@@ -1139,7 +1140,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.90';
+  const CURRENT_VERSION = '0.11.91';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1300,6 +1301,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.91', '2026-10-03', 'One person on a task at a time', 'A task somebody has open — running or paused — is theirs: the others see 🔒 with the name and cannot open it until it is finished or handed over (Hand over to somebody else… under Finish sends what is entered so far, and the next person continues the same report); an Admin can take it back. A done task says who did it and in how long (Done · Dial + Naison · 25 min total) and everybody can open it to add photos and notes — nothing already sent is removed. The timer no longer stops at 18:00: it stops 20 minutes after the last touch in the checklist, Back pauses it, and a task only opened to look keeps no time. Reports now go up before the photos, and one that fails no longer holds the others; a card says "waiting to send" until the server has it.'],
     ['0.11.90', '2026-10-02', 'Send recovers photos whose task is gone', 'Send now also sends the photos of a scouting whose task has left the list (cancelled, replanned or more than a week old): on that task when the farm still has it, otherwise as photos of the day with the position written on them. One item that fails no longer holds back everything behind it, and the list says why anything is still waiting.'],
     ['0.11.89', '2026-10-02', 'Send sends half-done checklists too (for now)', 'While the app is being developed, the Send button at the top also sends any checklist that was started and not finished: the answers given so far and their photos go to Naked Heart as they stand. The task stays open, and Finish later completes the same report. This is temporary and will be locked again.'],
     ['0.11.88', '2026-10-02', 'Send sends the scouting as it stands', 'The Send button at the top now sends a scouting that is not finished as it stands: its plant photos and every trap side that has its position and a count, with the count as the phone made it or as you corrected it so far. The report is in Naked Heart at once; the task stays open, and Finish later completes the same report. Only a trap photo with no position or no count stays on the phone.'],
@@ -6869,9 +6871,16 @@ function sopOpen() {
     if (!session || !navigator.onLine) return;
     if (!farm) farm = await getKV('farm');
     // in the order they were made (the store answers by id: every clock-in sorted before every clock-out)
-    const rows = (await all('outbox')).sort((a, b) => (a.at || 0) - (b.at || 0) || String(a.id).localeCompare(String(b.id)));
+    // 0.11.91: the reports and the timers first, the full photos after them (a photo that will not go up held every
+    // report behind it for two days); a row that fails holds back only what depends on it — its own photos, the
+    // later timer events of its task — and the rest still goes
+    const isUp = r => r.payload && r.payload.__upload ? 1 : 0;
+    const chainOf = r => { const u = r.payload || {}; return u.__upload ? 'run:' + u.run_client_id : u.__timer ? 'tmr:' + u.task_id : u.__clock ? 'clock' : 'run:' + u.client_run_id; };
+    const held = new Set();
+    const rows = (await all('outbox')).sort((a, b) => isUp(a) - isUp(b) || (a.at || 0) - (b.at || 0) || String(a.id).localeCompare(String(b.id)));
     for (const row of rows) {
-      if (row.dead) continue;
+      if (row.dead) { if (!isUp(row)) held.add(chainOf(row)); continue; }
+      if (held.has(chainOf(row))) continue;
       try {
         if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
@@ -6888,9 +6897,11 @@ function sopOpen() {
               p_action: row.payload.action, p_at: row.payload.at, p_client: row.payload.client_run_id }) });
             // FarmBox 0186: said at the moment the checklist opens — somebody else is on it, or it is already done
             if (row.payload.action === 'start' && Date.now() - new Date(row.payload.at).getTime() < 120000) {
-              if (r && r.ignored && r.status === 'done') showToast(`Already done${r.done_by ? ' by ' + firstName(r.done_by) : ''} — check before doing it again`, 'error');
+              if (r && r.refused) showToast(`${firstName(r.held_by) || 'Somebody else'} is on this task — your time on it is not counted`, 'error');
+              else if (r && r.ignored && r.status === 'done') showToast(`Already done${r.done_by ? ' by ' + firstName(r.done_by) : ''} — check before doing it again`, 'error');
               else if (r && Array.isArray(r.others) && r.others.length) showToast(`${r.others.map(firstName).join(' and ')} ${r.others.length > 1 ? 'are' : 'is'} also on this task now`, 'info');
             }
+            if (r && r.refused && row.payload.action === 'start') timerCloseLocal(row.payload.task_id);   // FarmBox 0201: somebody else holds it
           } catch (e) { if (!refusedForGood(e)) throw e; }   // a task gone or closed: the event has nothing left to do
         }
         else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
@@ -6962,9 +6973,8 @@ function sopOpen() {
       } catch (e) {
         const dead = refusedForGood(e);
         await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 160), dead }]);
-        if (dead) continue;               // set aside, shown in the footer; the rest still goes
-        if (uploadForce) continue;        // Send everything now (0.11.90): one row that fails does not hold the 147 behind it
-        break;                            // keep the order; try again next time
+        if (!isUp(row)) held.add(chainOf(row));   // its photos and its later timer events wait for it; everything else goes on
+        if (!navigator.onLine) break;             // the connection went: no point in trying the rest
       }
     }
     paintFoot();
@@ -7051,18 +7061,25 @@ function sopOpen() {
   // Mine live here (KV timers: task id → { segs: [[start ms, stop ms | null], …] }) and go up through the outbox,
   // so it works offline; the server's sums (sync task_times) add everybody else's time on the task.
   // One running task a person; a timer still running at 18:00 stops there (a forgotten one is not all night).
-  let TIMERS = {}, TTIMES = new Map(), WNAMES = new Map();
+  let TIMERS = {}, TTIMES = new Map(), WNAMES = new Map(), WAITING = new Set();
   const firstName = n => String(n || '').trim().split(/\s+/)[0] || '';
   async function loadTimers() {
     try { TIMERS = (await getKV('timers')) || {}; } catch (e) { TIMERS = {}; }
     try { WNAMES = new Map((await all('workers')).map(w => [w.id, w.name])); } catch (e) { WNAMES = new Map(); }
     try { TTIMES = new Map(((await getKV('task_times')) || []).map(x => [x.task_id, x])); } catch (e) { TTIMES = new Map(); }
+    // the tasks whose report is still on this phone (0.11.91): their card says "waiting to send"
+    try { WAITING = new Set((await all('outbox')).filter(r => r.payload && r.payload.task_id && !r.payload.__timer && !r.payload.__upload && !r.payload.__feedback)
+                              .map(r => r.payload.task_id)); } catch (e) { WAITING = new Set(); }
   }
   const saveTimers = () => setKV('timers', TIMERS).catch(() => {});
-  const dayEndMs = ms => { const d = new Date(ms); d.setHours(18, 0, 0, 0); return d.getTime(); };
-  const segEnd = x => x[1] != null ? x[1] : Math.max(x[0], Math.min(Date.now(), dayEndMs(x[0])));
-  const localMin = id => ((TIMERS[id] && TIMERS[id].segs) || []).reduce((a, x) => a + (segEnd(x) - x[0]) / 60000, 0);
-  const timerRunning = id => ((TIMERS[id] && TIMERS[id].segs) || []).some(x => x[1] == null && Date.now() < dayEndMs(x[0]));
+  // 0.11.91 (FarmBox 0201): a stretch nobody closed ends when the person stops touching the checklist — the idle limit
+  // after the last answer, photo or tap (20 min, or 1.5 × the task's planned time when that is longer), four hours at
+  // the most. It was 18:00 of the day: work after 18:00 counted nothing, a checklist left open counted until 18:00.
+  const IDLE_MIN = 20, STRETCH_MAX = 4 * 3600000;
+  const stretchEnd = (rec, x) => Math.min(x[0] + STRETCH_MAX, Math.max(x[0], (rec && rec.act) || 0) + Math.max(IDLE_MIN, num(rec && rec.lim)) * 60000);
+  const segEnd = (x, rec) => x[1] != null ? x[1] : Math.max(x[0], Math.min(Date.now(), stretchEnd(rec, x)));
+  const localMin = id => { const rec = TIMERS[id]; return ((rec && rec.segs) || []).reduce((a, x) => a + (segEnd(x, rec) - x[0]) / 60000, 0); };
+  const timerRunning = id => { const rec = TIMERS[id]; return ((rec && rec.segs) || []).some(x => x[1] == null && Date.now() < stretchEnd(rec, x)); };
   // everybody's minutes: the server's sum without my part, plus my part as this phone knows it (sent or not)
   function taskMinutes(id) {
     const sv = TTIMES.get(id);
@@ -7078,17 +7095,25 @@ function sopOpen() {
   const othersTimed = g => peopleOn(g, b => !b.me);
   const doneBy = g => uniq((g.members || []).filter(m => m.status === 'done').map(m => firstName(WNAMES.get(m.done_by))));
   const names = xs => xs.length > 2 ? `${xs[0]} +${xs.length - 1}` : xs.join(' + ');
+  // the hold (FarmBox 0201): one person on a task at a time. Somebody else's name here = the task is theirs until they
+  // finish it, hand it over, a manager takes it back, or the day ends (as of the last sync, a minute at most).
+  const heldOther = g => { for (const m of (g.members || [])) { const h = (TTIMES.get(m.id) || {}).held;
+    if (h && !h.me && !isClosed(m.status)) return firstName(h.name) || 'Somebody'; } return null; };
   const groupRunning = g => (g.members || []).some(m => timerRunning(m.id));
   const timerTaskOf = g => (g.members || []).find(m => !isClosed(m.status)) || null;
   const timerEvent = (id, action, ms) => ({ __timer: true, client_run_id: `tmr-${id}-${action[0]}-${ms}`, task_id: id, action, at: new Date(ms).toISOString() });
-  async function timerStart(id) {
+  let preStart = null;       // a start the server has just taken (openTask asks it first when online): { id, ms }
+  async function timerStart(id, lim) {
     if (!id || timerRunning(id)) return;
-    const now = Date.now(), ev = [];
+    const now = preStart && preStart.id === id && Date.now() - preStart.ms < 60000 ? preStart.ms : Date.now(), ev = [];
+    preStart = null;
     for (const [other, rec] of Object.entries(TIMERS)) {         // one running task a person
       if (other !== id && timerRunning(other)) { rec.segs[rec.segs.length - 1][1] = now; ev.push(timerEvent(other, 'pause', now)); }
     }
     if (!TIMERS[id]) TIMERS[id] = { segs: [] };
-    TIMERS[id].segs.push([now, null]); TIMERS[id].at = now; delete TIMERS[id].closed;
+    // a stretch that ran out by itself ends where it ran out, before the new one starts
+    TIMERS[id].segs.forEach(x => { if (x[1] == null) { x[1] = segEnd(x, TIMERS[id]); ev.push(timerEvent(id, 'pause', x[1])); } });
+    TIMERS[id].segs.push([now, null]); TIMERS[id].at = now; TIMERS[id].act = Date.now(); if (lim) TIMERS[id].lim = lim; delete TIMERS[id].closed;
     await saveTimers();
     ev.push(timerEvent(id, 'start', now));
     await queue(ev);
@@ -7100,20 +7125,34 @@ function sopOpen() {
     await saveTimers();
     await queue([timerEvent(id, 'pause', now)]);
   }
+  // something was done in the checklist: the timer's idle limit counts from here
+  let touchSaved = 0;
+  function timerTouch(id) {
+    const rec = TIMERS[id]; if (!rec || !timerRunning(id)) return;
+    rec.act = Date.now();
+    if (rec.act - touchSaved > 20000) { touchSaved = rec.act; saveTimers(); }
+  }
+  // the task is given back (0.11.91): opened to look, or handed over to somebody else — the server frees it
+  async function timerRelease(id) {
+    const rec = TIMERS[id], now = Date.now();
+    if (rec) { rec.segs.forEach(x => { if (x[1] == null) x[1] = segEnd(x, rec); }); rec.closed = true; }
+    await saveTimers();
+    await queue([timerEvent(id, 'release', now)]);
+  }
   // the task was finished or marked not done: its timer stops here; the server stops its own with the task
   function timerCloseLocal(id) {
     const rec = TIMERS[id]; if (!rec) return;
-    rec.segs.forEach(x => { if (x[1] == null) x[1] = segEnd(x); });
+    rec.segs.forEach(x => { if (x[1] == null) x[1] = segEnd(x, rec); });
     rec.closed = true; saveTimers();
   }
-  // at every look at the day: a timer forgotten past 18:00 stops there (the server does the same), old ones go
+  // at every look at the day: a timer left running stops where its person stopped touching it, old ones go
   async function tidyTimers(groups) {
     const ev = [];
     const closed = new Set((groups || []).flatMap(g => (g.members || []).filter(m => isClosed(m.status)).map(m => m.id)));
     for (const [id, rec] of Object.entries(TIMERS)) {
       const last = rec.segs[rec.segs.length - 1];
-      if (last && last[1] == null && (Date.now() >= dayEndMs(last[0]) || closed.has(id))) {
-        last[1] = segEnd(last);
+      if (last && last[1] == null && (Date.now() >= stretchEnd(rec, last) || closed.has(id))) {
+        last[1] = segEnd(last, rec);
         if (!closed.has(id)) ev.push(timerEvent(id, 'pause', last[1]));
       }
       if ((rec.at || 0) < Date.now() - 8 * 86400000) delete TIMERS[id];
@@ -7128,8 +7167,11 @@ function sopOpen() {
     const m = groupMinutes(g), on = groupRunning(g);
     if (g.status === 'done') {
       const over = m >= 1 && num(g.minutes) > 0 && m > num(g.minutes) * 1.25;
-      const by = doneBy(g);
-      const c = el('span', 'fb-chip ok' + (over ? ' over' : ''), ['Done', by.length ? names(by) : null, m >= 1 ? fmtWork(m) : null].filter(Boolean).join(' · '));
+      // done by X, or by X + Y in the time of both (0.11.91): who closed it and everybody who worked on it
+      const by = uniq([...doneBy(g), ...peopleOn(g, b => num(b.minutes) >= 1)]);
+      const wait = (g.members || []).some(x => WAITING.has(x.id));
+      const c = el('span', 'fb-chip ok' + (over ? ' over' : '') + (wait ? ' wait' : ''), ['Done', by.length ? names(by) : null,
+        m >= 1 ? fmtWork(m) + (by.length > 1 ? ' total' : '') : null, wait ? 'waiting to send' : null].filter(Boolean).join(' · '));
       if (over) c.title = `planned ${fmtMin(g.minutes)}`;
       return c;
     }
@@ -7138,6 +7180,12 @@ function sopOpen() {
       const c = el('span', 'fb-chip skip', 'Cancelled' + (x.skip_reason ? ' · ' + reasonWord(x.skip_reason).toLowerCase() : ''));
       if (x.skip_note) c.title = x.skip_note;
       return c;
+    }
+    // somebody else holds it (0.11.91): locked, running or paused
+    const lock = g.hub || on ? null : heldOther(g);
+    if (lock) {
+      const live = (g.members || []).some(x => (TTIMES.get(x.id) || {}).running);
+      return el('span', 'fb-chip run other', `🔒 ${live ? 'In progress' : 'Paused'} · ${lock}` + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
     }
     const also = othersRunning(g);
     if (on) {
@@ -7150,7 +7198,9 @@ function sopOpen() {
     if (also.length) return el('span', 'fb-chip run other', `In progress · ${names(also)}` + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
     const was = othersTimed(g);
     if (late) return el('span', 'fb-chip late', ['Not done', was.length ? names(was) : null, m >= 1 ? fmtWork(m) : null].filter(Boolean).join(' · '));
-    if (m >= 1) return el('span', 'fb-chip paused', ['Paused', was.length ? names(was) : null, fmtWork(m)].filter(Boolean).join(' · '));
+    // paused = mine, still held by me; a task somebody started and gave back is free: "To continue" (0.11.91)
+    const mine = (g.members || []).some(x => ((TTIMES.get(x.id) || {}).held || {}).me || (TIMERS[x.id] && !TIMERS[x.id].closed && TIMERS[x.id].segs.length));
+    if (m >= 1) return el('span', 'fb-chip paused', [mine ? 'Paused' : 'To continue', was.length ? names(was) : null, fmtWork(m)].filter(Boolean).join(' · '));
     if (g.status === 'partial') return el('span', 'fb-chip', `In part · ${g.doneCount}/${g.members.length}`);
     return el('span', 'fb-chip todo', 'To do');
   }
@@ -7736,7 +7786,9 @@ function sopOpen() {
     const hasChecklist = !!sop && (sop.validation || 'checklist') !== 'tick';
     if (t.status === 'done') {
       if (hasChecklist) return editTask(t, sop);
-      showToast('Done ✓ — nothing more to do here', 'info'); return;
+      await loadTimers();
+      const by = uniq([...doneBy(t), ...peopleOn(t, b => num(b.minutes) >= 1)]);
+      showToast(`Done ✓${by.length ? ' by ' + names(by) : ''} — a task without a checklist has nothing to add to`, 'info'); return;
     }
     if (t.status === 'skipped') {
       if (hasChecklist) return startRun(t, sop);
@@ -7755,11 +7807,37 @@ function sopOpen() {
     }
     // somebody else has this task running (0.11.84): two people sending the same task makes two reports
     await loadTimers();
-    const busy = othersRunning(t);
-    if (busy.length && !groupRunning(t)
-        && !confirm(`${names(busy)} ${busy.length > 1 ? 'are' : 'is'} doing this task now.\n\nOpen it anyway? If you both send it, there will be two reports for the same task.`)) return;
+    // one person on a task at a time (0.11.91, FarmBox 0201): a task somebody else has open — running or paused — stays
+    // theirs until they finish it or hand it over; an Admin or a manager can take it back
+    const lock = heldOther(t);
+    if (lock && !groupRunning(t)) {
+      if (!(SW.admin && navigator.onLine)) { showToast(`${lock} is on this task — it opens when ${lock} finishes or hands it over`, 'error'); return; }
+      if (!confirm(`${lock} is on this task.\n\nTake it back from ${lock}? What ${lock} has not sent stays on ${lock}'s phone.`)) return;
+      try { for (const m of t.members.filter(x => !isClosed(x.status))) await api('/rest/v1/rpc/release_task', { method: 'POST', body: JSON.stringify({ p_task: m.id }) }); }
+      catch (e) { showToast('Could not take it back — ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 80), 'error'); return; }
+    }
     if (!hasChecklist) { if (confirm(`${t.title} — mark it done?`)) await markDone(t); return; }
-    return startRun(t, sop);
+    // online: the server is asked first, so two phones opening the same task in the same minute do not both get in
+    const tt = timerTaskOf(t);
+    let handed = null;
+    if (tt && navigator.onLine && !timerRunning(tt.id)) {
+      const ms = Date.now(), quick = pr => Promise.race([pr, new Promise((_, no) => setTimeout(() => no(new Error('slow')), 3500))]);
+      try {
+        const r = await quick(api('/rest/v1/rpc/task_timer', { method: 'POST', body: JSON.stringify({ p_task: tt.id, p_action: 'start',
+          p_at: new Date(ms).toISOString(), p_client: `tmr-${tt.id}-s-${ms}` }) }));
+        if (r && r.refused) { showToast(`${firstName(r.held_by) || 'Somebody else'} is on this task — it opens when it is finished or handed over`, 'error'); sync(false, true).catch(() => {}); return; }
+        if (r && r.ignored && r.status === 'done') { showToast(`Already done${r.done_by ? ' by ' + firstName(r.done_by) : ''}`, 'info'); sync(false, true).catch(() => {}); return; }
+        if (r && !r.ignored) preStart = { id: tt.id, ms };
+        // handed over by somebody else: their report so far comes with it (when this phone has no draft of its own)
+        const mine = await getKV(isScouting(sop) ? scDraftKey(t) : runDraftKey(t)).catch(() => null);
+        if (!mine && othersTimed(t).length) {
+          const d = await quick(api('/rest/v1/rpc/run_detail', { method: 'POST', body: JSON.stringify({ p_task: tt.id }) }));
+          if (d && d.run && ((d.steps || []).length || (d.traps || []).length || (d.observations || []).length)) handed = { ...d, resume: true };
+        }
+      } catch (e) { /* no answer in time: carry on as offline, the outbox sends the start */ }
+    }
+    await startRun(t, sop, handed);
+    if (handed) showToast(`Continuing what ${firstName(handed.run.by) || 'somebody'} started — it stays one report`, 'info');
   }
   // ── the day's scouting: its zones, each a task of its own (0.11.67) ──
   // the day's scouting: its zone tasks, drawn exactly as on the day list (0.11.68, owner: "exactly the same task design,
@@ -8103,8 +8181,16 @@ function sopOpen() {
     let d;
     try { d = await api('/rest/v1/rpc/run_detail', { method: 'POST', body: JSON.stringify({ p_task: t.members[0].id }) }); }
     catch (e) { showToast('Could not fetch the task — ' + String(e.message || e).slice(0, 60), 'error'); return; }
-    if (d && d.may_edit === false) { showToast('Only the people on this task, the Admin or a manager can change it', 'error'); return; }
-    await startRun(t, sop, d || { run: null });
+    // 0.11.91: a report still on this phone is not on the server yet — editing now would make a second report
+    if (!d || !d.run) {
+      const waiting = (await all('outbox')).some(r => r.payload && t.members.some(m => m.id === r.payload.task_id) && !r.payload.__timer && !r.payload.__upload && !r.payload.__feedback);
+      if (waiting) { showToast('The report of this task is still waiting to be sent — press ⇪ Send, then open it again', 'error'); return; }
+    }
+    // everybody may add to a done task (FarmBox 0201): photos, notes, answers — nothing already sent is removed;
+    // changing or removing what was sent stays with the task's people, the Admin and the managers
+    const addOnly = !!d && d.may_edit === false;
+    await startRun(t, sop, { ...(d || { run: null }), addOnly });
+    if (addOnly) showToast('You can add photos and notes here — what was already sent stays as it is', 'info');
   }
 
   // Marks every open member of the group done: one tick per task row, so the
@@ -8138,7 +8224,10 @@ function sopOpen() {
     run = { task, sop, steps, started: new Date().toISOString(),
             answers: new Map(), media: new Map(), allOpen: false,
             traps: null, harvests: null, items: null, perItem: false, itemList: [], clientId: 'run-' + task.id + '-' + Date.now(),
-            edit: detail };                    // editing a done task (0.11.40): what the server holds
+            edit: detail,                      // editing a done task (0.11.40): what the server holds
+            // 0.11.91: resume = an open task handed over by somebody else, continued on their report;
+            // append = only adding (a hand-over, or somebody not on the task): the server removes nothing
+            resume: !!detail?.resume, append: !!(detail?.resume || detail?.addOnly), touched: false, lastAct: Date.now() };
     // remembered, so a relaunch (Android closing the app) comes straight back here
     try { await setKV('run_open', { key: task.key || task.id, at: Date.now() }); } catch (e) {}
 
@@ -8183,10 +8272,15 @@ function sopOpen() {
       head.append(f);
     }
     // the timer (0.11.56): opening the checklist starts it (reopening resumes it); not when editing a done task
-    const tt = detail ? null : timerTaskOf(task);
+    const tt = detail && !detail.resume ? null : timerTaskOf(task);
+    // adding to a done task is timed too (0.11.91): its own stretch, closed on Save or Back
+    if (detail && !detail.resume && task.members[0]) {
+      run.addId = task.members[0].id;
+      queue([timerEvent(run.addId, 'add', Date.now())]).catch(() => {});
+    }
     if (tt) {
       await loadTimers();
-      await timerStart(tt.id);
+      await timerStart(tt.id, Math.round(num(task.minutes) * 1.5));
       run.paintTimer = () => {                       // in the top bar, where "Checklist" was written (0.11.59)
         const on = groupRunning(task), m = fmtClock(groupMinutes(task));
         const t = $('title'); t.textContent = '';
@@ -8203,7 +8297,7 @@ function sopOpen() {
 
     const box = $('steps'); box.textContent = '';
     if (holdLine(task)) box.append(el('div', 'fb-hold', holdLine(task)));
-    $('finish').textContent = detail ? 'Save the changes' : 'Finish';
+    $('finish').textContent = detail && !detail.resume ? 'Save the changes' : 'Finish';
     // a one_task routine with items (the sumps, the zones): the steps once per
     // item under its heading, every reading kept with its item (FarmBox 0078);
     // any other task with items (maintenance assets): a tick per item, steps once
@@ -8243,7 +8337,9 @@ function sopOpen() {
     $('runHint').textContent = '';
     paintPause(false);               // Pause lives on the timer now (0.11.60)
     paintNotDone(!detail && !isClosed(task.status) && task.status !== 'partial' && maySkip(task));
-    show('run', detail ? 'Edit' : isScouting(sop) ? 'Scouting' : 'Checklist', () => { setKV('run_open', null).catch(() => {}); backFromRun(); });
+    paintHandOver(!!tt);
+    show('run', detail && !detail.resume ? (detail.addOnly ? 'Add' : 'Edit') : isScouting(sop) ? 'Scouting' : 'Checklist',
+         async () => { setKV('run_open', null).catch(() => {}); await leaveRun(); backFromRun(); });
     run.paintTimer?.();          // after show(), which writes the bar's title
     if (isScouting(sop)) return;                       // the scouting keeps its own draft
     const back = await restoreRunDraft(task);
@@ -8298,6 +8394,69 @@ function sopOpen() {
     } else await timerStart(tt.id);
     R.paintTimer?.();
   }
+  // Back from a checklist (0.11.91): the timer pauses and the task stays this person's ("Paused · me") when something
+  // was entered; a task only opened to look is given back — no time kept, free for anybody
+  const addStop = R => { if (R && R.addId) { const id = R.addId; R.addId = null;
+    queue([timerEvent(id, 'pause', Math.min(Date.now(), (R.lastAct || Date.now()) + IDLE_MIN * 60000))]).catch(() => {}); } };
+  async function leaveRun() {
+    const R = run; if (!R) return;
+    addStop(R);
+    if (R.edit && !R.resume) return;
+    const tt = timerTaskOf(R.task); if (!tt) return;
+    const entered = R.touched || R.resume || localMin(tt.id) >= 1 || R.answers.size > 0 || !!(R.sc && R.sc.photos.size);
+    if (!entered) { await timerRelease(tt.id); return; }
+    if (timerRunning(tt.id)) await timerPause(tt.id);
+  }
+  // "Hand over…" under Finish (0.11.91, owner: "2 phones in the same task but not at the same time"): what is answered
+  // so far goes to the server as it stands, the task is free again, and the next person continues the same report
+  function paintHandOver(on) {
+    let a = $('handover');
+    if (!a) {
+      a = document.createElement('button'); a.id = 'fb-handover'; a.className = 'fb-link fb-notdone'; a.type = 'button';
+      a.textContent = 'Hand over to somebody else…';
+      ($('pause') || $('finish')).after(a);
+      a.onclick = () => handOver();
+    }
+    a.classList.toggle('hidden', !on);
+  }
+  async function handOver() {
+    const R = run; if (!R) return;
+    const tt = timerTaskOf(R.task); if (!tt) return;
+    if (!confirm('Hand this task over?\n\nWhat you have entered so far is sent as it stands, your time is kept, and the task is free for the next person to continue and finish.')) return;
+    const cid = R.edit?.run?.client_run_id || R.clientId;
+    try {
+      if (R.sc) {
+        // the scouting as it stands goes the way of the Send button (its photos and counted trap sides)
+        if (R.sc.photos.size) { R.sc.cid = R.sc.cid || cid; }
+        clearTimeout(scDraftTimer);
+        await setKV(scDraftKey(R.task), { saved: Date.now(), cid: R.sc.cid || null, tab: R.sc.tab, outcome: R.sc.outcome, outcomeNote: R.sc.outcomeNote, verdict: R.sc.verdict,
+          lastPos: R.sc.lastPos, extra: [...R.sc.extra], status: [...R.sc.status], noTraps: !!R.sc.noTraps, photos: [...R.sc.photos.values()] });
+      } else {
+        const steps = [...R.answers.entries()].filter(([, a]) => a && (a.result || a.value_num != null || (a.value_text != null && a.value_text !== '')))
+          .map(([k, a]) => { const blobs = (R.media.get(k) || []).filter(f => f instanceof Blob);
+            const saved = (R.media.get(k) || []).filter(f => f && f.saved).map(f => typeof f.saved === 'string' ? { path: f.saved, kind: 'photo' } : f.saved);
+            return { ...a, media: saved, ...(blobs.length ? { media_blobs: blobs } : {}), recorded_at: new Date().toISOString() }; })
+          .filter(x => Number.isFinite(Number(x.seq)));
+        if (steps.length) {
+          R.draftCid = cid;
+          await queue([{ farm_id: tt.farm_id || farm.id, task_id: tt.id, sop_version_id: tt.sop_version_id || R.task.sop_version_id, client_run_id: cid,
+            status: 'partial', ...(R.resume ? { edit: true, append: true } : {}), started_at: R.edit?.run?.started_at || R.started, finished_at: new Date().toISOString(),
+            steps, notes: String(document.getElementById('fb-runNote')?.value || '').trim() || null }]);
+          clearTimeout(draftTimer);
+          await setKV(runDraftKey(R.task), { saved: Date.now(), sentSaved: Date.now(), cid, answers: [...R.answers.entries()],
+            runNote: document.getElementById('fb-runNote')?.value || '', media: [] });
+        }
+      }
+      addStop(R);
+      await timerRelease(tt.id);
+      await setKV('run_open', null);
+      showToast('Handed over — the task is free for the next person', 'success');
+      const wasSc = !!R.sc;
+      run = null;
+      await backFromRun();
+      if (wasSc && navigator.onLine) sendAllNow();
+    } catch (e) { showToast('Could not hand over — ' + String(e.message || e).slice(0, 80), 'error'); }
+  }
   // "Not done…" under Finish (0.11.60): what the task page offered, for the Admin and the task's own people
   function paintNotDone(on) {
     let a = $('notdone');
@@ -8341,6 +8500,7 @@ function sopOpen() {
   let draftTimer = null;
   function saveRunDraft() {
     if (!run) return;
+    run.touched = true;
     clearTimeout(draftTimer);
     const r = run;
     draftTimer = setTimeout(async () => {
@@ -8488,6 +8648,7 @@ function sopOpen() {
   let scDraftTimer = null;
   function saveScDraft() {
     if (!run?.sc) return;
+    run.touched = true;
     clearTimeout(scDraftTimer);
     const r = run;
     scDraftTimer = setTimeout(async () => {
@@ -9092,7 +9253,7 @@ function sopOpen() {
       revBtn.setAttribute('aria-pressed', String(sc.tab === 'review'));
       panes.review.classList.toggle('hidden', sc.tab !== 'review');
       if (sc.tab === 'review') paintReview();
-      $('finish').textContent = run.edit ? 'Save the changes' : 'Finish';
+      $('finish').textContent = run.edit && !run.resume ? 'Save the changes' : 'Finish';
     };
     sc.goTab = k => { if (k !== 'review' && !shown(k)) sc.extra.add(k); sc.tab = k; paintTabs(); };
 
@@ -10915,7 +11076,7 @@ function sopOpen() {
     // plant health and growth under today's minimum (0.11.74): asked once, then sent as it is
     const SHORT_LABEL = { health: 'Plant health', growth: 'Growth' };
     const short = ['health', 'growth'].filter(k => sc.due?.[k] && plants.filter(p => p.section === k).length < (sc.minPhotos?.[k] ?? 2));
-    if (!R.edit && short.length && sc.sentShort !== short.join()) {
+    if (!(R.edit && !R.resume) && short.length && sc.sentShort !== short.join()) {
       const txt = short.map(k => `${SHORT_LABEL[k]} ${plants.filter(p => p.section === k).length} of ${sc.minPhotos?.[k] ?? 2} photos`).join(', ');
       if (!confirm(`Under today's minimum: ${txt}. Finish anyway?`))
         return stop(short[0], `${SHORT_LABEL[short[0]]}: at least ${sc.minPhotos?.[short[0]] ?? 2} photos today.`);
@@ -10947,7 +11108,7 @@ function sopOpen() {
     sc.outcomeNote = secs.map(k => String(sc.verdict[k]?.note || '').trim() ? `${LABEL[k]}: ${String(sc.verdict[k].note).trim()}` : null).filter(Boolean).join(' · ');
     // the traps of the list not photographed on a trap day: taken down, forgotten, or out of reach (0146)
     const photographed = new Set(trapsP.map(p => p.trap_id).filter(Boolean));
-    const missing = !run.edit && sc.due?.trap && !sc.noTraps ? sc.traps.filter(t => !photographed.has(t.id)) : [];
+    const missing = !(run.edit && !run.resume) && sc.due?.trap && !sc.noTraps ? sc.traps.filter(t => !photographed.has(t.id)) : [];
     const open = missing.filter(t => { const x = sc.status.get(t.id); return !x || (x.status === 'unreachable' && !String(x.note || '').trim()); });
     // only the ones still open: a trap already marked in its row (0.11.50) is not asked about again
     if (open.length) { $('runHint').textContent = ''; return missingTraps(open); }
@@ -10956,14 +11117,14 @@ function sopOpen() {
     $('runHint').textContent = 'Saving…';
     try {
     const finished = new Date().toISOString();
-    const t = run.edit ? run.task.members[0] : (run.task.members.find(m => m.status !== 'done') || run.task.members[0]);
+    const t = run.edit && !run.resume ? run.task.members[0] : (run.task.members.find(m => m.status !== 'done') || run.task.members[0]);
     const cid = run.edit?.run?.client_run_id || run.clientId;
     const step = run.steps[0];
     const trapById = new Map(sc.traps.map(x => [x.id, x]));
     const payload = {
       farm_id: t.farm_id || farm.id, task_id: t.id, sop_version_id: t.sop_version_id || run.task.sop_version_id,
       client_run_id: cid, status: 'completed', started_at: run.edit?.run?.started_at || run.started, finished_at: finished,
-      ...(run.edit ? { edit: true } : {}),
+      ...(run.edit ? { edit: true, ...(run.append ? { append: true } : {}) } : {}),
       outcome: sc.outcome, outcome_note: String(sc.outcomeNote || '').trim() || null,
       section_outcomes: Object.fromEntries(secs.map(k => [k, { outcome: sc.verdict[k]?.ok ? 'ok' : 'nok', note: String(sc.verdict[k]?.note || '').trim() || null }])),
       steps: step ? [{ seq: step.seq, step_id: step.id, result: sc.outcome === 'ok' ? 'ok' : 'nok', note: String(sc.outcomeNote || '').trim() || null,
@@ -10989,8 +11150,9 @@ function sopOpen() {
     await queue([payload, ...uploads.map((u, n) => ({ __upload: true, client_run_id: `${cid}~up-${Date.now().toString(36)}-${String(n).padStart(3, '0')}`,
       run_client_id: cid, farm_id: payload.farm_id, kind: u.kind, ref: u.ref, blob: u.blob }))]);
     try { clearTimeout(scDraftTimer); await del('kv', scDraftKey(R.task)); await setKV('run_open', null); } catch (e) { /* nothing to clear */ }
+    addStop(R);
     $('finish').disabled = false;
-    const edited = !!R.edit;
+    const edited = !!R.edit && !R.resume;
     showToast(edited ? 'Changes saved ✓' : sc.outcome === 'nok' ? 'Saved — not OK, the manager is told' : 'Scouting done ✓', sc.outcome === 'nok' ? 'error' : 'success');
     if (run === R) backFromRun();        // back to the day's zones (0.11.67)
     } catch (e) {
@@ -12204,12 +12366,12 @@ function sopOpen() {
     // One run per task row. A server-grouped task is one row; a phone-grouped
     // one is several, each getting the same answers (they were done together).
     const finished = new Date().toISOString();
-    const open = run.edit ? run.task.members : run.task.members.filter(m => m.status !== 'done');
+    const open = run.edit && !run.resume ? run.task.members : run.task.members.filter(m => m.status !== 'done');
     const cid = run.edit?.run?.client_run_id || run.clientId;
     const payloads = open.map((t, i) => ({
       farm_id: t.farm_id || farm.id, task_id: t.id, sop_version_id: t.sop_version_id || run.task.sop_version_id,
       client_run_id: i ? `${cid}-${i}` : cid, status: 'completed',
-      ...(run.edit ? { edit: true } : {}),
+      ...(run.edit ? { edit: true, ...(run.append ? { append: true } : {}) } : {}),
       started_at: run.edit?.run?.started_at || run.started, finished_at: finished, steps,
       // the checklist's note and its verdict (0.11.57): a not OK tells the manager (an issue, FarmBox 0141)
       notes: runNote || null, outcome: anyNok ? 'nok' : 'ok', outcome_note: anyNok ? runNote : (runNote || null),
@@ -12239,9 +12401,10 @@ function sopOpen() {
     if (R.traps) { try { await del('kv', trapDraftKey(R.task)); } catch (e) { /* nothing to clear */ } }
     if (R.harvests) { try { await del('kv', harvDraftKey(R.task)); } catch (e) { /* nothing to clear */ } }
     try { await setKV('run_open', null); } catch (e) {}
+    addStop(R);
     const failed = steps.filter(s => s.result === 'nok').length;
     $('finish').disabled = false;
-    showToast(R.edit ? 'Changes saved ✓' : failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
+    showToast(R.edit && !R.resume ? 'Changes saved ✓' : failed ? `Saved — ${failed} step${failed > 1 ? 's' : ''} not OK` : 'Checklist complete ✓',
               failed ? 'error' : 'success');
     if (run === R) showWeek();        // not when the person has already opened another task
     } catch (e) {
@@ -12464,6 +12627,11 @@ function sopOpen() {
   $('sync').addEventListener('click', () => sync(false));
   $('sendall').addEventListener('click', () => sendAllNow());
   $('finish').addEventListener('click', finishRun);
+  ['pointerdown', 'input'].forEach(ev => $('run').addEventListener(ev, () => {
+    if (!run) return;
+    run.lastAct = Date.now();
+    const tt = timerTaskOf(run.task); if (tt) timerTouch(tt.id);
+  }, { capture: true, passive: true }));
   const upSel = document.getElementById('fb-uploadNet');
   if (upSel) { upSel.value = uploadNet(); upSel.onchange = () => { try { localStorage.setItem('fb_upload_net', upSel.value); } catch (e) {} flush(); }; }
   navigator.connection?.addEventListener?.('change', () => flush());
