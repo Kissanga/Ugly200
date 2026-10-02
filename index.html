@@ -827,6 +827,27 @@
     .fb-runtitle { display:flex; align-items: baseline; gap: var(--space-3); }
     .fb-runtitle h1 { flex: 1; min-width: 0; margin: 0; }
     .fb-runtitle .fb-link { flex: none; }
+    /* feedback on a task (0.11.85): the 💬 on a card, and its page */
+    .fb-fbk { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 40px; margin: -6px -8px -6px -6px;
+      border-radius: var(--radius-full); font-size: 18px; opacity: .75; }
+    .fb-fbk:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
+    #viewFarmbox select.fb-fbk-step { width: 100%; max-width: none; min-height: 44px; margin-bottom: var(--space-3); }
+    .fb-fbk-rec.on { background: var(--coral); border-color: var(--coral); color: #fff; }
+    .fb-fbk-note { margin: var(--space-3) 0; }
+    .fb-fbk-items { display: grid; gap: var(--space-2); margin: var(--space-3) 0; }
+    .fb-fbk-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-2); }
+    .fb-fbk-item audio, .fb-fbk-item video { width: 100%; display: block; }
+    .fb-fbk-item video { max-height: 240px; background: #000; border-radius: var(--radius-md, 8px); }
+    .fb-fbk-item img { width: 100%; max-height: 240px; object-fit: contain; display: block; border-radius: var(--radius-md, 8px); background: #000; }
+    .fb-fbk-cap { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: 4px; }
+    .fb-fbk-said { margin-top: var(--space-5); display: grid; gap: var(--space-2); }
+    .fb-fbk-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); display: grid; gap: 4px; }
+    .fb-fbk-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+    .fb-fbk-head .fb-chip { margin-left: auto; }
+    .fb-fbk-text { font-size: var(--text-sm); overflow-wrap: anywhere; }
+    .fb-fbk-points { margin: 0; padding-left: 1.2em; font-size: var(--text-sm); color: var(--text-muted); }
+    .fb-fbk-reply { font-size: var(--text-sm); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md, 8px);
+      background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
     .fb-runfacts { margin: 4px 0 var(--space-2); color: var(--text-muted); font-size: var(--text-sm); }
     .fb-hdr-timer { display:inline-flex; align-items:center; padding: 4px 12px; border-radius: var(--radius-full); font-weight: 800;
       font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--primary) 16%, var(--surface)); color: var(--text); }
@@ -1106,7 +1127,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.84';
+  const CURRENT_VERSION = '0.11.85';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1267,6 +1288,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.85', '2026-10-02', 'Feedback on a task', 'When the farm switches it on, every task has a 💬 button (on its card and at the top of its checklist). It opens a page to say what should change in the task, its checklist or the app: record a voice note, write a note, add photos or a short video, and say which step it is about. It works offline and is sent when there is signal. The voice is written down and put in points for the manager; under the form you see what was already said on the task and the answer you got.'],
     ['0.11.84', '2026-10-01', 'Who is on each task', 'Every task says who: In progress with the name of the person doing it, Paused and Not done with who worked on it, Done with who finished it. The list refreshes by itself every minute. Opening a task somebody else is doing asks first, and the phone says so when somebody else is on it or has already sent it. If two people do send the same task, the first report stays the one of the task and the second is kept as a second report.'],
     ['0.11.83', '2026-09-30', 'Scouting: sent when you press Finish', 'The zone no longer sends itself with a 5 second countdown once the minimum photos are in: take as many photos as you like and press Finish when the zone is done. The outline tool says it downloads about 40 MB only the very first time on the phone; after that it says Preparing, because it is read from the phone storage and uses no data.'],
     ['0.11.82', '2026-09-30', 'A second photo after measuring', 'After measuring a fruit the next photo could crash the app (Aw, Snap): the outline tool kept its model and memory after the measurement, and the camera then ran the phone out of memory. The tool now runs apart and is closed, giving all its memory back, when the Tap the fruit sheet closes, when the camera opens and when the app goes to the background. The screen also stays responsive while it works.'],
@@ -6704,6 +6726,14 @@ function sopOpen() {
 
   // ── sync ────────────────────────────────────────────────────────────────
   let farm = null, syncing = false;
+  // the 💬 on every task (0.11.85, FarmBox 0189): on while the farm has the feedback switched on; kept for offline days
+  let FEEDBACK_ON = null;
+  async function feedbackOn() {
+    if (FEEDBACK_ON === null) { try { FEEDBACK_ON = !!(await getKV('feedback_on')); } catch (e) { FEEDBACK_ON = false; } }
+    return FEEDBACK_ON;
+  }
+  const fbkExt = type => ({ 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/wav': 'wav',
+    'audio/aac': 'aac', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' }[type] || 'bin');
   async function pickFarm() {
     farm = await getKV('farm');
     if (farm) return farm;
@@ -6750,6 +6780,9 @@ function sopOpen() {
       await putAll('traps', d.sticky_traps);
       if (d.ipm_threshold) await setKV('ipm_threshold', d.ipm_threshold);
       if (Array.isArray(d.scouting_state)) await setKV('scouting_state', d.scouting_state);   // FarmBox 0145
+      // FarmBox 0189: the 💬 on every task, while the farm has the feedback switched on
+      const fbkWas = !!FEEDBACK_ON;
+      if (typeof d.feedback === 'boolean') { FEEDBACK_ON = d.feedback; await setKV('feedback_on', d.feedback); }
       for (const x of (d.deleted || [])) {
         const store = { task: 'tasks', sop: 'sops', sop_version: 'versions', sop_step: 'steps',
                         task_position: 'positions', task_item: 'positions', sticky_trap: 'traps' }[x.table];
@@ -6776,7 +6809,7 @@ function sopOpen() {
       // a sync never pulls anybody out of a task or a checklist they have open (0.11.39)
       // the minute's quiet sync (0.11.84) redraws the day only when a task, a name or somebody's timer moved
       const moved = !quiet || (d.tasks || []).length > 0 || (d.deleted || []).length > 0
-        || JSON.stringify(d.task_times || []) !== timesBefore;
+        || JSON.stringify(d.task_times || []) !== timesBefore || fbkWas !== !!FEEDBACK_ON;
       if ($('task').classList.contains('hidden') && $('run').classList.contains('hidden')) {
         if (moved && !(quiet && document.querySelector('.fb-sheet, .fb-undo.show'))) showWeek(); else paintFoot();
       } else paintFoot();
@@ -6844,6 +6877,26 @@ function sopOpen() {
         else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
           method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_reason: row.payload.reason, p_note: row.payload.note })
         });
+        else if (row.payload.__feedback) {
+          // a feedback on a task (0.11.85, FarmBox 0189): its voice notes, photos and video go to the evidence bucket —
+          // each noted on the row as it lands, so a failure half-way re-sends none twice — then the feedback itself
+          const u = row.payload;
+          if ((u.items || []).some(x => x.kind === 'video' && x.blob instanceof Blob) && !uploadAllowed()) continue;   // a video waits for Wi-Fi
+          for (let i = 0; i < (u.items || []).length; i++) {
+            const x = u.items[i];
+            if (!(x.blob instanceof Blob) || x.path) continue;
+            const type = (x.blob.type || '').split(';')[0] || { audio: 'audio/webm', photo: 'image/jpeg', video: 'video/mp4' }[x.kind];
+            const path = `${u.farm_id || farm.id}/feedback/${u.client_run_id}/${i}-${Date.now()}.${fbkExt(type)}`;
+            await api('/storage/v1/object/evidence/' + path, { method: 'POST', headers: { 'Content-Type': type }, body: x.blob });
+            x.path = path; x.bytes = x.blob.size; delete x.blob;
+            await putAll('outbox', [row]);
+          }
+          await api('/rest/v1/rpc/submit_feedback', { method: 'POST', body: JSON.stringify({ p: {
+            farm_id: u.farm_id || farm.id, client_id: u.client_run_id, task_id: u.task_id, task_title: u.task_title,
+            sop_id: u.sop_id, sop_version_id: u.sop_version_id, step_seq: u.step_seq, note: u.note, author: u.author,
+            app: u.app, app_version: u.app_version, device: u.device, sent_at: u.sent_at,
+            media: (u.items || []).filter(x => x.path).map(x => ({ kind: x.kind, path: x.path, bytes: x.bytes, seconds: x.seconds })) } }) });
+        }
         else if (row.payload.__upload && !uploadAllowed()) continue;   // waits for Wi-Fi
         else if (row.payload.__upload) {
           // a full photo after its run: to the evidence bucket, then attached to the reading or the observation
@@ -7197,6 +7250,7 @@ function sopOpen() {
   // which folds of the day list are open, for as long as the app is open (0.11.40)
   const foldState = { earlier: false, doneToday: false, days: new Set() };
   async function showWeek() {
+    await feedbackOn();
     const groups = (await loadGroups())
       // plain comparison, not localeCompare: ICU collation sorts punctuation
       // before digits, which put the untimed tasks at the top of the day
@@ -7407,6 +7461,14 @@ function sopOpen() {
     // only the states worth a word get one; "Open" is what a card already is — and the time worked (0.11.56)
     const chip = timeChip(g, late);
     if (chip) b.append(chip);
+    // feedback on this task (0.11.85): its own tap — not the card's, and not the start of a swipe
+    if (FEEDBACK_ON && !g.hub) {
+      const f = el('span', 'fb-fbk', '💬');
+      f.setAttribute('role', 'button'); f.setAttribute('aria-label', 'Feedback on this task'); f.title = 'Feedback on this task';
+      f.addEventListener('pointerdown', e => e.stopPropagation());
+      f.onclick = e => { e.stopPropagation(); openFeedback(g); };
+      b.append(f);
+    }
     b.onclick = () => { if (b.dataset.swiped) { delete b.dataset.swiped; return; } openTask(g.key); };
     return swipeable(b, g);
   }
@@ -7705,6 +7767,230 @@ function sopOpen() {
     return showWeek();
   }
 
+  // ── feedback on a task (0.11.85, FarmBox 0189; owner 2 Oct 2026) ────────
+  // Switched on per farm in Naked Heart (Settings › Task feedback). The 💬 on a task opens this page: say it, write
+  // it or show it — voice notes, a note, photos, one short video — about the task, its checklist or the app.
+  // It leaves through the outbox (offline too): the files to the evidence bucket, then submit_feedback; the
+  // server writes the voice down and puts it in points (Groq). Under the form: what was already said on this
+  // task and what the manager answered. What is on the page is kept (KV fbkdraft:<task>) until it is sent,
+  // so a phone that closes the app while its camera is open loses nothing.
+  const FBK_VOICE_S = 180, FBK_VIDEO_S = 60, FBK_MAX_BYTES = 24 * 1024 * 1024, FBK_PHOTO_PX = 2000;
+  const FBK_STATUS = { new: 'Received', accepted: 'Accepted', done: 'Done', rejected: 'Not taken up' };
+  const fmtMB = b => (b / 1048576 < 0.1 ? Math.max(1, Math.round(b / 1024)) + ' kB' : (b / 1048576).toFixed(1) + ' MB');
+  async function openFeedback(g, fromRun = false) {
+    const taskId = g.members?.[0]?.id || g.id, key = 'fbkdraft:' + (g.key || taskId);
+    const steps = (await all('steps')).filter(s => s.version_id === g.sop_version_id).sort((a, b) => a.seq - b.seq);
+    let draft = null; try { draft = await getKV(key); } catch (e) {}
+    const st = { note: draft?.note || '', step: draft?.step || '', items: (draft?.items || []).filter(x => x && x.blob instanceof Blob) };
+    const save = () => setKV(key, st.note || st.step || st.items.length ? { note: st.note, step: st.step, items: st.items, at: Date.now() } : null).catch(() => {});
+    const scrollBack = window.scrollY;
+    let rec = null, recTimer = null, recStart = 0, urls = [], busy = false;
+    const freeUrls = () => { urls.forEach(u => URL.revokeObjectURL(u)); urls = []; };
+    const stopRec = () => { try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (e) {} };
+    const leave = () => { stopRec(); clearInterval(recTimer); freeUrls(); };
+
+    const box = $('task'); box.textContent = '';
+    const hero = el('div', 'hero');
+    hero.append(el('h1', null, 'Feedback'),
+      el('p', null, [g.title, g.area && !['Whole unit', 'All zones'].includes(g.area) ? g.area : null, fmtDay(g.planned_date)].filter(Boolean).join(' · ')),
+      el('p', null, 'What should change — in this task, its checklist or the app? Say it, write it or show it.'));
+    box.append(hero);
+
+    // which step it is about (optional)
+    if (steps.length) {
+      const sel = el('select', 'set-select fb-fbk-step');
+      sel.setAttribute('aria-label', 'Which step it is about');
+      const o0 = el('option', null, 'About the whole task'); o0.value = ''; sel.append(o0);
+      steps.forEach(s => { const o = el('option', null, `Step ${s.seq} — ${s.title}`); o.value = String(s.seq); sel.append(o); });
+      sel.value = steps.some(s => String(s.seq) === String(st.step)) ? String(st.step) : '';
+      sel.onchange = () => { st.step = sel.value; save(); };
+      box.append(sel);
+    }
+
+    // the voice note: one big button, the seconds running on it
+    const recBtn = el('button', 'btn btn-lg btn-block fb-fbk-rec');
+    const paintRec = () => {
+      const on = !!rec, s = on ? Math.floor((Date.now() - recStart) / 1000) : 0;
+      recBtn.textContent = on ? `⏹ Stop · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '🎙 Record a voice note';
+      recBtn.classList.toggle('on', on);
+    };
+    paintRec();
+    recBtn.onclick = async () => {
+      if (rec) return stopRec();
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { showToast('This phone cannot record here — write the feedback instead', 'error'); return; }
+      let stream;
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch (e) { showToast('The microphone is not allowed — allow it, or write the feedback instead', 'error'); return; }
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+      const chunks = [];
+      let mr;
+      try { mr = mime ? new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48000 }) : new MediaRecorder(stream); }
+      catch (e) { stream.getTracks().forEach(t => t.stop()); showToast('Recording did not start — write the feedback instead', 'error'); return; }
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        clearInterval(recTimer); stream.getTracks().forEach(t => t.stop());
+        const seconds = Math.round((Date.now() - recStart) / 100) / 10;
+        const type = (mr.mimeType || mime || 'audio/webm').split(';')[0];
+        rec = null; paintRec();
+        const blob = new Blob(chunks, { type });
+        if (blob.size < 800 || seconds < 1) { showToast('Too short — nothing was recorded', 'error'); return; }
+        st.items.push({ kind: 'audio', blob, seconds }); save(); paintItems();
+      };
+      rec = mr; recStart = Date.now(); mr.start(); paintRec();
+      recTimer = setInterval(() => { paintRec(); if ((Date.now() - recStart) / 1000 >= FBK_VOICE_S) stopRec(); }, 500);
+    };
+    box.append(recBtn);
+
+    const note = el('textarea', 'fb-runnote fb-fbk-note'); note.rows = 4; note.value = st.note;
+    note.placeholder = 'Or write it here';
+    note.oninput = () => { st.note = note.value; save(); paintSend(); };
+    box.append(note);
+
+    // photos and one short video
+    const tools = el('div', 'fb-actions');
+    const pickPhoto = el('input'); pickPhoto.type = 'file'; pickPhoto.accept = 'image/*'; pickPhoto.style.display = 'none';
+    const pickVideo = el('input'); pickVideo.type = 'file'; pickVideo.accept = 'video/*'; pickVideo.setAttribute('capture', 'environment'); pickVideo.style.display = 'none';
+    const photoBtn = el('button', 'fb-btn', '📷 Photo'), videoBtn = el('button', 'fb-btn', '🎥 Video');
+    const addPhoto = async f => {
+      let b = f;
+      try {
+        const big = await shrinkPhoto(f, FBK_PHOTO_PX, null);
+        b = (await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', 0.85))) || f;
+        big.canvas.width = big.canvas.height = 0;
+      } catch (e) { /* the file as it is */ }
+      st.items.push({ kind: 'photo', blob: b }); save(); paintItems();
+    };
+    photoBtn.onclick = async () => {
+      let r = null;
+      try { r = await takeTrapPhoto('', g.title, 'step'); } catch (e) { r = null; }
+      if (r === 'cancel') return;
+      if (r) addPhoto(r); else pickPhoto.click();
+    };
+    pickPhoto.onchange = () => { const f = pickPhoto.files[0]; pickPhoto.value = ''; if (f) addPhoto(f); };
+    videoBtn.onclick = () => {
+      if (busy) return;
+      if (st.items.some(x => x.kind === 'video')) { showToast('One video a feedback — remove the first to take another', 'error'); return; }
+      pickVideo.click();
+    };
+    pickVideo.onchange = async () => {
+      let f = pickVideo.files[0]; pickVideo.value = '';
+      if (!f) return;
+      busy = true; videoBtn.textContent = '🎥 Checking…';
+      try {
+        const secs = typeof getVideoDuration === 'function' ? await getVideoDuration(f) : null;
+        if (secs != null && secs > FBK_VIDEO_S + 3) { showToast(`Keep the video under a minute — this one is ${Math.round(secs)} s`, 'error'); return; }
+        // a phone films at ~17 Mbps: made smaller on the phone (720p), or it would not fit the upload
+        if (f.size > 8 * 1024 * 1024 && typeof compressVideoFast === 'function') {
+          try {
+            const small = await compressVideoFast(f, p => { videoBtn.textContent = `🎥 Making it smaller… ${Math.round((p || 0) * 100)}%`; });
+            if (small && small.size && small.size < f.size) f = small;
+          } catch (e) { console.warn('video not compressed', e); }
+        }
+        if (f.size > FBK_MAX_BYTES) { showToast(`This video is too big to send (${fmtMB(f.size)}) — make a shorter one`, 'error'); return; }
+        st.items.push({ kind: 'video', blob: f, seconds: secs != null ? Math.round(secs * 10) / 10 : null }); save(); paintItems();
+      } finally { busy = false; videoBtn.textContent = '🎥 Video'; }
+    };
+    tools.append(photoBtn, videoBtn, pickPhoto, pickVideo);
+    box.append(tools);
+
+    // what is attached: listen, look, remove
+    const items = el('div', 'fb-fbk-items');
+    function paintItems() {
+      freeUrls(); items.textContent = '';
+      st.items.forEach((x, i) => {
+        const row = el('div', 'fb-fbk-item ' + x.kind);
+        const url = URL.createObjectURL(x.blob); urls.push(url);
+        let n;
+        if (x.kind === 'photo') { n = el('img'); n.alt = 'Photo'; }
+        else { n = el(x.kind === 'video' ? 'video' : 'audio'); n.controls = true; n.preload = 'metadata'; if (x.kind === 'video') n.playsInline = true; }
+        n.src = url;
+        const cap = el('span', 'fb-meta', [x.kind === 'audio' ? 'Voice note' : x.kind === 'video' ? 'Video' : 'Photo',
+          x.seconds ? Math.round(x.seconds) + ' s' : null, fmtMB(x.blob.size)].filter(Boolean).join(' · '));
+        const rm = el('button', 'fb-link', 'Remove');
+        rm.onclick = () => { st.items.splice(i, 1); save(); paintItems(); };
+        const foot = el('div', 'fb-fbk-cap'); foot.append(cap, rm);
+        row.append(n, foot);
+        items.append(row);
+      });
+      paintSend();
+    }
+    box.append(items);
+
+    const send = el('button', 'btn btn-primary btn-lg btn-block', 'Send the feedback');
+    function paintSend() { send.disabled = !(note.value.trim() || st.items.length); }
+    send.onclick = async () => {
+      if (rec) { showToast('Stop the recording first', 'error'); return; }
+      if (busy) { showToast('The video is still being prepared', 'error'); return; }
+      const text = note.value.trim();
+      if (!text && !st.items.length) { showToast('Say, write or show something first', 'error'); return; }
+      send.disabled = true;
+      try {
+        if (!farm) farm = await getKV('farm');
+        const me = await getKV('me');
+        const id = 'fbk-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
+        await queue({ __feedback: true, client_run_id: id, farm_id: g.farm_id || farm?.id, task_id: taskId, task_title: g.title,
+          sop_id: g.sop_id || null, sop_version_id: g.sop_version_id || null, step_seq: st.step ? Number(st.step) : null, note: text || null,
+          author: (await all('workers')).find(w => w.id === me)?.name || session?.user?.email || null,
+          app: 'brain', app_version: typeof CURRENT_VERSION !== 'undefined' ? CURRENT_VERSION : null, device: navigator.userAgent.slice(0, 180),
+          sent_at: new Date().toISOString(), items: st.items.map(x => ({ kind: x.kind, blob: x.blob, seconds: x.seconds ?? null })) });
+        await setKV(key, null);
+        showToast(navigator.onLine ? 'Feedback sent ✓ — thank you' : 'Feedback kept — it goes when there is signal', 'success');
+        history.back();
+      } catch (e) {
+        send.disabled = false;
+        showToast('Could not keep the feedback — ' + String(e.message || e).slice(0, 60), 'error');
+      }
+    };
+    box.append(send);
+    box.append(el('div', 'config-hint', `Voice notes up to ${FBK_VOICE_S / 60} minutes, a video up to a minute. It works offline: it is sent when there is signal${uploadNet() === 'wifi' ? ' (a video waits for Wi-Fi)' : ''}.`));
+
+    // what was already said on this task, and what was answered
+    const said = el('div', 'fb-fbk-said');
+    box.append(said);
+    const paintSaid = async rows => {
+      const waiting = (await all('outbox')).filter(r => r.payload?.__feedback && r.payload.task_id === taskId).length;
+      said.textContent = '';
+      if (!waiting && !(rows || []).length) return;
+      said.append(el('div', 'fb-sec', 'Already said on this task'));
+      if (waiting) said.append(el('div', 'config-hint', `${waiting} feedback of yours waiting to be sent.`));
+      (rows || []).forEach(r => {
+        const c = el('div', 'fb-fbk-row');
+        const head = el('div', 'fb-fbk-head');
+        head.append(el('b', null, r.mine ? 'You' : firstName(r.author) || 'Somebody'),
+          el('span', 'fb-meta', new Date(r.sent_at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })),
+          el('span', 'fb-chip ' + (r.status === 'done' ? 'ok' : r.status === 'rejected' ? 'skip' : 'todo'), FBK_STATUS[r.status] || r.status));
+        c.append(head);
+        if (r.step_seq) c.append(el('div', 'fb-meta', `Step ${r.step_seq}${r.step_title ? ' — ' + r.step_title : ''}`));
+        const textOf = r.ai_summary || r.note || r.transcript;
+        if (textOf) c.append(el('div', 'fb-fbk-text', textOf));
+        if ((r.ai_points || []).length) { const ul = el('ul', 'fb-fbk-points'); r.ai_points.forEach(p => ul.append(el('li', null, p))); c.append(ul); }
+        const media = [[r.voice, '🎙'], [r.photos, '📷'], [r.videos, '🎥']].filter(([n]) => n).map(([n, i]) => `${i} ${n}`).join('  ');
+        if (media || r.ai_status === 'queued') c.append(el('div', 'fb-meta', [media, r.ai_status === 'queued' ? 'being written down…' : null].filter(Boolean).join(' · ')));
+        if (r.reply) c.append(el('div', 'fb-fbk-reply', 'Answer: ' + r.reply));
+        said.append(c);
+      });
+    };
+    paintSaid(null);
+    if (navigator.onLine && session) {
+      api('/rest/v1/rpc/task_feedback_for', { method: 'POST', body: JSON.stringify({ p_tasks: (g.members || [{ id: taskId }]).map(m => m.id) }) })
+        .then(rows => { if (said.isConnected) paintSaid(rows); }).catch(e => console.warn('feedback list', e));
+    }
+
+    paintItems();
+    // Back: into the checklist it was opened from (left as it was underneath), the day's scouting, or the day
+    show('task', 'Feedback', async () => {
+      leave();
+      if (fromRun && run) {
+        show('run', run.edit ? 'Edit' : isScouting(run.sop) ? 'Scouting' : 'Checklist', () => {});
+        run.paintTimer?.();
+        window.scrollTo(0, scrollBack);
+        return;
+      }
+      const h = hubOf(await loadGroups(), g.key);     // a zone's card is only ever on its day's scouting page
+      return h ? openHub(h) : showWeek();
+    });
+  }
+
   // the old task page (kept for reference, no longer opened)
   async function taskPage(key) {
     const groups = await loadGroups();
@@ -7852,6 +8138,12 @@ function sopOpen() {
         });
       };
       tline.append(toggle);
+    }
+    // feedback on this task, from inside its checklist (0.11.85): the checklist stays as it is underneath
+    if (await feedbackOn()) {
+      const fk = el('button', 'fb-link', '💬 Feedback');
+      fk.onclick = () => openFeedback(task, true);
+      tline.append(fk);
     }
     head.append(tline);
     // under the title (0.11.60): where to go — the zones to visit, or the place — then the minutes, PPE and tools
