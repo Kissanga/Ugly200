@@ -1140,7 +1140,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.92';
+  const CURRENT_VERSION = '0.11.93';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1304,6 +1304,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.93', '2026-10-03', 'Live updates', 'What somebody does on a task reaches the other phones and Naked Heart in about a second instead of at the next minute: a task taken shows its lock at once, a task finished shows Done. A Farm manager can now take a held task back from the phone, like the Admin. A done task that this phone sent or opened before opens without signal to add photos and notes; they go up when there is signal.'],
     ['0.11.92', '2026-10-03', 'A check of the whole app: nothing lost, nothing sent twice', 'A check of the whole app. Notes: Send works once at a time (a second tap made a second Notion page); what was typed, recorded or added during a long upload stays, and a switch of tab during it no longer sends to the wrong list; a photo or video that failed to upload stays on the note instead of being thrown away under a “Sent ✓”; a voice note that could not be transcribed (offline) stays as an attachment — tap it to try again; a transcript is added to what the box holds instead of replacing it; a stalled video compression no longer holds Send, and a video is not compressed twice after a trip to the background. SOP runs: a run finished during an upload is no longer dropped from the outbox, and a run is only cleared once the phone really saved it. Editing a SOP adds the new blocks before removing the old. Scouting: a draft writes each photo once (it rewrote every 4000 px photo at each change), a gallery photo is decoded at the size kept, and the photo viewer opens a smaller copy. Also: a refused Notion or Groq key no longer signs you out, the unlock check gives up after 20 s, the update check stops filling the phone with copies of the page, and the last skin chosen wins.'],
     ['0.11.91', '2026-10-03', 'One person on a task at a time', 'A task somebody has open — running or paused — is theirs: the others see 🔒 with the name and cannot open it until it is finished or handed over (Hand over to somebody else… under Finish sends what is entered so far, and the next person continues the same report); an Admin can take it back. A done task says who did it and in how long (Done · Dial + Naison · 25 min total) and everybody can open it to add photos and notes — nothing already sent is removed. The timer no longer stops at 18:00: it stops 20 minutes after the last touch in the checklist, Back pauses it, and a task only opened to look keeps no time. Reports now go up before the photos, and one that fails no longer holds the others; a card says "waiting to send" until the server has it.'],
     ['0.11.90', '2026-10-02', 'Send recovers photos whose task is gone', 'Send now also sends the photos of a scouting whose task has left the list (cancelled, replanned or more than a week old): on that task when the farm still has it, otherwise as photos of the day with the position written on them. One item that fails no longer holds back everything behind it, and the list says why anything is still waiting.'],
@@ -7009,6 +7010,9 @@ function sopOpen() {
       }
       await setKV('cursor', d.cursor);
       await setKV('synced_at', Date.now());
+      liveOpen();
+      // the reports kept for adding offline go after eight days
+      for (const r of (await all('kv')).filter(r => String(r.id).startsWith('sent:') && (r.v?.kept || 0) < Date.now() - 8 * 86400000)) await del('kv', r.id);
       await flush();
       // a sync never pulls anybody out of a task or a checklist they have open (0.11.39)
       // the minute's quiet sync (0.11.84) redraws the day only when a task, a name or somebody's timer moved
@@ -7023,10 +7027,68 @@ function sopOpen() {
     } finally { syncing = false; $('sync').classList.remove('spin'); }
   }
 
+  // ── live (0.11.93, owner 3 Oct 2026: "add live update") ──────────────────
+  // The phones and the consoles of a site share one Supabase Realtime broadcast channel: whoever sent something
+  // says "moved", and the others sync at once instead of at the next minute — a task somebody takes shows its lock
+  // on the other phones in about a second. Only that one word travels; what moved is read from the database as
+  // always. The minute's sync stays underneath for a missed message; the channel is closed while the app is hidden.
+  let liveWs = null, liveTopic = null, liveBeat = null, liveRetry = null, liveRef = 0, liveDeb = null, liveSaid = 0;
+  const liveSend = (event, payload, t = liveTopic) => {
+    if (liveWs && liveWs.readyState === 1) liveWs.send(JSON.stringify({ topic: t, event, ref: String(++liveRef), payload }));
+  };
+  function liveClose() {
+    clearInterval(liveBeat); clearTimeout(liveRetry); liveBeat = liveRetry = null;
+    if (liveWs) { liveWs.onclose = null; try { liveWs.close(); } catch (e) {} liveWs = null; }
+  }
+  async function liveOpen() {
+    if (liveWs || !session || document.hidden || !navigator.onLine || !document.body.classList.contains('src-cloud')) return;
+    let sis = null; try { sis = await getKV('sisters'); } catch (e) {}
+    if (!farm) { try { farm = await getKV('farm'); } catch (e) {} }
+    const site = (Array.isArray(sis) && (sis.find(x => x.home) || sis[0]) || farm || {}).id;
+    if (!site || liveWs) return;
+    liveTopic = 'realtime:fb-live-' + site;
+    try { liveWs = new WebSocket(URL_BASE.replace(/^http/, 'ws') + '/realtime/v1/websocket?apikey=' + ANON + '&vsn=1.0.0'); }
+    catch (e) { liveWs = null; return; }
+    const ws = liveWs;
+    ws.onopen = () => {
+      liveSend('phx_join', { config: { broadcast: { self: false }, presence: { key: '' } } });
+      liveBeat = setInterval(() => liveSend('heartbeat', {}, 'phoenix'), 25000);
+    };
+    ws.onmessage = e => {
+      let d; try { d = JSON.parse(e.data); } catch (x) { return; }
+      if (d.topic !== liveTopic || d.event !== 'broadcast' || !d.payload || d.payload.event !== 'moved') return;
+      clearTimeout(liveDeb);
+      liveDeb = setTimeout(() => { if (!document.hidden && navigator.onLine && session && !document.querySelector('.fb-cam')) sync(false, true); }, 1200);
+    };
+    ws.onclose = () => { clearInterval(liveBeat); if (liveWs === ws) liveWs = null; liveRetry = setTimeout(liveOpen, 20000); };
+    ws.onerror = () => { try { ws.close(); } catch (x) {} };
+  }
+  function liveSay() {
+    if (Date.now() - liveSaid < 1000) return;
+    liveSaid = Date.now();
+    liveSend('broadcast', { type: 'broadcast', event: 'moved', payload: {} });
+  }
+
+  // what this phone sent for a task, kept a week (0.11.93): a done task of this phone opens to add to it without signal
+  const sentKey = id => 'sent:' + id;
+  function keepSent(p) {
+    if (!p || !p.task_id || p.status !== 'completed') return;
+    const d = { task_id: p.task_id, status: 'done', may_edit: true, kept: Date.now(),
+      run: { client_run_id: p.client_run_id, started_at: p.started_at, finished_at: p.finished_at, outcome: p.outcome || null,
+             outcome_note: p.outcome_note || null, section_outcomes: p.section_outcomes || null, notes: p.notes || null },
+      steps: (p.steps || []).map(s => ({ seq: s.seq, step_id: s.step_id, item_id: s.item_id || null, result: s.result, value_num: s.value_num ?? null,
+        value_text: s.value_text ?? null, note: s.note || null, media: (s.media || []).map(m => m.path || m).filter(x => typeof x === 'string') })),
+      traps: (p.traps || []).map(t => { const { photo_blob, ...rest } = t; return rest; }),
+      observations: p.observations || [],
+      harvests: (p.harvests || []).map(h => ({ plan_id: h.plan_id, kg: h.kg })) };
+    setKV(sentKey(p.task_id), d).catch(() => {});
+  }
+
   // ── the outbox: nothing a worker records is ever lost ───────────────────
   async function queue(payloads) {
     const list = Array.isArray(payloads) ? payloads : [payloads];
     await putAll('outbox', list.map((payload, i) => ({ id: payload.client_run_id, payload, tries: 0, at: Date.now() + i })));
+    list.forEach(p => { if (!p.__timer && !p.__upload && !p.__tick && !p.__skip && !p.__clock && !p.__feedback) keepSent(p); });
     // done, not done, or a checklist sent: that task's timer stops (the server stops its own with the task)
     list.forEach(p => { if (p.task_id && (p.__tick || p.__skip || (!p.__timer && !p.__upload && p.status === 'completed'))) timerCloseLocal(p.task_id); });
     flush().catch(e => console.warn('flush:', e));
@@ -7061,6 +7123,7 @@ function sopOpen() {
     const isUp = r => r.payload && r.payload.__upload ? 1 : 0;
     const chainOf = r => { const u = r.payload || {}; return u.__upload ? 'run:' + u.run_client_id : u.__timer ? 'tmr:' + u.task_id : u.__clock ? 'clock' : 'run:' + u.client_run_id; };
     const held = new Set();
+    let told = 0;                            // what went up that the others should see at once (live, 0.11.93)
     const rows = (await all('outbox')).sort((a, b) => isUp(a) - isUp(b) || (a.at || 0) - (b.at || 0) || String(a.id).localeCompare(String(b.id)));
     for (const row of rows) {
       if (row.dead) { if (!isUp(row)) held.add(chainOf(row)); continue; }
@@ -7154,6 +7217,7 @@ function sopOpen() {
           }
         }
         await del('outbox', row.id);
+        if (!isUp(row) && !row.payload.__clock && !row.payload.__feedback) told++;
       } catch (e) {
         const dead = refusedForGood(e);
         await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 160), dead }]);
@@ -7161,6 +7225,7 @@ function sopOpen() {
         if (!navigator.onLine) break;             // the connection went: no point in trying the rest
       }
     }
+    if (told) liveSay();
     paintFoot();
   }
 
@@ -7736,6 +7801,7 @@ function sopOpen() {
     (await all('steps')).forEach(x => { if (!SW.steps.has(x.version_id)) SW.steps.set(x.version_id, []); SW.steps.get(x.version_id).push(x); });
     SW.me = await getKV('me');
     SW.admin = (await all('workers')).some(w => w.id === SW.me && w.role === 'farm_admin');
+    SW.manager = SW.admin || (await all('workers')).some(w => w.id === SW.me && w.role === 'farm_manager');   // may take a held task back (0.11.93)
   }
   const swipeOverlay = new Map();                   // task id → the state held for the five seconds of Undo
   // why a task is cancelled (0.11.61, FarmBox 0168): a real choice — "no time" is what Not done says by itself
@@ -7995,10 +8061,11 @@ function sopOpen() {
     // theirs until they finish it or hand it over; an Admin or a manager can take it back
     const lock = heldOther(t);
     if (lock && !groupRunning(t)) {
-      if (!(SW.admin && navigator.onLine)) { showToast(`${lock} is on this task — it opens when ${lock} finishes or hands it over`, 'error'); return; }
+      if (!(SW.manager && navigator.onLine)) { showToast(`${lock} is on this task — it opens when ${lock} finishes or hands it over`, 'error'); return; }
       if (!confirm(`${lock} is on this task.\n\nTake it back from ${lock}? What ${lock} has not sent stays on ${lock}'s phone.`)) return;
       try { for (const m of t.members.filter(x => !isClosed(x.status))) await api('/rest/v1/rpc/release_task', { method: 'POST', body: JSON.stringify({ p_task: m.id }) }); }
       catch (e) { showToast('Could not take it back — ' + String(e.message || e).replace(/^\d+ /, '').slice(0, 80), 'error'); return; }
+      liveSay();
     }
     if (!hasChecklist) { if (confirm(`${t.title} — mark it done?`)) await markDone(t); return; }
     // online: the server is asked first, so two phones opening the same task in the same minute do not both get in
@@ -8361,10 +8428,21 @@ function sopOpen() {
   // the checklist; saving sends it again under the same run, which replaces it.
   // The task's people, the Admin or a manager — the server says no to anyone else.
   async function editTask(t, sop) {
-    if (!navigator.onLine) { showToast('Editing needs a connection — it fetches what was sent', 'error'); return; }
-    let d;
-    try { d = await api('/rest/v1/rpc/run_detail', { method: 'POST', body: JSON.stringify({ p_task: t.members[0].id }) }); }
-    catch (e) { showToast('Could not fetch the task — ' + String(e.message || e).slice(0, 60), 'error'); return; }
+    let d = null, kept = null;
+    try { kept = await getKV(sentKey(t.members[0].id)); } catch (e) {}
+    if (navigator.onLine) {
+      try { d = await Promise.race([api('/rest/v1/rpc/run_detail', { method: 'POST', body: JSON.stringify({ p_task: t.members[0].id }) }),
+                                    new Promise((_, no) => setTimeout(() => no(new Error('no answer in time')), 6000))]); }
+      catch (e) { if (!kept) { showToast('Could not fetch the task — ' + String(e.message || e).slice(0, 60), 'error'); return; } }
+    }
+    // without signal (0.11.93): what this phone sent or last read for the task — to add to it only; it goes up later
+    if (!d) {
+      if (!kept) { showToast('Without signal a done task opens only on a phone that sent it or opened it before', 'error'); return; }
+      await startRun(t, sop, { ...kept, addOnly: true });
+      showToast('No signal: you can add photos and notes — they go up when there is signal', 'info');
+      return;
+    }
+    if (d.run) setKV(sentKey(t.members[0].id), { ...d, kept: Date.now() }).catch(() => {});
     // 0.11.91: a report still on this phone is not on the server yet — editing now would make a second report
     if (!d || !d.run) {
       const waiting = (await all('outbox')).some(r => r.payload && t.members.some(m => m.id === r.payload.task_id) && !r.payload.__timer && !r.payload.__upload && !r.payload.__feedback);
@@ -12895,8 +12973,11 @@ function sopOpen() {
   }, 60000);
   addEventListener('offline', netPill);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && document.body.classList.contains('src-cloud')) { (session && navigator.onLine) ? sync(false, true) : flush(); }
+    if (document.hidden) { liveClose(); return; }
+    liveOpen();
+    if (document.body.classList.contains('src-cloud')) { (session && navigator.onLine) ? sync(false, true) : flush(); }
   });
+  addEventListener('online', () => liveOpen());
 
   window.fbOpen = fbOpen;
   setSource(localStorage.getItem(SOURCE_KEY) || 'notion');
