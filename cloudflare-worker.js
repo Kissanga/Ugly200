@@ -23,6 +23,22 @@ export default {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
+    // What goes on to Notion and Groq: never the app password, nor the browser's cookies, origin and referrer
+    // (they reached both services and their logs). A response passed on says so in X-Upstream, so the app can tell
+    // a refused server key from a wrong app password.
+    const upstreamHeaders = () => {
+      const h = new Headers(request.headers);
+      ['X-App-Password', 'Cookie', 'Origin', 'Referer'].forEach(k => h.delete(k));
+      return h;
+    };
+    const passBack = (response, who) => {
+      const r = new Response(response.body, response);
+      r.headers.set('Access-Control-Allow-Origin', '*');
+      r.headers.set('X-Upstream', who);
+      r.headers.set('Access-Control-Expose-Headers', 'X-Upstream');
+      return r;
+    };
+
     // Ping route — just confirms the password is correct
     if (pathname === '/ping') {
       return new Response('{"ok":true}', {
@@ -33,7 +49,7 @@ export default {
     // Route to Notion API
     if (pathname.startsWith('/v1/')) {
       const notionUrl = 'https://api.notion.com' + pathname + url.search;
-      const headers = new Headers(request.headers);
+      const headers = upstreamHeaders();
 
       // Inject Notion token from environment (not from frontend)
       headers.set('Authorization', `Bearer ${env.NOTION_TOKEN}`);
@@ -45,16 +61,14 @@ export default {
         body: request.method !== 'GET' ? request.body : undefined,
       });
 
-      const newResponse = new Response(response.body, response);
-      newResponse.headers.set('Access-Control-Allow-Origin', '*');
-      return newResponse;
+      return passBack(response, 'Notion');
     }
 
     // Route to Groq API
     if (pathname.startsWith('/groq/')) {
       const groqPath = pathname.replace('/groq/', '');
       const groqUrl = 'https://api.groq.com/' + groqPath + url.search;
-      const headers = new Headers(request.headers);
+      const headers = upstreamHeaders();
 
       // Inject Groq key from environment
       headers.set('Authorization', `Bearer ${env.GROQ_KEY}`);
@@ -65,9 +79,7 @@ export default {
         body: request.method !== 'GET' ? request.body : undefined,
       });
 
-      const newResponse = new Response(response.body, response);
-      newResponse.headers.set('Access-Control-Allow-Origin', '*');
-      return newResponse;
+      return passBack(response, 'Groq');
     }
 
     return new Response('Not found', { status: 404 });

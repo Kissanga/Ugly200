@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ugly200-v179';
+const CACHE_NAME = 'ugly200-v180';
 // the scouting's text reader (Tesseract.js from jsDelivr, 0.11.40): kept across releases for offline days
 const LIB_CACHE = 'fb-lib-v1';
 const STATIC_ASSETS = [
@@ -77,11 +77,14 @@ self.addEventListener('fetch', e => {
       fetch(new Request(request.url, { cache: 'no-cache', credentials: 'same-origin' })).then(response => {
         if (response && response.status === 200 && response.type !== 'opaque') {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+          // one copy per page, whatever its query (0.11.92): the update check's index.html?probe=<time> and the
+          // ?updated=<time> reload each stored a new ~800 KB copy, every two minutes while a deploy was half out
+          const key = url.search ? new Request(url.origin + url.pathname) : request;
+          caches.open(CACHE_NAME).then(cache => cache.put(key, clone));
         }
         return response;
       }).catch(() =>
-        caches.match(request).then(c => c || caches.match('./index.html'))
+        caches.match(request, { ignoreSearch: true }).then(c => c || caches.match('./index.html'))
       )
     );
     return;

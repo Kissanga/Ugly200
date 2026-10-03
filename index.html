@@ -1140,7 +1140,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.91';
+  const CURRENT_VERSION = '0.11.92';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1170,7 +1170,10 @@
         // still on the old one: say so instead of offering the same button again.
         const stuck = sessionStorage.getItem('nb_update_target') === data.version;
         // 0.11.64: nothing open (no checklist, sheet, camera or typing) → update by itself, once per version
-        if (!stuck && quietNow() && await arrived(data.version)) { autoUpdate(data.version); return; }
+        if (!stuck && quietNow()) {
+          if (await arrived(data.version)) { autoUpdate(data.version); return; }
+          notYetAt = Date.now();   // the files have not reached this phone yet: ask again in five minutes, not every two (0.11.92)
+        }
         showVersionNotification(data.version, stuck);
       }
     } catch(e) {}
@@ -1301,6 +1304,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.92', '2026-10-03', 'A check of the whole app: nothing lost, nothing sent twice', 'A check of the whole app. Notes: Send works once at a time (a second tap made a second Notion page); what was typed, recorded or added during a long upload stays, and a switch of tab during it no longer sends to the wrong list; a photo or video that failed to upload stays on the note instead of being thrown away under a “Sent ✓”; a voice note that could not be transcribed (offline) stays as an attachment — tap it to try again; a transcript is added to what the box holds instead of replacing it; a stalled video compression no longer holds Send, and a video is not compressed twice after a trip to the background. SOP runs: a run finished during an upload is no longer dropped from the outbox, and a run is only cleared once the phone really saved it. Editing a SOP adds the new blocks before removing the old. Scouting: a draft writes each photo once (it rewrote every 4000 px photo at each change), a gallery photo is decoded at the size kept, and the photo viewer opens a smaller copy. Also: a refused Notion or Groq key no longer signs you out, the unlock check gives up after 20 s, the update check stops filling the phone with copies of the page, and the last skin chosen wins.'],
     ['0.11.91', '2026-10-03', 'One person on a task at a time', 'A task somebody has open — running or paused — is theirs: the others see 🔒 with the name and cannot open it until it is finished or handed over (Hand over to somebody else… under Finish sends what is entered so far, and the next person continues the same report); an Admin can take it back. A done task says who did it and in how long (Done · Dial + Naison · 25 min total) and everybody can open it to add photos and notes — nothing already sent is removed. The timer no longer stops at 18:00: it stops 20 minutes after the last touch in the checklist, Back pauses it, and a task only opened to look keeps no time. Reports now go up before the photos, and one that fails no longer holds the others; a card says "waiting to send" until the server has it.'],
     ['0.11.90', '2026-10-02', 'Send recovers photos whose task is gone', 'Send now also sends the photos of a scouting whose task has left the list (cancelled, replanned or more than a week old): on that task when the farm still has it, otherwise as photos of the day with the position written on them. One item that fails no longer holds back everything behind it, and the list says why anything is still waiting.'],
     ['0.11.89', '2026-10-02', 'Send sends half-done checklists too (for now)', 'While the app is being developed, the Send button at the top also sends any checklist that was started and not finished: the answers given so far and their photos go to Naked Heart as they stand. The task stays open, and Finish later completes the same report. This is temporary and will be locked again.'],
@@ -1518,9 +1522,11 @@ async function tryUnlockApp() {
   btn.disabled = true; btn.textContent = 'Checking…';
   err.style.display = 'none';
   try {
+    // 20 s at most (0.11.92): a fetch that hangs on iOS left "Checking…" for ever
+    const ctl = new AbortController(), tid = setTimeout(() => ctl.abort(), 20000);
     const res = await fetch(PROXY + '/ping', {
-      headers: { 'X-App-Password': pw }
-    });
+      headers: { 'X-App-Password': pw }, signal: ctl.signal
+    }).finally(() => clearTimeout(tid));
     if (res.ok) {
       setAppPassword(pw);
       hidePasswordGate();
@@ -1567,6 +1573,11 @@ async function cfFetch(url, options = {}) {
 
   try {
     const res = await fetch(url, { ...options, headers, signal });
+    // a 401 from Notion or Groq themselves (a revoked key on the Worker) is not the app password: the Worker marks what
+    // it passed on with X-Upstream (cloudflare-worker.js, 0.11.92), so only its own refusal signs out
+    if (res.status === 401 && res.headers.get('X-Upstream')) {
+      throw new Error(`${res.headers.get('X-Upstream')} refused the server's key — tell the admin (the app password is fine)`);
+    }
     if (res.status === 401) {
       clearAppPassword();
       showPasswordGate();
@@ -2447,7 +2458,9 @@ function applySkin(skin) {
   }
 }
 
+var skinSeq = 0;   // the last skin chosen wins (0.11.92): a slower earlier answer used to apply over it
 async function loadSkin(id) {
+  const my = ++skinSeq;
   id = (id || DEFAULT_SKIN).replace(/[^a-z0-9-]/gi, '');
   localStorage.setItem(SKIN_KEY, id);
   if (id === DEFAULT_SKIN) { localStorage.removeItem(SKIN_CACHE_KEY); applySkin(null); return; }
@@ -2455,6 +2468,7 @@ async function loadSkin(id) {
     const res = await fetch(`skins/${id}.json`, { cache: 'no-cache' });
     if (!res.ok) throw new Error(res.status);
     const skin = await res.json();
+    if (my !== skinSeq) return;
     localStorage.setItem(SKIN_CACHE_KEY, JSON.stringify(skin));
     applySkin(skin);
   } catch (e) {
@@ -2749,7 +2763,17 @@ function failureReason(e) {
 }
 
 // ─── TRANSCRIPTION (GROQ WHISPER) ────────────────────────────
-async function transcribeAudio(blob) {
+// 0.11.92: a transcript is added to what the box holds (typing during it, or an earlier recording, used to be
+// replaced), a slower earlier request cannot land last over a newer one, and a recording that could not be
+// transcribed (offline in the field) stays on the note as an attachment — tap it to try again; it goes with the note.
+let transcribeSeq = 0;
+const appendText = (id, text) => {
+  const box = document.getElementById(id), t = String(text || '').trim();
+  if (!t) return;
+  box.value = box.value.trim() ? box.value.trim() + '\n\n' + t : t;
+};
+async function transcribeAudio(blob, fromAttachment = null) {
+  const my = ++transcribeSeq;
   const bar = document.getElementById('transcribingBar');
   bar.style.display = 'flex';
   try {
@@ -2765,14 +2789,23 @@ async function transcribeAudio(blob) {
     });
     if (!res.ok) throw new Error(await apiErrorMessage(res));
     const data = await res.json();
-    document.getElementById('transcriptText').value = data.text || '';
+    appendText('transcriptText', data.text);
+    if (fromAttachment) { mediaFiles = mediaFiles.filter(m => m !== fromAttachment); renderMediaPreviews(); }
     updateSubmitBtn();
     showToast('Transcription complete ✓', 'success');
   } catch(e) {
     console.warn('Transcription failed:', e);
-    showToast(`Transcription failed — ${failureReason(e)}`, 'error');
+    // the recording is not lost: on the note as an attachment, to retry or to send as it is
+    if (!fromAttachment && blob && blob.size) {
+      const ext = /mp4|aac|m4a|mpeg/.test(blob.type || '') ? 'm4a' : 'webm';
+      const file = new File([blob], `voice-note-${new Date().toTimeString().slice(0, 5).replace(':', 'h')}.${ext}`, { type: blob.type || 'audio/webm' });
+      mediaFiles.push({ type: 'audio', file, blob });
+      renderMediaPreviews();
+      updateSubmitBtn();
+    }
+    showToast(`Transcription failed — ${failureReason(e)}. The recording is kept on the note: tap it to try again.`, 'error');
   } finally {
-    bar.style.display = 'none';
+    if (my === transcribeSeq) bar.style.display = 'none';
   }
 }
 
@@ -3967,6 +4000,8 @@ function releaseWakeLock() {
 // ─── BACKGROUND COMPRESSION ──────────────────────────────────
 // Starts (or restarts) background compression for a media entry.
 function startBackgroundCompression(entry) {
+  if (entry.compressing) return;           // one compression of a file at a time (0.11.92)
+  entry.compressing = true;
   entry.compressInterrupted = false;
   entry.compressProgress = 0;
   const lbl = () => document.getElementById('cl-' + entry.uid);
@@ -3982,6 +4017,7 @@ function startBackgroundCompression(entry) {
     entry.compressProgress = p;
     setLbl(`⚙ ${Math.round(p * 100)}%`);
   }, entry._audioP || null, entry._groqAudioP || null).then(compressed => {
+    entry.compressing = false;
     entry.compressed = compressed;
     releaseWakeLock();
     const sizeMB = compressed.size / 1024 / 1024;
@@ -3989,6 +4025,8 @@ function startBackgroundCompression(entry) {
     setLbl(`✓ ${sizeMB.toFixed(1)} MB${badge}`, true);
     return compressed;
   }).catch(err => {
+    entry.compressing = false;
+    entry.compressInterrupted = true;      // only a compression that really stopped is restarted on return
     releaseWakeLock();
     console.warn('Background compression interrupted:', err.message);
     setLbl('⚙ paused');
@@ -4001,17 +4039,21 @@ function startBackgroundCompression(entry) {
 // interrupted because the tab went to the background (video.play() pauses).
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'hidden') {
-    // Mark in-progress compressions as interrupted
-    mediaFiles.forEach(e => {
-      if (e.type === 'video' && !e.compressed) e.compressInterrupted = true;
-    });
+    // a compression still running in the background is not restarted beside itself (0.11.92) — two at once doubled
+    // the memory and crashed iPhones; a stopped one marks itself in its .catch. Where it stood is noted here, so one
+    // that stalled without failing (the fallback path) can be told apart on return.
+    mediaFiles.forEach(e => { if (e.type === 'video' && e.compressing) e._hiddenAt = e.compressProgress; });
   } else {
+    setTimeout(() => {
+      const stalled = mediaFiles.filter(e => e.type === 'video' && e.compressing && !e.compressed && e._hiddenAt != null && e.compressProgress === e._hiddenAt);
+      stalled.forEach(e => { e.compressing = false; e._hiddenAt = null; startBackgroundCompression(e); });
+    }, 4000);
     // Re-acquire wake lock if compressions are still pending
     if (_wakeLockCount > 0 && 'wakeLock' in navigator && !_wakeLock) {
       try { _wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
     }
     // Restart interrupted compressions
-    const toResume = mediaFiles.filter(e => e.type === 'video' && e.compressInterrupted && !e.compressed);
+    const toResume = mediaFiles.filter(e => e.type === 'video' && e.compressInterrupted && !e.compressed && !e.compressing);
     if (toResume.length) {
       showToast(`▶ Resuming compression (${toResume.length} video${toResume.length > 1 ? 's' : ''})…`, 'info');
       toResume.forEach(startBackgroundCompression);
@@ -4157,7 +4199,7 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
       });
       if (!res.ok) throw new Error(await apiErrorMessage(res));
       const data = await res.json();
-      document.getElementById('videoTranscriptText').value = data.text || '';
+      appendText('videoTranscriptText', data.text);   // added to what the box holds (0.11.92), not replacing it
       updateSubmitBtn();
       showToast('Video transcribed ✓', 'success');
     } catch(err) {
@@ -4169,22 +4211,31 @@ document.getElementById('videoSummaryVideoInput').addEventListener('change', asy
   }
 });
 
+var previewUrls = [];   // released at each repaint (0.11.92): every repaint made new ones and kept the old (var: may run at start-up)
+function previewUrl(f) { const u = URL.createObjectURL(f); previewUrls.push(u); return u; }
 function renderMediaPreviews() {
   const container = document.getElementById('mediaPreviews');
   container.innerHTML = '';
+  previewUrls.forEach(u => URL.revokeObjectURL(u)); previewUrls = [];
   mediaFiles.forEach((m, i) => {
     const thumb = document.createElement('div');
     thumb.className = 'media-thumb';
-    if (m.type === 'image') {
+    if (m.type === 'audio') {
+      const a = document.createElement('button');
+      a.type = 'button'; a.className = 'video-link-thumb';
+      a.textContent = '🎙 Voice note — tap to transcribe';
+      a.onclick = () => transcribeAudio(m.blob || m.file, m);
+      thumb.appendChild(a);
+    } else if (m.type === 'image') {
       const img = document.createElement('img');
-      img.src = URL.createObjectURL(m.file);
+      img.src = previewUrl(m.file);
       img.alt = m.file.name;
       thumb.appendChild(img);
     } else if (m.type === 'video') {
       const inner = document.createElement('div');
       inner.className = 'video-thumb-inner';
       const vid = document.createElement('video');
-      vid.src = URL.createObjectURL(m.file);
+      vid.src = previewUrl(m.file);
       vid.muted = true;
       inner.appendChild(vid);
       const overlay = document.createElement('div');
@@ -4482,7 +4533,7 @@ function updateSubmitBtn() {
                      document.getElementById('noteText').value.trim() ||
                      mediaFiles.length > 0 ||
                      tabHasValues;
-  document.getElementById('submitBtn').disabled = !hasContent;
+  document.getElementById('submitBtn').disabled = submitting || !hasContent;   // never back on during a send
 }
 
 ['transcriptText','summaryText','noteText'].forEach(id =>
@@ -4697,17 +4748,37 @@ async function buildPropValue(type, value) {
   }
 }
 
+// one send at a time (0.11.92): a second tap while the columns were read, or the button turned back on by typing
+// during the upload, created a second Notion page
+var submitting = false;   // var: updateSubmitBtn can run during start-up, before this line
+// the spinner and words on a button, as text: a file's name is part of the words (it was put in as HTML)
+function busyLabel(btn, text) {
+  btn.textContent = '';
+  const d = document.createElement('div'); d.className = 'dot-spin'; d.style.borderTopColor = 'var(--text-inverse)';
+  btn.append(d, document.createTextNode(' ' + text));
+}
 async function submitToNotion() {
-  const dbId       = document.getElementById(TAB_DB[activeTab]).value.trim();
+  if (submitting) return;
+  // what is sent is what was on the form when Send was pressed: the tab and the attachments are fixed here, so a
+  // switch of tab or a photo added during a long upload neither goes to the wrong database nor is wiped after
+  const tab = activeTab;
+  const sentMedia = mediaFiles.slice();
+  const dbId       = document.getElementById(TAB_DB[tab]).value.trim();
   const tagsProp   = 'Tags';
   const noteProp   = 'Note';
   const authorName = document.getElementById('authorName').value.trim();
 
   if (!dbId) {
-    showToast(`Configuration needed — use PIN 1234 to access ⚙️`, 'error');
+    showToast('Configuration needed — open ⚙️ (ask the admin for the settings PIN)', 'error');   // the PIN is not shown in the app any more
     return;
   }
 
+  submitting = true;
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  busyLabel(btn, 'Sending…');
+  const failedMedia = [];
+  try {
   delete _dbPropsCache[dbId];   // re-read the columns on every send: they can be renamed in Notion
   const dbProps     = await getDbProps(dbId);
   const titleProp   = Object.entries(dbProps).find(([, v]) => v.type === 'title')?.[0] || 'Title';
@@ -4717,13 +4788,12 @@ async function submitToNotion() {
   const summary     = document.getElementById('summaryText').value.trim();
   const note        = document.getElementById('noteText').value.trim();
   const titleInput  = document.getElementById('noteTitle').value.trim();
-  const title       = activeTab === 'daily'
+  const title       = tab === 'daily'
     ? (titleInput || authorName || 'Daily')
     : titleInput || summary || transcript.slice(0, 80) || note.slice(0, 80) || 'Voice Note';
-
-  const btn = document.getElementById('submitBtn');
-  btn.disabled = true;
-  btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Sending…`;
+  const videoSummary = document.getElementById('videoSummaryText').value.trim();
+  const sentText = { titleInput, voiceTranscript, videoTranscriptVal, summary, note, videoSummary };
+  const sentFields = JSON.stringify(tabValues[tab] || {});
 
   // Upload files directly to Notion
   const children = [];
@@ -4747,28 +4817,28 @@ async function submitToNotion() {
       // if compression failed or hasn't finished.
       let fileForUpload = m.file;
       if (m.type === 'video' && m.compressPromise) {
-        const compressed = await m.compressPromise.catch(() => null);
+        // a stalled compression does not hold Send for ever (0.11.92): after two minutes the original goes
+        busyLabel(btn, 'Finishing the video…');
+        const compressed = await Promise.race([m.compressPromise.catch(() => null), new Promise(r => setTimeout(() => r(null), 120000))]);
         if (compressed) fileForUpload = compressed;
       }
-      const uploadId = await uploadFileToNotion(fileForUpload,
-        (msg) => { btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> ${msg}`; }
-      );
+      const uploadId = await uploadFileToNotion(fileForUpload, (msg) => busyLabel(btn, msg));
       const isImage = m.file.type.startsWith('image/');
       const isVideo = m.file.type.startsWith('video/');
       if (isImage)       children.push({ object:'block', type:'image', image:{ type:'file_upload', file_upload:{ id: uploadId } } });
       else if (isVideo)  children.push({ object:'block', type:'video', video:{ type:'file_upload', file_upload:{ id: uploadId } } });
       else               children.push({ object:'block', type:'file',  file:{  type:'file_upload', file_upload:{ id: uploadId }, caption:[{ type:'text', text:{ content: m.file.name } }] } });
     } catch(e) {
+      failedMedia.push(m);                    // kept on the phone after the send, to be sent again
       showToast(`⚠️ ${e.message} — note will still be sent`, 'error');
       children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[File not uploaded: ${m.file.name} — ${e.message}]` } }] } });
     }
   };
 
-  for (const m of mediaFiles.filter(m => m.type === 'video' || m.type === 'link')) await uploadMedia(m);
-  for (const m of mediaFiles.filter(m => m.type === 'image'))                       await uploadMedia(m);
+  for (const m of sentMedia.filter(m => m.type === 'video' || m.type === 'link')) await uploadMedia(m);
+  for (const m of sentMedia.filter(m => m.type === 'image' || m.type === 'audio')) await uploadMedia(m);
 
   // ── Text blocks at the bottom ─────────────────────────────────
-  const videoSummary = document.getElementById('videoSummaryText').value.trim();
   if (videoSummary) {
     children.push({ object:'block', type:'heading_3', heading_3:{ rich_text:[{ type:'text', text:{ content:'Video Summary' } }] } });
     pushTextBlocks(videoSummary);
@@ -4823,7 +4893,7 @@ async function submitToNotion() {
     }
   }
 
-  if (activeTab === 'daily') {
+  if (tab === 'daily') {
     // Daily: the date chosen in the form, date only (no time); today if unchanged.
     const dateEntry = Object.entries(dbProps).find(([, v]) => v.type === 'date');
     if (dateEntry) {
@@ -4849,11 +4919,11 @@ async function submitToNotion() {
   // column that exists in the live Notion database — its key, or an older name
   // listed in `aliases` — so a column renamed in Notion never makes Notion reject
   // the whole note. A field with no matching column is left out and reported.
-  const schema = TAB_SCHEMAS[activeTab] || [];
+  const schema = TAB_SCHEMAS[tab] || [];
   const knownCols = Object.keys(dbProps).length > 0;
   const missingCols = [];
   schema.forEach(field => {
-    const val = getTabValue(activeTab, field.key);
+    const val = getTabValue(tab, field.key);
     if (val === undefined || val === null || val === '' || (Array.isArray(val) && !val.length)) return;
     const col = knownCols ? [field.key, ...(field.aliases || [])].find(n => n in dbProps) : field.key;
     if (field.type !== 'priorities' && !col) { missingCols.push(field.label || field.key); return; }
@@ -4870,8 +4940,9 @@ async function submitToNotion() {
     }
   });
 
-  btn.innerHTML = `<div class="dot-spin" style="border-top-color:var(--text-inverse)"></div> Creating page…`;
+  busyLabel(btn, 'Creating page…');
 
+  let created = false;
   try {
     const res = await cfFetch(PROXY + '/v1/pages', {
       method: 'POST',
@@ -4885,46 +4956,67 @@ async function submitToNotion() {
       const err = await res.json();
       throw new Error(err.message || 'Notion error');
     }
-    showToast(`Sent to ${TAB_LABELS[activeTab]} ✓` +
-      (missingCols.length ? ` — not in Notion, left out: ${missingCols.join(', ')}` : ''),
-      missingCols.length ? 'info' : 'success');
-    saveEntry({ title, transcript, note, tab: activeTab, fields: { ...(tabValues[activeTab] || {}) }, status: 'sent' });
-    resetForm();
+    created = true;
+    const fields = JSON.parse(sentFields);
+    // the form first: the note is in Notion, and a full phone storage writing the log below must not undo that
+    resetForm({ tab, sentText, sentFields, sentMedia, keepMedia: failedMedia });
+    if (failedMedia.length) {
+      showToast(`Sent to ${TAB_LABELS[tab]}, but ${failedMedia.length} file${failedMedia.length === 1 ? ' was' : 's were'} not uploaded — still here: press Send again for ${failedMedia.length === 1 ? 'it' : 'them'}`, 'error');
+    } else {
+      showToast(`Sent to ${TAB_LABELS[tab]} ✓` +
+        (missingCols.length ? ` — not in Notion, left out: ${missingCols.join(', ')}` : ''),
+        missingCols.length ? 'info' : 'success');
+    }
+    saveEntry({ title, transcript, note, tab, fields, status: 'sent' });
   } catch(e) {
-    showToast(`Failed: ${e.message}`, 'error');
-    saveEntry({ title, transcript, note, tab: activeTab, fields: { ...(tabValues[activeTab] || {}) }, status: 'failed' });
+    if (!created) {
+      showToast(`Failed: ${e.message}`, 'error');
+      saveEntry({ title, transcript, note, tab, fields: JSON.parse(sentFields), status: 'failed' });
+    }
+  }
   } finally {
+    submitting = false;
     btn.disabled = false;
     btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send to <span id="submitTabLabel">${TAB_LABELS[activeTab]}</span>`;
     updateSubmitBtn();
   }
 }
 
-function resetForm() {
-  document.getElementById('noteTitle').value = '';
+// After a send: only what was sent is cleared (0.11.92). A field changed during the upload, a photo added, a file
+// that failed to upload, and another tab's values stay — called with nothing, it clears the whole form as before.
+function resetForm(sent = null) {
+  const tab = sent?.tab || activeTab;
+  const clearIf = (id, was) => { const f = document.getElementById(id); if (!sent || f.value.trim() === (was || '')) f.value = ''; };
+  clearIf('noteTitle', sent?.sentText.titleInput);
   syncDailyTitle(activeTab);   // Daily: the author name comes back for the next note
-  document.getElementById('transcriptText').value = '';
-  document.getElementById('summaryText').value = '';
-  document.getElementById('noteText').value = '';
-  document.getElementById('videoTranscriptText').value = '';
-  document.getElementById('videoSummaryText').value = '';
-  mediaFiles = [];
+  clearIf('transcriptText', sent?.sentText.voiceTranscript);
+  clearIf('summaryText', sent?.sentText.summary);
+  clearIf('noteText', sent?.sentText.note);
+  clearIf('videoTranscriptText', sent?.sentText.videoTranscriptVal);
+  clearIf('videoSummaryText', sent?.sentText.videoSummary);
+  mediaFiles = sent ? mediaFiles.filter(m => !sent.sentMedia.includes(m) || sent.keepMedia.includes(m)) : [];
   renderMediaPreviews();
-  // Clear active tab's field values, but keep persistent fields (e.g. weekly priorities)
-  const persistKeys = (TAB_SCHEMAS[activeTab] || []).filter(f => f.persist).map(f => f.key);
-  const kept = {};
-  persistKeys.forEach(k => { if (tabValues[activeTab]?.[k] !== undefined) kept[k] = tabValues[activeTab][k]; });
-  if (Object.keys(kept).length) tabValues[activeTab] = kept; else delete tabValues[activeTab];
-  localStorage.setItem('brain_tabValues', JSON.stringify(tabValues));
-  renderTabFields(activeTab);
-  recordedBlob = null;
-  noteStartTime = new Date(); // fresh timestamp for the next note
-  stopGpsWatch();
-  captureLocation = null;     // and a fresh position
-  renderGpsStamp();
-  clearDraft();               // note is safely in Notion — drop the local copy
+  // Clear the sent tab's field values, but keep persistent fields (e.g. weekly priorities) — and values changed meanwhile
+  if (!sent || JSON.stringify(tabValues[tab] || {}) === sent.sentFields) {
+    const persistKeys = (TAB_SCHEMAS[tab] || []).filter(f => f.persist).map(f => f.key);
+    const kept = {};
+    persistKeys.forEach(k => { if (tabValues[tab]?.[k] !== undefined) kept[k] = tabValues[tab][k]; });
+    if (Object.keys(kept).length) tabValues[tab] = kept; else delete tabValues[tab];
+    try { localStorage.setItem('brain_tabValues', JSON.stringify(tabValues)); } catch (e) { /* storage full: the form still clears */ }
+    if (tab === activeTab) renderTabFields(activeTab);
+  }
+  const left = ['noteTitle', 'transcriptText', 'summaryText', 'noteText', 'videoTranscriptText', 'videoSummaryText']
+    .some(id => document.getElementById(id).value.trim()) || mediaFiles.length > 0;
+  if (!left) {
+    recordedBlob = null;
+    noteStartTime = new Date(); // fresh timestamp for the next note
+    stopGpsWatch();
+    captureLocation = null;     // and a fresh position
+    renderGpsStamp();
+    clearDraft();               // note is safely in Notion — drop the local copy
+  }
   renderNoteStamp();
-  updateSubmitBtn();
+  updateSubmitBtn();            // saves the draft of whatever is left
 }
 
 // ─── ENTRIES LOG ─────────────────────────────────────────────
@@ -4932,8 +5024,10 @@ const ENTRIES_KEY = 'ugly200_entries';
 
 function saveEntry(entry) {
   const entries = getEntries();
-  entries.unshift({ ...entry, date: new Date().toISOString(), id: Date.now() });
-  localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries.slice(0, 50)));
+  // the list shows 200 characters: a whole transcript per entry filled the phone's storage (0.11.92)
+  entries.unshift({ ...entry, transcript: String(entry.transcript || '').slice(0, 200), date: new Date().toISOString(), id: Date.now() });
+  try { localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries.slice(0, 50))); }
+  catch (e) { console.warn('entries log not saved', e); }
   renderEntries();
 }
 
@@ -5250,15 +5344,16 @@ async function idbGet(key) {
     });
   } catch (e) { console.warn('idbGet', key, e); return undefined; }
 }
-async function idbSet(key, val) {
+// strict: the failure is thrown, for writes nothing may be lost on (the outbox, 0.11.92)
+async function idbSet(key, val, strict = false) {
   try {
     const db = await idb();
     await new Promise((res, rej) => {
       const tx = db.transaction('kv', 'readwrite');
       val === undefined ? tx.objectStore('kv').delete(key) : tx.objectStore('kv').put(val, key);
-      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('storage refused (full?)'));
     });
-  } catch (e) { console.warn('idbSet', key, e); }
+  } catch (e) { console.warn('idbSet', key, e); if (strict) throw e; }
 }
 
 // ─── NOTION DATA ─────────────────────────────────────────────
@@ -5886,7 +5981,9 @@ async function logRun(st, status) {
   const rec = { ...st, status, finishedAt: new Date().toISOString() };
   const box = (await idbGet('outbox')) || [];
   box.push(rec);
-  await idbSet('outbox', box);
+  // the run in progress is only cleared once the outbox really holds it (a full or blocked storage used to lose it)
+  try { await idbSet('outbox', box, true); }
+  catch (e) { toast('Could not save this run on the phone (storage full?) — it is still open: free some space and finish again', 'error', 8000); return; }
   saveRun(null);
   go('#/sop/' + st.sopId);
   const n = await syncOutbox();
@@ -5956,22 +6053,25 @@ async function uploadRun(rec) {
 }
 
 // Returns how many runs were uploaded.
+let syncAgain = false;
 async function syncOutbox(verbose = false) {
-  if (syncing) return 0;
+  if (syncing) { syncAgain = true; return 0; }   // a run finished during a sync goes in the next pass
   syncing = true;
-  let sent = 0;
+  let sent = 0, box = [];
+  // each write reads the outbox again (0.11.92): writing back the copy read at the start dropped a run finished
+  // while a slow upload was going on
+  const update = async fn => { const now = (await idbGet('outbox')) || []; box = fn(now); await idbSet('outbox', box, true); };
   try {
-    let box = (await idbGet('outbox')) || [];
+    box = (await idbGet('outbox')) || [];
     for (const rec of [...box]) {
       try {
         await uploadRun(rec);
-        box = box.filter(r => r.runId !== rec.runId);
-        await idbSet('outbox', box);
+        await update(now => now.filter(r => r.runId !== rec.runId));
         sent++;
       } catch (e) {
         console.warn('run upload failed', e);
-        rec.error = failureReason(e);
-        await idbSet('outbox', box);
+        const why = failureReason(e);
+        await update(now => now.map(r => r.runId === rec.runId ? { ...r, error: why } : r)).catch(() => {});
         if (isNetworkError(e)) break;   // offline: stop, try again later
       }
     }
@@ -5980,6 +6080,7 @@ async function syncOutbox(verbose = false) {
   } finally {
     syncing = false;
     refreshOutboxBadge();
+    if (syncAgain) { syncAgain = false; setTimeout(() => syncOutbox(), 0); }
   }
   return sent;
 }
@@ -6307,13 +6408,12 @@ async function saveExisting(pageId, props, orig, items, setStatus) {
       it.inPlace = true; lastIdx = it.origIndex;
     }
   }
-  // 3. Delete removed blocks and the originals of recreated ones.
+  // 3. What will go: removed blocks and the originals of recreated ones — deleted LAST (0.11.92). Deleting first
+  // meant a dropped connection between the deletes and the inserts lost the moved or retyped blocks from Notion.
   const keep = new Set(items.filter(i => i.inPlace).map(i => i.id));
   const data = await idbGet('sop:' + pageId);
   const origIds = (data?.blocks || []).map(b => b.id);
   const toDelete = origIds.filter(bid => !keep.has(bid));
-  let k = 0;
-  for (const bid of toDelete) { setStatus(`Removing blocks ${++k}/${toDelete.length}…`); await notion(`blocks/${bid}`, 'DELETE'); }
 
   // 4. Walk the final order: patch changed in-place blocks, insert runs of new ones.
   let prev = null, pendingTop = null;
@@ -6353,6 +6453,13 @@ async function saveExisting(pageId, props, orig, items, setStatus) {
     if (prev) prev = await appendBlocks(pageId, run, prev);
     else if (items.slice(i).some(x => x.inPlace)) pendingTop = run;
     else prev = await appendBlocks(pageId, run);   // nothing kept: plain append
+  }
+  // 5. Now the old blocks go. One already gone (a retry after a dropped connection) is not an error.
+  let k = 0;
+  for (const bid of toDelete) {
+    setStatus(`Removing blocks ${++k}/${toDelete.length}…`);
+    try { await notion(`blocks/${bid}`, 'DELETE'); }
+    catch (e) { if (e?.status !== 404 && !/not.?found|archived|object_not_found/i.test(String(e?.message || e))) throw e; }
   }
   return pageId;
 }
@@ -6690,9 +6797,86 @@ function sopOpen() {
   const putAll = (store, rows) => rows && rows.length
     ? tx(store, 'readwrite', s => rows.forEach(r => s.put(r))) : Promise.resolve();
   const all = store => tx(store, 'readonly', s => s.getAll());
-  const getKV = async k => (await tx('kv', 'readonly', s => s.get(k)))?.v;
-  const setKV = (k, v) => tx('kv', 'readwrite', s => s.put({ id: k, v }));
-  const del = (store, id) => tx(store, 'readwrite', s => s.delete(id));
+  const getKVraw = async k => (await tx('kv', 'readonly', s => s.get(k)))?.v;
+  const setKVraw = (k, v) => tx('kv', 'readwrite', s => s.put({ id: k, v }));
+  const delRaw = (store, id) => tx(store, 'readwrite', s => s.delete(id));
+
+  // ── a draft's photos are stored once (0.11.92, review of 30 Sept): every save of a scouting draft used to write
+  // every 4000 px photo again — a phone stores a Blob as a file of its own on each put, so a zone of 15 photos wrote
+  // ~60 MB at every tap. Now a Blob in a draft goes once under 'blob:<id>' and the draft keeps { __blob: id };
+  // getKV puts the photos back, so the drafts' callers did not change. Unreferenced photos are swept (gcBlobs).
+  const FB_DRAFT_KEY = /^(rundraft|scout2|trapdraft|harvdraft|fbkdraft):/;
+  const blobIds = new WeakMap();                         // a Blob → its 'blob:<id>' once stored
+  const newBlobId = () => 'blob:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  function swapOut(v, fresh, refs) {
+    if (v instanceof Blob) {
+      let id = blobIds.get(v) || fresh.get(v);
+      if (!id) { id = newBlobId(); fresh.set(v, id); }
+      refs.add(id);
+      return { __blob: id };
+    }
+    if (Array.isArray(v)) return v.map(x => swapOut(x, fresh, refs));
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+      const o = {}; for (const k of Object.keys(v)) o[k] = swapOut(v[k], fresh, refs); return o;
+    }
+    return v;
+  }
+  function swapIn(v, got) {
+    if (v && typeof v === 'object' && !Array.isArray(v) && typeof v.__blob === 'string' && Object.keys(v).length === 1) {
+      const b = got.get(v.__blob) || null;
+      if (b) blobIds.set(b, v.__blob);
+      return b;
+    }
+    if (Array.isArray(v)) return v.map(x => swapIn(x, got));
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+      const o = {}; for (const k of Object.keys(v)) if (k !== '__blobs') o[k] = swapIn(v[k], got); return o;
+    }
+    return v;
+  }
+  let gcTimer = null;
+  const gcSoon = () => { clearTimeout(gcTimer); gcTimer = setTimeout(() => gcBlobs().catch(() => {}), 20000); };
+  async function gcBlobs() {
+    const keys = await tx('kv', 'readonly', s => s.getAllKeys());
+    const blobs = keys.filter(k => String(k).startsWith('blob:'));
+    if (!blobs.length) return;
+    const used = new Set();
+    for (const k of keys.filter(k => FB_DRAFT_KEY.test(String(k)))) ((await getKVraw(k))?.__blobs || []).forEach(id => used.add(id));
+    const gone = blobs.filter(id => !used.has(id));
+    if (gone.length) await tx('kv', 'readwrite', s => gone.forEach(id => s.delete(id)));
+  }
+  async function setKV(k, v) {
+    if (!FB_DRAFT_KEY.test(String(k)) || v == null) { const r = await setKVraw(k, v); if (v == null && FB_DRAFT_KEY.test(String(k))) gcSoon(); return r; }
+    const fresh = new Map(), refs = new Set();
+    const out = swapOut(v, fresh, refs);
+    // the new photos and the draft in one transaction: a draft never points at a photo that was not stored
+    const r = await tx('kv', 'readwrite', s => {
+      fresh.forEach((id, b) => s.put({ id, v: b }));
+      s.put({ id: k, v: { ...out, __blobs: [...refs] } });
+    });
+    fresh.forEach((id, b) => blobIds.set(b, id));
+    if (fresh.size || refs.size) gcSoon();
+    return r;
+  }
+  async function getKV(k) {
+    const v = await getKVraw(k);
+    if (!v || !FB_DRAFT_KEY.test(String(k)) || !(v.__blobs || []).length) return v && v.__blobs ? swapIn(v, new Map()) : v;
+    const got = new Map();
+    await tx('kv', 'readonly', s => v.__blobs.forEach(id => { const q = s.get(id); q.onsuccess = () => { if (q.result) got.set(id, q.result.v); }; }));
+    return swapIn(v, got);
+  }
+  // every kv row, a draft with its photos back and the stored photos themselves left out (Send reads the drafts this way)
+  async function allKV() {
+    const rows = await all('kv');
+    const got = new Map(rows.filter(r => String(r.id).startsWith('blob:')).map(r => [r.id, r.v]));
+    return rows.filter(r => !String(r.id).startsWith('blob:'))
+      .map(r => FB_DRAFT_KEY.test(String(r.id)) && r.v && r.v.__blobs ? { ...r, v: swapIn(r.v, got) } : r);
+  }
+  async function del(store, id) {
+    const r = await delRaw(store, id);
+    if (store === 'kv' && FB_DRAFT_KEY.test(String(id))) gcSoon();
+    return r;
+  }
+  gcSoon();                                              // photos of drafts finished before this visit
 
   // ── session ─────────────────────────────────────────────────────────────
   let session = null;
@@ -9372,24 +9556,16 @@ function sopOpen() {
       p.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
       const c1600 = scaleCanvas(big.canvas, 1600);
       big = null;
-      if (section === 'trap') {
-        Object.assign(p, { trap_id: forTrap?.id || null, code: forTrap?.code || null, code_text: forTrap ? shortCode(forTrap.code) : '',
-                           code_source: forTrap ? 'list' : null, replaced: false, colour: forTrap?.colour || cardColour(c1600) });
-        try {
-          const r = countInsects(c1600, forTrap || { colour: p.colour });
-          Object.assign(p, { counts: r.counts, total: r.total, algo_total: r.total, algorithm: r.algorithm, confidence: r.confidence, corrected: false });
-        } catch (e) { p.total = null; }
-      } else {
-        const headZone = crops.length > 0 && crops.every(c => HEAD_RE.test(c.name || ''));
-        Object.assign(p, { pos_code: sc.lastPos || '', part: section === 'growth' ? (headZone ? 'head' : 'fruit') : 'leaf', measures: [],
-                           crop_id: crops.length === 1 ? crops[0].id : null });
-        p.scale_state = 'busy';                 // the scale card is looked for once the card is on screen (0.11.69)
-      }
+      // a plant photo only: a trap photo went to addTrap above (its old branches here were dead code since 0149)
+      const headZone = crops.length > 0 && crops.every(c => HEAD_RE.test(c.name || ''));
+      Object.assign(p, { pos_code: sc.lastPos || '', part: section === 'growth' ? (headZone ? 'head' : 'fruit') : 'leaf', measures: [],
+                         crop_id: crops.length === 1 ? crops[0].id : null });
+      p.scale_state = 'busy';                   // the scale card is looked for once the card is on screen (0.11.69)
       sc.photos.set(p.ref, p);
       const card = photoCard(p);
       lists[section].prepend(card);
       paintTabs(); paintCoverage(); saveScDraft();
-      if (section !== 'trap') findMarker(c1600).then(m => {
+      findMarker(c1600).then(m => {
         p.scale_state = m?.error ? 'offline' : m ? 'found' : 'none';
         if (m && !m.error) {
           p.px_per_mm = Math.round(m.ppm * (p.full_w / c1600.width) * 1000) / 1000;
@@ -9401,16 +9577,6 @@ function sopOpen() {
         // 276 Open Images crops the phone's own guess missed the object on about half; from a tap the outline is right
         if (p.px_per_mm && p.section === 'growth') sc.sizeCheck?.(p);
       }).catch(e => { console.warn('scale card', e); p.scale_state = 'none'; card._paintMs?.(); if (section === 'growth') noScale(p, card); });
-      if (section === 'trap' && !p.code) {
-        card._codeState?.('reading the code…');
-        try {
-          const r = await readTrapCode(c1600, traps);
-          p.code_read = r.text || null;
-          if (!p.code && r.trap) { setTrapCode(p, shortCode(r.trap.code), 'text'); recount(p, c1600); }
-          else if (!p.code && r.fresh) setTrapCode(p, shortCode(r.fresh.code), 'text');
-        } catch (e) { console.warn('text reader', e); }
-        card._paintTrap?.(); paintCoverage(); saveScDraft();
-      }
     }
     // A growth photo is only kept with the scale card in it (0.11.86, owner 2 Oct 2026: "do not accept picture in growth
     // without the scale detected"): the sizes are measured against the card, and a growth photo without a size says
@@ -10819,12 +10985,28 @@ function sopOpen() {
   }
 
   // ── a photo full screen (0.11.52): pinch, wheel or double-tap to zoom (to 8×), drag to move ──
+  // a smaller copy of a photo Blob for looking at: decoded at that size (jpegSize), the photo itself when already small
+  async function viewCopy(blob, maxSide) {
+    const dims = await jpegSize(blob).catch(() => null);
+    if (!dims || Math.max(dims.w, dims.h) <= maxSide) return blob;
+    const [w, h] = dims.orient >= 5 ? [dims.h, dims.w] : [dims.w, dims.h];
+    const opt = { imageOrientation: 'from-image', resizeQuality: 'high' };
+    if (w >= h) opt.resizeWidth = maxSide; else opt.resizeHeight = maxSide;
+    const bmp = await createImageBitmap(blob, opt);
+    const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+    return await new Promise(r => c.toBlob(b => r(b || blob), 'image/jpeg', 0.92));
+  }
   function photoViewer(src, { title = '', measure = null, scale = null, outline = null, pick = null } = {}) {
     const ov = el('div', 'fb-viewer');
     const stage = el('div', 'fb-viewer-stage');
     const img = el('img'); img.alt = title; img.draggable = false; img.decoding = 'async';
-    let url = null;
-    if (src instanceof Blob) { url = URL.createObjectURL(src); img.src = url; } else img.src = src || '';
+    let url = null, closed = false;
+    // a ≤ 2000 px copy, not the 4000 px photo (0.11.92, review of 30 Sept): decoding the full one in the viewer was
+    // ~64 MB of pixels on a phone whose camera had just used its memory. Taps are fractions, so pick() is unchanged.
+    if (src instanceof Blob) {
+      viewCopy(src, 2000).catch(() => src).then(b => { if (closed) return; url = URL.createObjectURL(b); img.src = url; });
+    } else img.src = src || '';
     stage.append(img);
     const head = el('div', 'fb-viewer-head');
     head.append(el('b', null, title), el('span', 'fb-meta', scale || 'Pinch or double-tap to zoom'));
@@ -10899,7 +11081,7 @@ function sopOpen() {
     stage.onpointerup = up; stage.onpointercancel = up;
     stage.onwheel = e => { e.preventDefault(); zoomAt(s * (e.deltaY < 0 ? 1.25 : 0.8), centre(e.clientX, e.clientY)); };
     fitB.onclick = () => { s = 1; tx = ty = 0; apply(); };
-    const done = () => { ov.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', key); };
+    const done = () => { closed = true; ov.remove(); if (url) URL.revokeObjectURL(url); document.removeEventListener('keydown', key); };
     ov._close = done;   // Back closes the viewer and its listeners
     const key = e => { if (e.key === 'Escape') done(); };
     document.addEventListener('keydown', key);
@@ -11398,8 +11580,22 @@ function sopOpen() {
   // on the phone. createImageBitmap also applies the EXIF rotation.
   async function shrinkPhoto(file, maxSide, quality) {
     let src;
-    try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
-    catch (e) { src = await loadImage(file); }
+    // decoded straight at the size wanted (0.11.92, review of 30 Sept): a 50 MP gallery photo used to be decoded whole
+    // (~200 MB) before it was shrunk. The JPEG's header says its size and rotation; Chrome rotates first and then
+    // resizes, so the long side of the rotated picture is the one asked for (tested with an EXIF-6 JPEG).
+    const dims = await jpegSize(file).catch(() => null);
+    if (dims) {
+      const [w, h] = dims.orient >= 5 ? [dims.h, dims.w] : [dims.w, dims.h];
+      if (Math.max(w, h) > maxSide) {
+        const opt = { imageOrientation: 'from-image', resizeQuality: 'high' };
+        if (w >= h) opt.resizeWidth = maxSide; else opt.resizeHeight = maxSide;
+        try { src = await createImageBitmap(file, opt); } catch (e) { src = null; }
+      }
+    }
+    if (!src) {
+      try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+      catch (e) { src = await loadImage(file); }
+    }
     const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
     const k = Math.min(1, maxSide / Math.max(w, h));
     const c = document.createElement('canvas');
@@ -11407,6 +11603,31 @@ function sopOpen() {
     c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
     if (src.close) src.close();
     return { dataUrl: quality == null ? null : c.toDataURL('image/jpeg', quality), canvas: c };
+  }
+  // a JPEG's width, height and EXIF orientation from its first 256 KB, without decoding it; null for anything else
+  async function jpegSize(file) {
+    if (!file || !/jpe?g/i.test(file.type || '')) return null;
+    const d = new DataView(await file.slice(0, 262144).arrayBuffer());
+    if (d.byteLength < 4 || d.getUint16(0) !== 0xFFD8) return null;
+    let i = 2, orient = 1;
+    while (i + 4 <= d.byteLength) {
+      if (d.getUint8(i) !== 0xFF) return null;
+      const m = d.getUint8(i + 1), len = d.getUint16(i + 2);
+      if (m === 0xE1 && i + 10 < d.byteLength && d.getUint32(i + 4) === 0x45786966) {          // 'Exif'
+        const t = i + 10, le = d.getUint16(t) === 0x4949;
+        const u16 = o => d.getUint16(o, le), u32 = o => d.getUint32(o, le);
+        if (t + 8 < d.byteLength) {
+          const ifd = t + u32(t + 4), n = ifd + 2 <= d.byteLength ? u16(ifd) : 0;
+          for (let k = 0; k < n; k++) { const e = ifd + 2 + k * 12; if (e + 10 > d.byteLength) break; if (u16(e) === 0x0112) { orient = u16(e + 8); break; } }
+        }
+      }
+      if ((m >= 0xC0 && m <= 0xCF) && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {             // a start of frame
+        if (i + 9 > d.byteLength) return null;
+        return { h: d.getUint16(i + 5), w: d.getUint16(i + 7), orient };
+      }
+      i += 2 + len;
+    }
+    return null;
   }
   function scaleCanvas(canvas, maxSide) {
     const k = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
@@ -12435,7 +12656,7 @@ function sopOpen() {
     const say = (text, bad) => lines.push([text, !!bad]);
     try {
       if (!farm) farm = await getKV('farm');
-      const kv = await all('kv');
+      const kv = await allKV();
       const groups = (await loadGroups()).flatMap(g => g.hub ? [g, ...(g.zones || [])] : [g]);
       // 1. the scouting drafts
       const allTasks = await all('tasks');
