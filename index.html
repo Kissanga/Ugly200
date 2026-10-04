@@ -1143,7 +1143,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.96';
+  const CURRENT_VERSION = '0.11.97';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1307,6 +1307,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.97', '2026-10-04', 'Extra scouting: both units, and finished zones', 'With two units, Extra scouting opens one list with the zones of both, each under its unit — no question about which unit. A zone scouting that somebody else already finished today opens as an extra of that zone: your photos are added to the day\'s report, the finished report stays theirs to correct.'],
     ['0.11.96', '2026-10-04', 'Who is responsible; swipe an extra scouting', 'Every task card says who is responsible for it (👤 Dial, or "nobody yet"), the extra scoutings too, and the checklist says it under its title. An extra scouting is closed with a swipe and no question: right = done, left = cancelled, with the usual five seconds to undo. A closed extra scouting still opens to add photos.'],
     ['0.11.95', '2026-10-04', 'Extra scouting: the planned one first', 'Opening a zone in an Extra scouting while your own planned scouting of that zone is still open today asks once: do the planned scouting now, or only add extra photos. An extra scouting card no longer shows "0 min".'],
     ['0.11.94', '2026-10-04', 'Extra scouting', 'A new button above the day, ＋ Extra scouting: anybody can add photos and counts to today\'s report at any time. Pick a zone, then Traps, Plant health and Growth are all open with no minimum; Finish sends that zone as it is and you can come back and send again all day. In the report the photos carry a small "extra" tag with your name. It works without signal. The planned scouting of each zone stays its own task and is not replaced by an extra. A growth photo still needs the scale card, and an extra trap photo counts only when it found more insects than the card already had.'],
@@ -8116,7 +8117,7 @@ function sopOpen() {
     const groups = await loadGroups();
     const t = findGroup(groups, key);
     if (!t) return;
-    if (t.hub) { hubReturn = null; return openHub(t); }
+    if (t.hub) { hubReturn = null; extraPick = false; return openHub(t); }
     // an extra scouting never replaces the planned one (0.11.95): when this person's own planned scouting of the zone is
     // still open today, it is offered first — once a zone
     if (t.extraZone && !nudged.has(t.key)) {
@@ -8137,6 +8138,20 @@ function sopOpen() {
     const hasChecklist = !!sop && (sop.validation || 'checklist') !== 'tick';
     if (t.extraZone && sop) return startRun(t, sop);      // an extra's zone always opens to add, even once the extra is closed
     if (t.status === 'done') {
+      // a zone scouting finished today by somebody else (0.11.97): this person's photos go in as an extra of that zone
+      const gk = String(t.generation_key || '');
+      if (hasChecklist && isScouting(sop) && gk.startsWith('routine:scouting:') && !gk.startsWith('routine:scouting:all:')
+          && t.planned_date === todayISO() && !(SW.admin || SW.manager || (SW.me && t.workerIds.has(SW.me)))
+          && !(await getKV(sentKey(t.members[0].id)).catch(() => null))) {
+        const xk = await extraZoneFor(t);
+        if (xk) {
+          await loadTimers();
+          const by = uniq([...doneBy(t), ...peopleOn(t, b => num(b.minutes) >= 1)]);
+          showToast(`${t.area || 'This zone'} was scouted${by.length ? ' by ' + names(by) : ''} — what you add goes in as extra`, 'info');
+          nudged.add(xk); extraPick = false;
+          return openTask(xk, fromHub || hubOf(groups, t.key)?.key || null);
+        }
+      }
       if (hasChecklist) return editTask(t, sop);
       await loadTimers();
       const by = uniq([...doneBy(t), ...peopleOn(t, b => num(b.minutes) >= 1)]);
@@ -8198,12 +8213,12 @@ function sopOpen() {
   // asked (start_extra_scouting) or when the first photos arrive. One a person a day and unit.
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
     : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
-  async function startExtra() {
+  // what an extra needs: the scouting procedure and the zones of each unit, from the zone lines of its planned scoutings
+  async function extraUnits() {
     const today = todayISO(), me = await getKV('me');
     const tasks = await all('tasks'), sops = await all('sops'), pos = await all('positions');
     const sop = sops.find(isScouting);
-    if (!sop) { showToast('No scouting on this phone yet — sync when there is signal', 'error'); return; }
-    // the zones of each unit, from the zone lines of its planned scoutings
+    if (!sop) { showToast('No scouting on this phone yet — sync when there is signal', 'error'); return null; }
     const byFarm = new Map();
     tasks.filter(t => t.sop_id === sop.id && String(t.generation_key || '').startsWith('routine:scouting:'))
       .sort((a, b) => (a.planned_date < b.planned_date ? 1 : -1))
@@ -8211,33 +8226,90 @@ function sopOpen() {
         if (!byFarm.has(t.farm_id)) byFarm.set(t.farm_id, { zones: new Map(), sample: t });
         const u = byFarm.get(t.farm_id); if (!u.zones.has(p.ref_id)) u.zones.set(p.ref_id, p);
       }));
-    if (!byFarm.size) { showToast('No zones known on this phone yet — sync when there is signal', 'error'); return; }
-    let farmId = [...byFarm.keys()][0];
-    if (byFarm.size > 1) {
-      const unit = await getKV('unit'), sis = (await getKV('sisters')) || [];
-      if (unit && byFarm.has(unit)) farmId = unit;
-      else farmId = [...byFarm.keys()].find(id => confirm(`Extra scouting at ${(sis.find(x => x.id === id) || {}).name || 'this unit'}?\n\nCancel for the other unit.`)) || null;
-      if (!farmId) return;
+    if (!byFarm.size) { showToast('No zones known on this phone yet — sync when there is signal', 'error'); return null; }
+    return { today, me, tasks, pos, sop, byFarm, mineKey: `extra:scouting:${me || 'me'}:${today}` };
+  }
+  // this person's extra of today at a unit: found, or made here (the server makes the same one when asked, or from its first photos)
+  async function ensureExtra(farmId, X) {
+    let t = X.tasks.find(x => x.farm_id === farmId && x.planned_date === X.today && x.generation_key === X.mineKey && x.status !== 'cancelled');
+    if (t) return { t, items: X.pos.filter(p => p.task_id === t.id && p.kind === 'area') };
+    const u = X.byFarm.get(farmId), id = uuid();
+    if (!u) return null;
+    t = { id, farm_id: farmId, title: 'Extra scouting', family: u.sample.family, sop_id: X.sop.id, sop_version_id: u.sample.sop_version_id,
+          source: 'manual', generation_key: X.mineKey, planned_date: X.today, status: 'in_progress', estimated_minutes: 0, area: 'All zones',
+          slot: 'any', plan_slot: 'am', priority: 'normal', sections: ['trap', 'health', 'growth'], local: true, updated_at: new Date().toISOString() };
+    const items = [...u.zones.values()].map(p => ({ id: uuid(), task_id: id, kind: 'area', ref_id: p.ref_id, label: p.label, quantity: 1, unit: 'system', minutes: 0,
+      area_zone_id: p.area_zone_id || null, area_system_id: p.area_system_id || null, crops: p.crops || null, zone_name: p.zone_name || null }));
+    await putAll('tasks', [t]); await putAll('positions', items);
+    if (X.me) await putAll('task_workers', [{ id: id + '|' + X.me, task_id: id, worker_id: X.me }]);
+    X.tasks.push(t); X.pos.push(...items);
+    if (navigator.onLine) {
+      // the server makes it now when it can; if it cannot, the first photos sent make it
+      Promise.race([api('/rest/v1/rpc/start_extra_scouting', { method: 'POST', body: JSON.stringify({ p_farm: farmId, p_task: id,
+        p_items: items.map(x => ({ id: x.id, ref_id: x.ref_id })) }) }), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 4000))])
+        .then(() => liveSay()).catch(() => {});
     }
-    const mineKey = `extra:scouting:${me || 'me'}:${today}`;
-    let t = tasks.find(x => x.farm_id === farmId && x.planned_date === today && x.generation_key === mineKey && x.status !== 'cancelled');
-    if (!t) {
-      const u = byFarm.get(farmId), id = uuid();
-      t = { id, farm_id: farmId, title: 'Extra scouting', family: u.sample.family, sop_id: sop.id, sop_version_id: u.sample.sop_version_id,
-            source: 'manual', generation_key: mineKey, planned_date: today, status: 'in_progress', estimated_minutes: 0, area: 'All zones',
-            slot: 'any', plan_slot: 'am', priority: 'normal', sections: ['trap', 'health', 'growth'], local: true, updated_at: new Date().toISOString() };
-      const items = [...u.zones.values()].map(p => ({ id: uuid(), task_id: id, kind: 'area', ref_id: p.ref_id, label: p.label, quantity: 1, unit: 'system', minutes: 0,
-        area_zone_id: p.area_zone_id || null, area_system_id: p.area_system_id || null, crops: p.crops || null, zone_name: p.zone_name || null }));
-      await putAll('tasks', [t]); await putAll('positions', items);
-      if (me) await putAll('task_workers', [{ id: id + '|' + me, task_id: id, worker_id: me }]);
-      if (navigator.onLine) {
-        // the server makes it now when it can; if it cannot, the first photos sent make it
-        Promise.race([api('/rest/v1/rpc/start_extra_scouting', { method: 'POST', body: JSON.stringify({ p_farm: farmId, p_task: id,
-          p_items: items.map(x => ({ id: x.id, ref_id: x.ref_id })) }) }), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 4000))])
-          .then(() => liveSay()).catch(() => {});
-      }
+    return { t, items };
+  }
+  let extraPick = false;      // a zone was opened from the both-units list: Finish and Back come back to it
+  async function startExtra() {
+    const X = await extraUnits();
+    if (!X) return;
+    // two units (0.11.97): one Extra scouting over both — the zones of each under its unit, a unit's task made at its first zone
+    if (X.byFarm.size > 1) return openExtraPick(X);
+    const made = await ensureExtra([...X.byFarm.keys()][0], X);
+    return made ? openTask('srv:' + made.t.id) : null;
+  }
+  async function openExtraPick(X0 = null) {
+    const X = X0 || await extraUnits();
+    if (!X) { extraPick = false; return showWeek(); }
+    const sis = (await getKV('sisters')) || [];
+    const order = [...X.byFarm.keys()].sort((a, b) => { const ia = sis.findIndex(x => x.id === a), ib = sis.findIndex(x => x.id === b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+    const box = $('task'); box.textContent = '';
+    const sec = el('section', 'fb-day');
+    sec.append(el('h2', null, 'Extra scouting · pick a zone'));
+    sec.append(el('p', 'fb-runfacts', 'Photos and counts you add here go into today\'s report, marked as extra. No minimum: send a zone as often as you like. The planned scouting of each zone stays its own task.'));
+    for (const farmId of order) {
+      const u = sis.find(x => x.id === farmId) || {}, unit = X.byFarm.get(farmId);
+      const mine = X.tasks.find(x => x.farm_id === farmId && x.planned_date === X.today && x.generation_key === X.mineKey && x.status !== 'cancelled');
+      const items = mine ? X.pos.filter(p => p.task_id === mine.id && p.kind === 'area') : [];
+      const h = el('div', 'fb-unit');
+      h.style.setProperty('--u', u.colour || 'var(--text-muted)');
+      h.append(el('span', 'fb-ubadge', u.badge || u.code || '·'), el('span', null, u.name || 'This unit'));
+      sec.append(h);
+      [...unit.zones.values()].sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), undefined, { numeric: true })).forEach(z => {
+        const it = items.find(x => x.ref_id === z.ref_id);
+        const at = it ? EXTRA_SENT['xz:' + mine.id + ':' + it.id] : null;
+        const b = el('button', 'fb-card' + famClass(unit.sample.family));
+        const body = el('div', 'fb-body');
+        body.append(el('div', 'fb-name', z.label || 'Zone'));
+        const meta = el('div', 'fb-meta'); meta.append(el('span', 'fb-where', 'photos'));
+        body.append(meta); b.append(body);
+        b.append(at ? el('span', 'fb-chip ok', 'Sent ' + new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · add more')
+                    : el('span', 'fb-chip todo', 'Add photos'));
+        b.onclick = async () => {
+          const made = await ensureExtra(farmId, X);
+          const line = made && made.items.find(x => x.ref_id === z.ref_id);
+          if (!line) { showToast('This zone is not in today\'s extra scouting of the unit', 'error'); return; }
+          extraPick = true;
+          return openTask('xz:' + made.t.id + ':' + line.id);
+        };
+        sec.append(b);
+      });
     }
-    return openTask('srv:' + t.id);
+    box.append(sec);
+    show('task', 'Extra scouting', () => { extraPick = false; hubReturn = null; showWeek(); });
+  }
+  // a zone scouting somebody else finished today (0.11.97): what this person adds goes in as an extra of that zone —
+  // the finished report stays its people's to correct
+  async function extraZoneFor(t) {
+    const line = (t.positions || []).find(p => p.kind === 'area' && p.ref_id);
+    if (!line) return null;
+    const X = await extraUnits();
+    if (!X || !X.byFarm.has(t.farm_id)) return null;
+    const made = await ensureExtra(t.farm_id, X);
+    const it = made && made.items.find(x => x.ref_id === line.ref_id);
+    return it ? 'xz:' + made.t.id + ':' + it.id : null;
   }
 
   // ── the day's scouting: its zones, each a task of its own (0.11.67) ──
@@ -8260,6 +8332,7 @@ function sopOpen() {
   }
   // back to the hub after a zone, else to the day
   async function backFromRun() {
+    if (extraPick) return openExtraPick();        // the both-units list of an extra scouting
     const hk = hubReturn;
     if (hk) {
       const groups = await loadGroups();
