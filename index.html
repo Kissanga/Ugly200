@@ -1234,7 +1234,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.111';
+  const CURRENT_VERSION = '0.11.112';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1398,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.112', '2026-10-05', 'No Camera setting', 'The Camera choice is gone from Settings: Android always uses the camera inside the app, an iPhone its own camera. A phone that had been switched by hand follows the same rule again.'],
     ['0.11.111', '2026-10-05', 'Android: the in-app camera again, at 4000 px', 'On Android the photos are taken with the camera inside the app again, and worked on at 4000 px, which the insect count needs. The phone\'s own camera closed the app on a Samsung S24 FE every time it opened, also after the app was made lighter. An iPhone keeps its own camera. Settings, Camera still lets a phone choose.'],
     ['0.11.110', '2026-10-05', 'Less memory while the camera is open', 'On a Samsung S24 FE the app was closed by the phone at the second photo, while the phone\'s own camera was open. The app now holds much less memory at that moment: photos are worked on at 3000 px on every phone, the working copies of a trap count are given back at once, and the text reader is stopped while the camera is open. If a phone still closes the app, it comes back in the checklist as it was; Settings, Camera, In the app avoids it.'],
     ['0.11.109', '2026-10-05', 'The phone\'s own camera on every phone', 'Photos are taken with the phone\'s own camera on Android too, as on iPhone: its full quality, autofocus, close-up and options. The in-app camera stays as a choice in Settings, Camera, for a phone that closes the app while its camera is open.'],
@@ -2098,14 +2099,6 @@ document.addEventListener('DOMContentLoaded', () => {
         </select>
       </div>
       <div class="config-hint">Each full photo (2–3 MB) goes up as soon as it is taken when the chosen connection is there, else it waits on the phone; the checklist itself is always sent at once. Only Android says which connection it is on — an iPhone uploads on any.</div>
-      <div class="set-row" style="margin-top:var(--space-3)">
-        <label for="fb-camMode">Camera</label>
-        <select id="fb-camMode" class="set-select" aria-label="Camera">
-          <option value="app">In the app</option>
-          <option value="phone">The phone's own camera</option>
-        </select>
-      </div>
-      <div class="config-hint">In the app: a camera that never leaves Naked Brain, with lens, zoom and focus controls — the choice by itself on Android, where the phone closes the app while its own camera is open. The phone's own camera: its full quality and options — the choice by itself on an iPhone, where the in-app camera can only save a video frame.</div>
     </div>
 
     <div class="set-title">App</div>
@@ -12471,7 +12464,7 @@ function sopOpen() {
   // own camera app for its macro and its processing (a run killed meanwhile comes back from its draft).
   // which camera (0.11.99): the phone's own on an iPhone — a web app gets only a video frame there, with no focus or
   // close-up — the in-app one elsewhere; Settings › Camera changes it
-  const camMode = () => { try { const v = localStorage.getItem('fb_cam_mode'); if (v === 'phone' || v === 'app') return v; } catch (e) {} return IS_IOS ? 'phone' : 'app'; };   // Android back in the app since 0.11.111: a Samsung S24 FE closed Naked Brain every time its own camera opened
+  const camMode = () => (IS_IOS ? 'phone' : 'app');   // 0.11.112: no setting any more (owner 5 Oct 2026); an earlier choice is not read
   function phoneCamera() {
     return new Promise(resolve => {
       const inp = document.createElement('input');
@@ -13705,8 +13698,6 @@ function sopOpen() {
   }, { capture: true, passive: true }));
   const upSel = document.getElementById('fb-uploadNet');
   if (upSel) { upSel.value = uploadNet(); upSel.onchange = () => { try { localStorage.setItem('fb_upload_net', upSel.value); } catch (e) {} flush(); }; }
-  const camSel = document.getElementById('fb-camMode');
-  if (camSel) { camSel.value = camMode(); camSel.onchange = () => { try { localStorage.setItem('fb_cam_mode', camSel.value); } catch (e) {} }; }
   navigator.connection?.addEventListener?.('change', () => flush());
 
   document.querySelectorAll('[data-source]').forEach(btn => btn.addEventListener('click', () => {
