@@ -1234,7 +1234,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.104';
+  const CURRENT_VERSION = '0.11.105';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1398,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.105', '2026-10-04', 'A report is kept when its task was replanned', 'When a task is taken off the plan while you are doing it (a batch moved, a new schedule), your report is no longer refused: it is kept, and the app says so. Two phones opening the same task in the same instant no longer both get in, and a cancel that arrives after a finish leaves the task done.'],
     ['0.11.104', '2026-10-04', 'Line icons instead of emoji', 'Every emoji in the app is now a line icon drawn like the ones in Naked Heart: camera, gallery, video, voice note, feedback, ruler, lock, person, play and pause, send, edit, warning. They look the same on every phone and follow the light and dark theme. An icon chosen for a procedure or a callout in Notion is drawn the same way when the app knows it.'],
     ['0.11.103', '2026-10-04', 'The right name after a change of person', 'A phone that somebody else had used before kept that person as the one doing the work: an extra scouting was filed under the earlier name. Signing out now forgets the person, and every sync says who is signed in.'],
     ['0.11.102', '2026-10-04', 'Camera as before; no question on an extra scouting', 'The in-app camera closes after each Health photo again, as before. Opening a zone of an Extra scouting no longer asks whether to do the planned scouting instead: it opens straight away.'],
@@ -7376,6 +7377,12 @@ function sopOpen() {
           if (sent && sent.already) {
             const at = sent.already.at ? new Date(sent.already.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             showToast(`Already sent${sent.already.by ? ' by ' + firstName(sent.already.by) : ''}${at ? ' at ' + at : ''} — yours is kept as a second report`, 'info');
+          }
+          // FarmBox 0212: its task was taken off the plan meanwhile (a replan, a new schedule) — the report is kept all
+          // the same, without a task; before 0212 the server refused it and the row was set aside for good
+          if (sent && sent.task_gone) {
+            showToast('This task was taken off the plan meanwhile — your report is kept', 'info');
+            clientNote('task_gone', row.payload.task_id);
           }
         }
         await del('outbox', row.id);
