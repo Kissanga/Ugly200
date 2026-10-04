@@ -1234,7 +1234,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.108';
+  const CURRENT_VERSION = '0.11.109';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1398,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.109', '2026-10-05', 'The phone\'s own camera on every phone', 'Photos are taken with the phone\'s own camera on Android too, as on iPhone: its full quality, autofocus, close-up and options. The in-app camera stays as a choice in Settings, Camera, for a phone that closes the app while its camera is open.'],
     ['0.11.108', '2026-10-04', 'Force send leaves harvest weights alone', 'Force send no longer sends harvest weights that were started and not finished: a weight is a record (a last cut closes its batch) and could not be corrected by Finish afterwards. They are listed instead: open the task and press Finish, or remove them from this phone. Everything else goes as before.'],
     ['0.11.107', '2026-10-04', 'The button is Force send, and says what it does', 'The Send button at the top is now called Force send. Before it runs it explains itself: the normal way to send is Finish inside a task; Force send sends everything this phone still holds as it stands, even if not complete, and lists what can only be removed. You confirm, or cancel.'],
     ['0.11.106', '2026-10-04', 'Send forces everything, and clears the phone', 'The Send button at the top now sends everything this phone still holds, as it stands: growth photos without the scale card (with no sizes), harvest weights and trap rounds started and not finished, feedback drafts. What cannot be sent at all — a report the server refused, a checklist whose task is gone, a trap photo with no position or count — is listed with one button, Remove from this phone. After that the phone holds nothing it cannot send.'],
@@ -2098,11 +2099,11 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="set-row" style="margin-top:var(--space-3)">
         <label for="fb-camMode">Camera</label>
         <select id="fb-camMode" class="set-select" aria-label="Camera">
-          <option value="app">In the app</option>
           <option value="phone">The phone's own camera</option>
+          <option value="app">In the app</option>
         </select>
       </div>
-      <div class="config-hint">The phone's own camera gives its full quality, autofocus and close-up; it is the choice by itself on an iPhone, where the in-app camera can only save a video frame. In the app: lens, zoom and focus controls, on Android.</div>
+      <div class="config-hint">The phone's own camera gives its full quality, autofocus, close-up and all its options; it is the choice by itself on every phone. In the app: a camera that never leaves Naked Brain, for an Android phone short of memory that closes the app while its own camera is open.</div>
     </div>
 
     <div class="set-title">App</div>
@@ -12458,7 +12459,7 @@ function sopOpen() {
   // own camera app for its macro and its processing (a run killed meanwhile comes back from its draft).
   // which camera (0.11.99): the phone's own on an iPhone — a web app gets only a video frame there, with no focus or
   // close-up — the in-app one elsewhere; Settings › Camera changes it
-  const camMode = () => { try { const v = localStorage.getItem('fb_cam_mode'); if (v === 'phone' || v === 'app') return v; } catch (e) {} return IS_IOS ? 'phone' : 'app'; };
+  const camMode = () => { try { const v = localStorage.getItem('fb_cam_mode'); if (v === 'phone' || v === 'app') return v; } catch (e) {} return 'phone'; };   // every phone since 0.11.109 (owner 5 Oct 2026)
   function phoneCamera() {
     return new Promise(resolve => {
       const inp = document.createElement('input');
