@@ -1154,7 +1154,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.102';
+  const CURRENT_VERSION = '0.11.103';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1318,6 +1318,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.103', '2026-10-04', 'The right name after a change of person', 'A phone that somebody else had used before kept that person as the one doing the work: an extra scouting was filed under the earlier name. Signing out now forgets the person, and every sync says who is signed in.'],
     ['0.11.102', '2026-10-04', 'Camera as before; no question on an extra scouting', 'The in-app camera closes after each Health photo again, as before. Opening a zone of an Extra scouting no longer asks whether to do the planned scouting instead: it opens straight away.'],
     ['0.11.101', '2026-10-04', 'A simpler scouting', 'A section is OK unless you report a problem: one button at the bottom of each tab, and its note; Finish asks nothing about red buttons any more. A photo shows only the picture, its sizes and the AI button; part, crop, position and comment are behind Details. With the in-app camera the Health camera comes back for the next photo until you close it. A trap side shows its count as a line; tap it to correct. Leaving a zone of an Extra scouting sends what you captured there. A line under the tabs says how many photos are kept on the phone and how many are uploaded.'],
     ['0.11.100', '2026-10-04', 'Extra scouting photos show in their zone', 'A plant photo taken in an Extra scouting now carries its zone. Until now it was filed with no zone, so the report in Naked Heart did not show it; the photos of 4 October were put back in their zones by hand.'],
@@ -7009,7 +7010,9 @@ function sopOpen() {
         await putAll('task_workers', d.task_workers.map(x => ({ ...x, id: x.task_id + '|' + x.worker_id })));
       }
       await putAll('workers', d.workers);
-      if (d.me) await setKV('me', d.me);
+      // who is signed in, from every sync (0.11.103): a phone used by two people kept the first one — an extra
+      // scouting of 4 Oct was made under one person's name while its photos were another's
+      if (d.me !== undefined) await setKV('me', d.me || null);
       if (Array.isArray(d.task_times)) await setKV('task_times', d.task_times);   // FarmBox 0161
       if (d.clock && !(await all('outbox')).some(r => r.payload && r.payload.__clock)) await setKV('clock', { ...d.clock, at: Date.now() });
       // sister units (FarmBox 0126): the tasks of every unit of the group come in one sync
@@ -13520,6 +13523,7 @@ function sopOpen() {
   document.getElementById('fb-signout')?.addEventListener('click', async () => {
     saveSession(null);
     await setKV('farm', null); farm = null;
+    await setKV('me', null).catch(() => {}); await setKV('who', null).catch(() => {});   // the next person is not the last one (0.11.103)
     showToast('Signed out', 'success');
     if (document.body.classList.contains('src-cloud')) fbOpen();
   });
