@@ -1084,6 +1084,7 @@
     .fb-sc-pos { align-items: center; margin-top: var(--space-2); }
     .fb-sc-pos input.fb-num { width: 96px; text-transform: uppercase; font-family: ui-monospace, monospace; font-weight: 800; }
     .fb-sc-measures { margin-top: var(--space-2); align-items: center; }
+    .fb-lines .fb-measure-bar { flex-wrap: wrap; gap: 8px; justify-content: center; }
     .fb-size-pick { border-width: 2px; font-weight: 700; }
     .fb-size-pick.longest { border-color: #00b8d4; }
     .fb-size-pick.across { border-color: #ff4081; }
@@ -1148,7 +1149,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.98';
+  const CURRENT_VERSION = '0.11.99';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1312,6 +1313,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.99', '2026-10-04', 'Scouting on an iPhone; sizes by hand', 'Sizes are measured by hand, at once: drag the blue ends onto the two ends of the fruit, leaf or head and the pink ends onto its edges, read the millimetres live, Save. No download and no waiting; Outline it for me stays as a button on phones that can run it. On an iPhone the photos are taken with the phone\'s own camera (full quality, autofocus, close-up) and are a little smaller, so the app is not closed by the phone; Settings has a Camera choice. Each full photo goes up as soon as it is taken instead of waiting for Finish.'],
     ['0.11.98', '2026-10-04', 'Sizes: two straight lines, tapped to keep', 'The scouting tab Plant health is called Health. A measured fruit, leaf or head now gets two straight lines whatever its shape: blue, the longest from edge to edge, and pink, the longest at a right angle to it. Neither is kept by itself: tap Longest, Across or both, then Save. A size nobody tapped is not sent with the report.'],
     ['0.11.97', '2026-10-04', 'Extra scouting: both units, and finished zones', 'With two units, Extra scouting opens one list with the zones of both, each under its unit — no question about which unit. A zone scouting that somebody else already finished today opens as an extra of that zone: your photos are added to the day\'s report, the finished report stays theirs to correct.'],
     ['0.11.96', '2026-10-04', 'Who is responsible; swipe an extra scouting', 'Every task card says who is responsible for it (👤 Dial, or "nobody yet"), the extra scoutings too, and the checklist says it under its title. An extra scouting is closed with a swipe and no question: right = done, left = cancelled, with the usual five seconds to undo. A closed extra scouting still opens to add photos.'],
@@ -1998,7 +2000,15 @@ document.addEventListener('DOMContentLoaded', () => {
           <option value="wifi">Wi-Fi only</option>
         </select>
       </div>
-      <div class="config-hint">The full photos (4000 px, 2–3 MB each) wait on the phone until the chosen connection is there; the checklist itself is always sent at once. Only Android says which connection it is on — an iPhone uploads on any.</div>
+      <div class="config-hint">Each full photo (2–3 MB) goes up as soon as it is taken when the chosen connection is there, else it waits on the phone; the checklist itself is always sent at once. Only Android says which connection it is on — an iPhone uploads on any.</div>
+      <div class="set-row" style="margin-top:var(--space-3)">
+        <label for="fb-camMode">Camera</label>
+        <select id="fb-camMode" class="set-select" aria-label="Camera">
+          <option value="app">In the app</option>
+          <option value="phone">The phone's own camera</option>
+        </select>
+      </div>
+      <div class="config-hint">The phone's own camera gives its full quality, autofocus and close-up; it is the choice by itself on an iPhone, where the in-app camera can only save a video frame. In the app: lens, zoom and focus controls, on Android.</div>
     </div>
 
     <div class="set-title">App</div>
@@ -6819,6 +6829,13 @@ function sopOpen() {
   // every 4000 px photo again — a phone stores a Blob as a file of its own on each put, so a zone of 15 photos wrote
   // ~60 MB at every tap. Now a Blob in a draft goes once under 'blob:<id>' and the draft keeps { __blob: id };
   // getKV puts the photos back, so the drafts' callers did not change. Unreferenced photos are swept (gcBlobs).
+  // an iPhone or iPad (0.11.99, owner 4 Oct 2026: "we had problems on iPhone"): less memory for a web app, no still
+  // camera for it, no graphics acceleration for the outline model — so smaller photos, the phone's own camera, and
+  // waiting photos stored as plain bytes (a Blob in the browser's database is the weak spot there after a kill)
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const unBlob = v => (v && typeof v === 'object' && v.__ab instanceof ArrayBuffer ? new Blob([v.__ab], { type: v.type || 'image/jpeg' }) : v);
+  const packBlob = async b => (IS_IOS && b instanceof Blob ? { __ab: await b.arrayBuffer(), type: b.type || 'image/jpeg' } : b);
+  const freeCanvas = c => { try { if (c && c.width) { c.width = 0; c.height = 0; } } catch (e) { /* gone already */ } };
   const FB_DRAFT_KEY = /^(rundraft|scout2|trapdraft|harvdraft|fbkdraft):/;
   const blobIds = new WeakMap();                         // a Blob → its 'blob:<id>' once stored
   const newBlobId = () => 'blob:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -6862,9 +6879,11 @@ function sopOpen() {
     if (!FB_DRAFT_KEY.test(String(k)) || v == null) { const r = await setKVraw(k, v); if (v == null && FB_DRAFT_KEY.test(String(k))) gcSoon(); return r; }
     const fresh = new Map(), refs = new Set();
     const out = swapOut(v, fresh, refs);
+    const packed = new Map();
+    if (IS_IOS) for (const [b, id] of fresh) packed.set(id, await packBlob(b));
     // the new photos and the draft in one transaction: a draft never points at a photo that was not stored
     const r = await tx('kv', 'readwrite', s => {
-      fresh.forEach((id, b) => s.put({ id, v: b }));
+      fresh.forEach((id, b) => s.put({ id, v: packed.get(id) || b }));
       s.put({ id: k, v: { ...out, __blobs: [...refs] } });
     });
     fresh.forEach((id, b) => blobIds.set(b, id));
@@ -6875,13 +6894,13 @@ function sopOpen() {
     const v = await getKVraw(k);
     if (!v || !FB_DRAFT_KEY.test(String(k)) || !(v.__blobs || []).length) return v && v.__blobs ? swapIn(v, new Map()) : v;
     const got = new Map();
-    await tx('kv', 'readonly', s => v.__blobs.forEach(id => { const q = s.get(id); q.onsuccess = () => { if (q.result) got.set(id, q.result.v); }; }));
+    await tx('kv', 'readonly', s => v.__blobs.forEach(id => { const q = s.get(id); q.onsuccess = () => { if (q.result) got.set(id, unBlob(q.result.v)); }; }));
     return swapIn(v, got);
   }
   // every kv row, a draft with its photos back and the stored photos themselves left out (Send reads the drafts this way)
   async function allKV() {
     const rows = await all('kv');
-    const got = new Map(rows.filter(r => String(r.id).startsWith('blob:')).map(r => [r.id, r.v]));
+    const got = new Map(rows.filter(r => String(r.id).startsWith('blob:')).map(r => [r.id, unBlob(r.v)]));
     return rows.filter(r => !String(r.id).startsWith('blob:'))
       .map(r => FB_DRAFT_KEY.test(String(r.id)) && r.v && r.v.__blobs ? { ...r, v: swapIn(r.v, got) } : r);
   }
@@ -7102,6 +7121,7 @@ function sopOpen() {
   // ── the outbox: nothing a worker records is ever lost ───────────────────
   async function queue(payloads) {
     const list = Array.isArray(payloads) ? payloads : [payloads];
+    if (IS_IOS) for (const u of list) if (u.__upload && u.blob instanceof Blob) u.blob = await packBlob(u.blob);
     await putAll('outbox', list.map((payload, i) => ({ id: payload.client_run_id, payload, tries: 0, at: Date.now() + i })));
     list.forEach(p => { if (!p.__timer && !p.__upload && !p.__tick && !p.__skip && !p.__clock && !p.__feedback) keepSent(p); });
     // done, not done, or a checklist sent: that task's timer stops (the server stops its own with the task)
@@ -7117,11 +7137,41 @@ function sopOpen() {
     if (!c || !c.type || c.type === 'unknown') return true;   // the phone does not say (an iPhone): upload
     return c.type === 'wifi' || c.type === 'ethernet';
   }
+  // ── what phone this is, and what went wrong on it (0.11.99, FarmBox 0208) ──
+  // Until now a report said nothing of the phone it came from: "a problem on the iPhone" could not be read back. The
+  // app says hello once per version and phone, and keeps its last errors (script errors, a checklist that came back
+  // from a kill, an outbox row set aside); they go up after a flush, quietly, and are dropped once sent.
+  const deviceLine = () => [navigator.userAgent, `${screen.width}x${screen.height}@${window.devicePixelRatio || 1}`,
+    navigator.deviceMemory ? `mem ${navigator.deviceMemory}` : null, `installed ${window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone ? 'yes' : 'no'}`,
+    `gpu ${navigator.gpu ? 'yes' : 'no'}`, `camera ${camMode()}`].filter(Boolean).join(' · ');
+  const logRead = () => { try { return JSON.parse(localStorage.getItem('fb_clientlog') || '[]'); } catch (e) { return []; } };
+  function clientNote(kind, detail) {
+    try {
+      const l = logRead(); l.push({ kind, at: new Date().toISOString(), detail: String(detail || '').slice(0, 400) });
+      localStorage.setItem('fb_clientlog', JSON.stringify(l.slice(-30)));
+    } catch (e) { /* no room: nothing kept */ }
+  }
+  window.addEventListener('error', e => clientNote('error', `${e.message || 'error'} @ ${String(e.filename || '').split('/').pop()}:${e.lineno || 0}`));
+  window.addEventListener('unhandledrejection', e => clientNote('error', 'promise: ' + String(e.reason?.message || e.reason || '').slice(0, 300)));
+  let clientLogOff = false;
+  async function sendClientLog() {
+    if (clientLogOff || !session || !navigator.onLine || !farm) return;
+    const hello = CURRENT_VERSION + '|' + navigator.userAgent;
+    let said = null; try { said = localStorage.getItem('fb_hello'); } catch (e) {}
+    const events = logRead();
+    if (said === hello && !events.length) return;
+    try {
+      await api('/rest/v1/rpc/client_log', { method: 'POST', body: JSON.stringify({ p_farm: farm.id, p: {
+        app: 'naked-brain', version: CURRENT_VERSION, device: deviceLine(),
+        events: [...(said === hello ? [] : [{ kind: 'hello', at: new Date().toISOString(), detail: '' }]), ...events] } }) });
+      try { localStorage.setItem('fb_hello', hello); localStorage.removeItem('fb_clientlog'); } catch (e) {}
+    } catch (e) { clientLogOff = true; }                              // a database before 0208, or no signal: not again this visit
+  }
   // one pass at a time (0.11.55): online, a network change, the screen coming back and a sync all call it, and two
   // passes at once uploaded the same photos twice and wrote back rows the other had already sent
   let flushing = null;
   function flush() {
-    flushing = flushing || doFlush().finally(() => { flushing = null; });
+    flushing = flushing || doFlush().finally(() => { flushing = null; sendClientLog().catch(() => {}); });
     return flushing;
   }
   // a row the server refuses for good (a task deleted by a reschedule, a bad value) is set aside, not retried for ever
@@ -7196,10 +7246,10 @@ function sopOpen() {
         else if (row.payload.__upload && !uploadAllowed()) continue;   // waits for Wi-Fi
         else if (row.payload.__upload) {
           // a full photo after its run: to the evidence bucket, then attached to the reading or the observation
-          const u = row.payload;
-          if (u.blob instanceof Blob) {
+          const u = row.payload, blob = unBlob(u.blob);
+          if (blob instanceof Blob) {
             const path = `${u.farm_id || farm.id}/${u.run_client_id}/${u.kind === 'trap' ? 'trap' : 'scout'}-${String(u.ref).replace(/[^A-Za-z0-9]/g, '')}-${Date.now()}.jpg`;
-            await api('/storage/v1/object/evidence/' + path, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: u.blob });
+            await api('/storage/v1/object/evidence/' + path, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
             await api('/rest/v1/rpc/attach_photo', { method: 'POST',
               body: JSON.stringify({ p_kind: u.kind, p_run_client_id: u.run_client_id, p_ref: u.ref, p_path: path }) });
           }
@@ -7239,6 +7289,7 @@ function sopOpen() {
         if (!isUp(row) && !row.payload.__clock && !row.payload.__feedback) told++;
       } catch (e) {
         const dead = refusedForGood(e);
+        if (dead || row.tries === 2) clientNote(dead ? 'refused' : 'retry', `${row.payload.__upload ? 'photo' : row.payload.__timer ? 'timer' : 'report'}: ${String(e.message || e).slice(0, 200)}`);
         await putAll('outbox', [{ ...row, tries: row.tries + 1, error: String(e.message || e).slice(0, 160), dead }]);
         if (!isUp(row)) held.add(chainOf(row));   // its photos and its later timer events wait for it; everything else goes on
         if (!navigator.onLine) break;             // the connection went: no point in trying the rest
@@ -9070,6 +9121,7 @@ function sopOpen() {
     const sop = (await all('sops')).find(x => x.id === t.sop_id);
     if (!sop) return;
     await startRun(t, sop);
+    clientNote('resumed', `the app had been closed with a checklist open: ${t.title || ''}${t.area ? ' · ' + t.area : ''}`);
     showToast('Back in the checklist you had open', 'info');
   }
 
@@ -9848,6 +9900,28 @@ function sopOpen() {
     box.append(pick);
     const pickFile = () => new Promise(res => { pick.value = ''; pick.onchange = () => res(pick.files[0] || null); pick.click(); });
 
+    // a full photo goes up as soon as it is taken (0.11.99): on 4 Oct an extra scouting's last three full photos were
+    // still waiting for Finish when the phone closed the app. One at a time, on the connection Settings allows; what
+    // does not go up now goes after the report, as before. The path travels with the report.
+    const upBusy = new WeakSet(); let upChain = Promise.resolve();
+    function upSoon(holder, kind, name) {
+      const R = run;
+      upChain = upChain.then(async () => {
+        if (run !== R || R.edit || !(holder.full instanceof Blob) || holder.photo_path || upBusy.has(holder)) return;
+        if (!session || !navigator.onLine || !uploadAllowed()) return;
+        upBusy.add(holder);
+        const t = R.task.members[0] || {};
+        const path = `${t.farm_id || farm.id}/${R.clientId}/${kind}-${String(name).replace(/[^A-Za-z0-9]/g, '')}-${Date.now()}.jpg`;
+        try {
+          await api('/storage/v1/object/evidence/' + path, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: holder.full });
+          holder.photo_path = path;
+          if (run === R) { saveScDraft(); paintSafe?.(); }
+        } catch (e) { /* after the report, from the outbox */ }
+        finally { upBusy.delete(holder); }
+      }).catch(() => {});
+    }
+    let paintSafe = null;
+
     async function shoot(section, forTrap, fromGallery) {
       const hint = section === 'trap'
         ? (forTrap ? `Trap ${forTrap.code} — square-on, the WHOLE card in the photo, top to bottom` : 'A sticky trap — square-on, the whole card, top to bottom, and its code in the picture')
@@ -9873,6 +9947,7 @@ function sopOpen() {
       p.thumb = shrinkCanvas(big.canvas, 640, 0.6);
       p.full = await new Promise(res => big.canvas.toBlob(res, 'image/jpeg', FULL_Q));
       const c1600 = scaleCanvas(big.canvas, 1600);
+      if (c1600 !== big.canvas) freeCanvas(big.canvas);              // given back at once (0.11.99)
       big = null;
       // a plant photo only: a trap photo went to addTrap above (its old branches here were dead code since 0149)
       const headZone = crops.length > 0 && crops.every(c => HEAD_RE.test(c.name || ''));
@@ -9894,7 +9969,9 @@ function sopOpen() {
         // one tap by the person says which object (0.11.80, owner: "can I help the algorithm? maybe just 2 points") — on
         // 276 Open Images crops the phone's own guess missed the object on about half; from a tap the outline is right
         if (p.px_per_mm && p.section === 'growth') sc.sizeCheck?.(p);
-      }).catch(e => { console.warn('scale card', e); p.scale_state = 'none'; card._paintMs?.(); if (section === 'growth') noScale(p, card); });
+      }).catch(e => { console.warn('scale card', e); p.scale_state = 'none'; card._paintMs?.(); if (section === 'growth') noScale(p, card); })
+        .finally(() => freeCanvas(c1600));
+      upSoon(p, 'scout', p.ref);
     }
     // A growth photo is only kept with the scale card in it (0.11.86, owner 2 Oct 2026: "do not accept picture in growth
     // without the scale detected"): the sizes are measured against the card, and a growth photo without a size says
@@ -9955,7 +10032,9 @@ function sopOpen() {
         else if (lc) S.check = lc;
         if (r.scale === 'none') S.rows_seen = null;
       } catch (e) { S.total = null; }
+      if (canvas !== big.canvas) freeCanvas(big.canvas);
       big = null;
+      upSoon(S, 'trap', side);
       return { S, side, canvas };
     }
     async function addTrap(file, forTrap) {
@@ -10419,7 +10498,7 @@ function sopOpen() {
               const t = el('button', 'fb-btn fb-btn-primary',
                 p.auto_state === 'none' ? '📐 Nothing outlined — tap it again'
                 : p.auto_state === 'failed' ? '📐 The outline tool needs a connection the first time — try again'
-                : p.section === 'growth' ? '📐 Tap the fruit to measure' : '📐 Tap the leaf or fruit to measure'); t.type = 'button';
+                : '📐 Measure: two lines'); t.type = 'button';
               t.onclick = () => sc.sizeCheck(p);
               ms.append(t);
             }
@@ -10427,8 +10506,8 @@ function sopOpen() {
               // what the phone measured, on the photo (0.11.76): a wrong object shows at once
               const b = el('button', 'fb-auto-view'); b.type = 'button';
               const im = el('img'); im.src = p.auto_view; im.alt = 'What the phone measured';
-              b.append(im, el('span', null, p.size_ok ? '✓ Checked: the outlined object is what was measured. Tap to look again.'
-                : 'Measured the outlined object — tap to check it (Yes, or tap the right one).'));
+              b.append(im, el('span', null, p.size_ok ? '✓ Measured. Tap to look again or move the lines.'
+                : 'Lines drawn — tap to check them and keep a size.'));
               if (p.size_ok) b.classList.add('ok');
               b.onclick = () => sc.sizeCheck(p);
               ms.append(b);
@@ -10596,7 +10675,10 @@ function sopOpen() {
       document.body.append(sheet);
       paint();
     }
-    sc.sizeCheck = sizeCheck;
+    // 0.11.99: the two lines by hand first (instant, any phone, offline); the outline tool is its optional button
+    sc.outline = sizeCheck;
+    sc.sizeCheck = p => lineTool(p, () => { document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?._paintMs?.(); saveScDraft(); },
+                                 navigator.gpu ? () => sizeCheck(p) : null);
     sc.reveal = ref => { if (sc.photos.get(ref)?.section === 'trap') { sc.open.add(ref); paintCoverage(); } };
     const shortLevel = p => {
       const rs = SIDES.map(([k]) => sideRate(p, k)).filter(Boolean);
@@ -11457,6 +11539,127 @@ function sopOpen() {
   // On the scale card the phone knows the scale already. Without one (0.11.48, owner's tape-measure photos:
   // "not dimensions collected"), the scale is set first on a ruler or tape in the photo: tap two marks far
   // apart (0 and 30), say how many centimetres lie between them, and every size after is read against that.
+  // ── two lines by hand (0.11.99, owner 4 Oct 2026: "the dimension algo is too long") ──
+  // The blue line has a handle at each end: drag them onto the two ends of the fruit, leaf or head. The pink line stays
+  // at a right angle to it: drag its handles to the edges, anywhere along the blue one. Millimetres are read live against
+  // the scale card (in its plane) or the ruler. No model, no download, nothing to wait for. Moving a line keeps its
+  // size; a tap on a size switches it. `outline` (when the phone has graphics acceleration) opens the outline tool.
+  async function lineTool(p, done, outline) {
+    if (!(p.full instanceof Blob) || !p.px_per_mm || document.querySelector('.fb-measure, .fb-cam')) return;
+    let bmp;
+    try { bmp = await createImageBitmap(p.full, { resizeWidth: 1600, resizeQuality: 'medium' }); }
+    catch (e) { try { bmp = await createImageBitmap(p.full); } catch (e2) { showToast('This photo could not be opened', 'error'); return; } }
+    const BW = bmp.width, BH = bmp.height;
+    const L = p.lines || {};
+    let A = { x: (L.a?.[0] ?? 0.3) * BW, y: (L.a?.[1] ?? 0.5) * BH }, B = { x: (L.b?.[0] ?? 0.7) * BW, y: (L.b?.[1] ?? 0.5) * BH };
+    let t = L.t ?? 0.5, v1 = (L.v1 ?? -0.07) * BW, v2 = (L.v2 ?? 0.07) * BW;
+    const had = n => (p.measures || []).some(m => m.line === n && m.confirmed);
+    let keepL = had('longest'), keepW = had('across');
+    const ov = el('div', 'fb-cam fb-measure fb-lines');
+    const cv = document.createElement('canvas'); cv.style.touchAction = 'none';
+    const hint = el('div', 'fb-cam-hint', 'Drag the blue ends onto the two ends of what you measure, the pink ends onto its edges');
+    const bar = el('div', 'fb-cam-bar fb-measure-bar');
+    ov.append(cv, hint, bar);
+    document.body.append(ov);
+    const k = Math.min(ov.clientWidth / BW, (ov.clientHeight - 150) / BH);
+    cv.width = Math.round(BW * k); cv.height = Math.round(BH * k);
+    cv.style.margin = '40px auto 0'; cv.style.display = 'block';
+    const geo = () => {
+      const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1, u = { x: dx / len, y: dy / len }, n = { x: -u.y, y: u.x };
+      const M = { x: A.x + dx * t, y: A.y + dy * t };
+      return { u, n, len, C: { x: M.x + n.x * v1, y: M.y + n.y * v1 }, D: { x: M.x + n.x * v2, y: M.y + n.y * v2 } };
+    };
+    const mm = (a, b) => Math.round(mmBetween(p, a, b, BW, BH));
+    let grab = null, finger = null;
+    const draw = () => {
+      const g = cv.getContext('2d'), G = geo();
+      g.drawImage(bmp, 0, 0, cv.width, cv.height);
+      if (p.scale_quad && p.scale_source === 'marker') {
+        g.strokeStyle = '#3ddc84'; g.lineWidth = 2; g.beginPath();
+        p.scale_quad.forEach(([x, y], i) => { const X = x * cv.width, Y = y * cv.height; i ? g.lineTo(X, Y) : g.moveTo(X, Y); });
+        g.closePath(); g.stroke();
+      }
+      const seg = (a, b, col, on) => {
+        g.strokeStyle = col; g.lineWidth = on ? 4 : 3; g.setLineDash(on ? [] : [10, 7]);
+        g.beginPath(); g.moveTo(a.x * k, a.y * k); g.lineTo(b.x * k, b.y * k); g.stroke(); g.setLineDash([]);
+        for (const q of [a, b]) {
+          g.beginPath(); g.arc(q.x * k, q.y * k, 13, 0, 7); g.fillStyle = 'rgba(255,255,255,0.25)'; g.fill(); g.lineWidth = 3; g.strokeStyle = col; g.stroke();
+          g.beginPath(); g.arc(q.x * k, q.y * k, 3, 0, 7); g.fillStyle = col; g.fill();
+        }
+      };
+      seg(A, B, '#00e5ff', keepL); seg(G.C, G.D, '#ff4081', keepW);
+      // the spot under the finger, enlarged, in the corner away from it
+      if (grab && finger) {
+        const R = 58, lx = finger.x * k < cv.width / 2 ? cv.width - R - 10 : R + 10, ly = R + 10, src = 46 / k;
+        g.save(); g.beginPath(); g.arc(lx, ly, R, 0, 7); g.clip();
+        g.drawImage(bmp, finger.x - src / 2, finger.y - src / 2, src, src, lx - R, ly - R, 2 * R, 2 * R);
+        g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(lx - 12, ly); g.lineTo(lx + 12, ly); g.moveTo(lx, ly - 12); g.lineTo(lx, ly + 12); g.stroke();
+        g.restore(); g.beginPath(); g.arc(lx, ly, R, 0, 7); g.strokeStyle = grab === 'A' || grab === 'B' ? '#00e5ff' : '#ff4081'; g.lineWidth = 3; g.stroke();
+      }
+    };
+    const bL = el('button', 'fb-btn fb-size-pick longest'); bL.type = 'button';
+    const bW = el('button', 'fb-btn fb-size-pick across'); bW.type = 'button';
+    const save = el('button', 'fb-btn fb-btn-primary', 'Save'); save.type = 'button';
+    const auto = el('button', 'fb-btn', '✦ Outline it for me'); auto.type = 'button';
+    const cancel = el('button', 'fb-btn', 'Not now'); cancel.type = 'button';
+    const paintBar = () => {
+      const G = geo();
+      bL.textContent = `${keepL ? '✓ ' : ''}Longest ${mm(A, B)} mm`; bL.setAttribute('aria-pressed', String(keepL));
+      bW.textContent = `${keepW ? '✓ ' : ''}Across ${mm(G.C, G.D)} mm`; bW.setAttribute('aria-pressed', String(keepW));
+      save.disabled = !(keepL || keepW);
+      save.textContent = keepL && keepW ? 'Save both' : keepL ? 'Save longest' : keepW ? 'Save across' : 'Move a line, or tap a size';
+    };
+    bL.onclick = () => { keepL = !keepL; draw(); paintBar(); };
+    bW.onclick = () => { keepW = !keepW; draw(); paintBar(); };
+    const at = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; };
+    cv.onpointerdown = e => {
+      const f = at(e), G = geo(), near = 34 / k;
+      let best = null, bd = near;
+      for (const [name, q] of [['A', A], ['B', B], ['C', G.C], ['D', G.D]]) { const d = Math.hypot(q.x - f.x, q.y - f.y); if (d < bd) { bd = d; best = name; } }
+      if (!best) return;
+      grab = best; finger = f;
+      try { cv.setPointerCapture(e.pointerId); } catch (err) { /* a synthetic pointer */ }
+      e.preventDefault(); draw();
+    };
+    cv.onpointermove = e => {
+      if (!grab) return;
+      const f = at(e); f.x = Math.min(BW, Math.max(0, f.x)); f.y = Math.min(BH, Math.max(0, f.y)); finger = f;
+      if (grab === 'A') { A = f; keepL = true; }
+      else if (grab === 'B') { B = f; keepL = true; }
+      else {
+        const G = geo(), rx = f.x - A.x, ry = f.y - A.y;
+        t = Math.min(1, Math.max(0, (rx * G.u.x + ry * G.u.y) / G.len));
+        const off = rx * G.n.x + ry * G.n.y;
+        if (grab === 'C') v1 = off; else v2 = off;
+        keepW = true;
+      }
+      draw(); paintBar();
+    };
+    const drop = () => { if (!grab) return; grab = null; finger = null; draw(); };
+    cv.onpointerup = drop; cv.onpointercancel = drop;
+    const shut = () => { ov.remove(); bmp.close?.(); done?.(); };
+    save.onclick = () => {
+      const G = geo(), scale = p.scale_source || 'marker';
+      p.measures = [...(p.measures || []).filter(m => !m.line),
+        ...(keepL ? [{ what: 'length', line: 'longest', mm: mm(A, B), by: 'hand', scale, confirmed: true }] : []),
+        ...(keepW ? [{ what: 'width', line: 'across', mm: mm(G.C, G.D), by: 'hand', scale, confirmed: true }] : [])];
+      p.lines = { a: [A.x / BW, A.y / BH], b: [B.x / BW, B.y / BH], t, v1: v1 / BW, v2: v2 / BW };
+      // what was measured, on the photo's card
+      const v = document.createElement('canvas'), vk = Math.min(1, 900 / Math.max(cv.width, cv.height));
+      v.width = Math.round(cv.width * vk); v.height = Math.round(cv.height * vk);
+      v.getContext('2d').drawImage(cv, 0, 0, v.width, v.height);
+      p.auto_view = v.toDataURL('image/jpeg', 0.75); freeCanvas(v);
+      p.auto_state = 'done'; p.auto_algo = 'lines-hand'; p.size_ok = true;
+      shut();
+    };
+    auto.onclick = () => { shut(); outline(); };
+    cancel.onclick = shut;
+    bar.append(bL, bW, save);
+    if (outline) bar.append(auto);
+    bar.append(cancel);
+    draw(); paintBar();
+  }
+
   async function measurePhoto(p, done) {
     let bmp;
     try { bmp = await createImageBitmap(p.full, { resizeWidth: 1600, resizeQuality: 'medium' }); }
@@ -11691,7 +11894,7 @@ function sopOpen() {
         notes: p.note || null, read_at: S.taken_at || p.taken_at, code_read: p.code_read || null,
         code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: null, ai: S.ai || null }))),
       observations: plants.map(p => ({ client_ref: p.ref, section: p.section, part: p.part || 'other', crop_id: p.crop_id || null,
-        zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, taken_at: p.taken_at,
+        zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, photo_path: p.photo_path || null, taken_at: p.taken_at,
         pos_code: posOf(p.pos_code), gps: null, measures: (p.measures || []).filter(m => m.by !== 'auto' || m.confirmed), px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
     };
     const uploads = [
@@ -11964,10 +12167,12 @@ function sopOpen() {
   // on the phone. createImageBitmap also applies the EXIF rotation.
   async function shrinkPhoto(file, maxSide, quality) {
     let src;
+    // an iPhone: through <img>, which always turns the photo the right way up there
+    if (IS_IOS) { try { src = await loadImage(file); } catch (e) { src = null; } }
     // decoded straight at the size wanted (0.11.92, review of 30 Sept): a 50 MP gallery photo used to be decoded whole
     // (~200 MB) before it was shrunk. The JPEG's header says its size and rotation; Chrome rotates first and then
     // resizes, so the long side of the rotated picture is the one asked for (tested with an EXIF-6 JPEG).
-    const dims = await jpegSize(file).catch(() => null);
+    const dims = src ? null : await jpegSize(file).catch(() => null);
     if (dims) {
       const [w, h] = dims.orient >= 5 ? [dims.h, dims.w] : [dims.w, dims.h];
       if (Math.max(w, h) > maxSide) {
@@ -12047,7 +12252,8 @@ function sopOpen() {
   // the full photo kept for the console's zoom and the AI: the camera's still capped at
   // FULL_PX on the long side (about 15 px/mm on a trap card — beyond that the lens, not
   // the pixels, limits the detail, and a 50 MP file can push the app out of memory)
-  const FULL_PX = 4000, FULL_Q = 0.9;
+  // 0.11.99: 3000 px on an iPhone (a 4000 px working canvas is 48 MB, and an iPhone gives a web app far less)
+  const FULL_PX = IS_IOS ? 3000 : 4000, FULL_Q = 0.9;
   // Lens, close-up and zoom (0.11.41, owner: "open the camera in macro mode"). A web app cannot
   // press the Macro button of the phone's own camera app; it can pick another back lens (on many
   // phones the ultra-wide is the macro one — some makers hide it from every app but their own),
@@ -12110,7 +12316,26 @@ function sopOpen() {
   // Close-up that pinned it at the nearest distance; the still is asked for at its largest up to
   // FULL_PX; a blurred frame asks whether to retake; and "Phone camera" hands over to the phone's
   // own camera app for its macro and its processing (a run killed meanwhile comes back from its draft).
+  // which camera (0.11.99): the phone's own on an iPhone — a web app gets only a video frame there, with no focus or
+  // close-up — the in-app one elsewhere; Settings › Camera changes it
+  const camMode = () => { try { const v = localStorage.getItem('fb_cam_mode'); if (v === 'phone' || v === 'app') return v; } catch (e) {} return IS_IOS ? 'phone' : 'app'; };
+  function phoneCamera() {
+    return new Promise(resolve => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); inp.style.display = 'none';
+      document.body.append(inp);
+      let back = false;
+      const settle = v => { if (back) return; back = true; inp.remove(); window.removeEventListener('focus', onFocus); resolve(v); };
+      // came back without a photo — not on an iPhone, which can take longer than this to hand the photo over
+      const onFocus = () => setTimeout(() => settle(inp.files?.[0] || 'cancel'), 1500);
+      inp.onchange = () => settle(inp.files?.[0] || 'cancel');
+      inp.addEventListener('cancel', () => settle('cancel'));
+      if (!IS_IOS) window.addEventListener('focus', onFocus);
+      inp.click();
+    });
+  }
   function takeTrapPhoto(code, hintText, purpose = 'trap') {
+    if (camMode() === 'phone') { samRelease(); return phoneCamera(); }
     return new Promise(async resolve => {
       samRelease();                                                   // the camera and a 4000 px photo need the memory (0.11.82)
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
@@ -13090,7 +13315,7 @@ function sopOpen() {
                 notes: q.note || null, read_at: S.taken_at || q.taken_at, code_read: q.code_read || null,
                 code_source: q.code_source || null, code_confirmed: !!q.code_ok, gps: null, ai: S.ai || null })) } : {}),
               observations: go.map(q => ({ client_ref: q.ref, section: q.section, part: q.part || 'other', crop_id: q.crop_id || null,
-                zone_id: q.zone_id || t.zone_id || null, item_id: q.item_id || null, note: q.note || null, photo_data: q.thumb || null, taken_at: q.taken_at,
+                zone_id: q.zone_id || t.zone_id || null, item_id: q.item_id || null, note: q.note || null, photo_data: q.thumb || null, photo_path: q.photo_path || null, taken_at: q.taken_at,
                 pos_code: parsePos(String(q.pos_code || '').toUpperCase().replace(/\s/g, '')) ? String(q.pos_code).toUpperCase().replace(/\s/g, '') : null,
                 gps: null, measures: (q.measures || []).filter(m => m.by !== 'auto' || m.confirmed), px_per_mm: q.px_per_mm ?? null, ai: q.ai || null })),
             };
@@ -13240,6 +13465,8 @@ function sopOpen() {
   }, { capture: true, passive: true }));
   const upSel = document.getElementById('fb-uploadNet');
   if (upSel) { upSel.value = uploadNet(); upSel.onchange = () => { try { localStorage.setItem('fb_upload_net', upSel.value); } catch (e) {} flush(); }; }
+  const camSel = document.getElementById('fb-camMode');
+  if (camSel) { camSel.value = camMode(); camSel.onchange = () => { try { localStorage.setItem('fb_cam_mode', camSel.value); } catch (e) {} }; }
   navigator.connection?.addEventListener?.('change', () => flush());
 
   document.querySelectorAll('[data-source]').forEach(btn => btn.addEventListener('click', () => {
