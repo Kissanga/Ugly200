@@ -1084,6 +1084,11 @@
     .fb-sc-pos { align-items: center; margin-top: var(--space-2); }
     .fb-sc-pos input.fb-num { width: 96px; text-transform: uppercase; font-family: ui-monospace, monospace; font-weight: 800; }
     .fb-sc-measures { margin-top: var(--space-2); align-items: center; }
+    .fb-size-pick { border-width: 2px; font-weight: 700; }
+    .fb-size-pick.longest { border-color: #00b8d4; }
+    .fb-size-pick.across { border-color: #ff4081; }
+    .fb-size-pick[aria-pressed="true"].longest { background: #00b8d4; color: #fff; }
+    .fb-size-pick[aria-pressed="true"].across { background: #ff4081; color: #fff; }
     .fb-sc-ai { margin-top: var(--space-2); padding: 8px 10px; border-radius: var(--radius-md); font-size: var(--text-sm);
       background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-left: 3px solid var(--accent); }
     .fb-sc-ai::before { content: '✦ AI · '; font-weight: 800; }
@@ -1143,7 +1148,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.97';
+  const CURRENT_VERSION = '0.11.98';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1307,6 +1312,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.98', '2026-10-04', 'Sizes: two straight lines, tapped to keep', 'The scouting tab Plant health is called Health. A measured fruit, leaf or head now gets two straight lines whatever its shape: blue, the longest from edge to edge, and pink, the longest at a right angle to it. Neither is kept by itself: tap Longest, Across or both, then Save. A size nobody tapped is not sent with the report.'],
     ['0.11.97', '2026-10-04', 'Extra scouting: both units, and finished zones', 'With two units, Extra scouting opens one list with the zones of both, each under its unit — no question about which unit. A zone scouting that somebody else already finished today opens as an extra of that zone: your photos are added to the day\'s report, the finished report stays theirs to correct.'],
     ['0.11.96', '2026-10-04', 'Who is responsible; swipe an extra scouting', 'Every task card says who is responsible for it (👤 Dial, or "nobody yet"), the extra scoutings too, and the checklist says it under its title. An extra scouting is closed with a swipe and no question: right = done, left = cancelled, with the usual five seconds to undo. A closed extra scouting still opens to add photos.'],
     ['0.11.95', '2026-10-04', 'Extra scouting: the planned one first', 'Opening a zone in an Extra scouting while your own planned scouting of that zone is still open today asks once: do the planned scouting now, or only add extra photos. An extra scouting card no longer shows "0 min".'],
@@ -9123,7 +9129,7 @@ function sopOpen() {
   // crops measured as a head seen from above (0.11.79): salads, leafy greens, herbs
   const HEAD_RE = /lettuce|butterhead|romaine|iceberg|\bcos\b|salad|spinach|rocket|arugula|kale|chard|basil|parsley|coriander|cilantro|mint|herb|pak ?choi|bok ?choy|mizuna|endive|radicchio|watercress|m[aâ]che|chive|dill|oregano|thyme/i;
   const MEASURE_WHAT = [['diameter', 'Diameter'], ['length', 'Length'], ['width', 'Width'], ['height', 'Height']];
-  const SC_TABS = [['trap', 'Traps'], ['health', 'Plant health'], ['growth', 'Growth']];
+  const SC_TABS = [['trap', 'Traps'], ['health', 'Health'], ['growth', 'Growth']];
   const SIDES = [['yellow', 'Yellow side'], ['blue', 'Blue side']];              // the two faces of every trap card (0149)   // OK / Not OK sit above Finish (0.11.43)
   // a picture with its ✕ in the top right corner (0.11.86, owner 2 Oct 2026: "the possibility to remove the taken picture
   // by clicking the top right corner of all pictures with a small x"): asks once, then remove(pic)
@@ -10477,10 +10483,9 @@ function sopOpen() {
         const r = await autoMeasure(p, point || null, want);
         if (!r) p.auto_state = 'none';
         else {
-          const [one, two] = r.part === 'fruit' ? ['length', 'diameter'] : r.part === 'head' ? ['diameter', 'width'] : ['length', 'width'];
           p.measures = [...(p.measures || []).filter(m => m.by !== 'auto'),
-            { what: one, mm: r.length_mm, by: 'auto', scale: p.scale_source || 'marker' },
-            { what: two, mm: r.width_mm, by: 'auto', scale: p.scale_source || 'marker' }];
+            { what: 'length', line: 'longest', mm: r.length_mm, by: 'auto', scale: p.scale_source || 'marker' },
+            { what: 'width', line: 'across', mm: r.width_mm, by: 'auto', scale: p.scale_source || 'marker' }];
           p.auto_view = r.view; p.auto_point = r.point; p.auto_algo = r.algorithm; p.auto_state = 'done'; p.size_ok = false;
         }
       } catch (e) { console.warn('measuring', e); p.auto_state = 'failed'; }
@@ -10503,7 +10508,7 @@ function sopOpen() {
       const img = el('img', 'fb-sizecheck-img'); img.alt = 'The photo';
       const sizes = el('div', 'fb-sizecheck-sizes');
       const hint = el('div', 'fb-meta', '');
-      const yes = el('button', 'fb-btn fb-btn-primary', '✓ Right'); yes.type = 'button';
+      const yes = el('button', 'fb-btn fb-btn-primary', '✓ Save'); yes.type = 'button';
       const bigger = el('button', 'fb-btn', '⊕ Bigger'); bigger.type = 'button';
       const smaller = el('button', 'fb-btn', '⊖ Smaller'); smaller.type = 'button';
       const again = el('button', 'fb-btn', 'Start again'); again.type = 'button';
@@ -10517,16 +10522,24 @@ function sopOpen() {
         title.textContent = busy ? 'Measuring…' : picking ? `Tap the ${what}` : `Is this the ${what}?`;
         img.src = (done && !picking) ? p.auto_view : (p.thumb || p.auto_view || '');
         sizes.textContent = '';
-        if (done && !picking) (p.measures || []).filter(m => m.by === 'auto').forEach(m =>
-          sizes.append(el('span', 'fb-chip ok', `${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm`)));
+        // the sizes to track are tapped (0.11.98): none is kept by itself
+        const autos = (p.measures || []).filter(m => m.by === 'auto');
+        if (done && !picking) autos.forEach(m => {
+          const b = el('button', 'fb-btn fb-size-pick ' + (m.line === 'across' ? 'across' : 'longest'), `${m.keep ? '✓ ' : ''}${m.line === 'across' ? 'Across' : 'Longest'} ${m.mm} mm`);
+          b.type = 'button'; b.setAttribute('aria-pressed', String(!!m.keep)); b.disabled = busy;
+          b.onclick = () => { m.keep = !m.keep; paint(); };
+          sizes.append(b);
+        });
+        const kept = autos.filter(m => m.keep).length;
+        yes.textContent = kept ? `✓ Save ${kept === 2 ? 'both' : autos.find(m => m.keep).line === 'across' ? 'across' : 'longest'}` : 'Tap the size to keep';
         // the 40 MB only the first time on this phone (0.11.83: it was said at every launch, the flag lived in memory only)
         hint.textContent = note || (busy ? (!samKnown() ? `Loading the outline tool (the first time only, about 40 MB) and outlining the ${what}…`
             : samDevice === 'wasm' ? `Outlining the ${what}… this phone's browser has no graphics acceleration, so the first outline of a photo can take up to a minute.`
             : !samReady ? `Preparing the outline tool and outlining the ${what}…`
             : `Outlining the ${what}…`)
           : picking ? `Tap the middle of the ${what} on the photo — the phone outlines it and measures it against the card.`
-          : st ? `Yellow edge = what was measured. Not right? Tap a part that does not belong to take it out, or a missing part to add it.`
-          : `Yellow edge = what was measured. Blue = ${what === 'head' ? 'diameter' : 'length'}, pink = ${what === 'fruit' ? 'diameter' : 'width'}.`);
+          : st ? `Blue = the longest straight line edge to edge, pink = the longest at a right angle to it. Tap the size (or both) to keep. Outline not right? Tap a part that does not belong to take it out, or a missing part to add it.`
+          : `Blue = the longest straight line edge to edge, pink = the longest at a right angle to it. Tap the size (or both) to keep.`);
         note = '';
         img.classList.toggle('picking', !busy);
         yes.classList.toggle('hidden', picking || !done);
@@ -10535,6 +10548,7 @@ function sopOpen() {
         smaller.classList.toggle('hidden', picking || !done || !st?.smaller);
         adj.classList.toggle('hidden', bigger.classList.contains('hidden') && smaller.classList.contains('hidden'));
         [yes, bigger, smaller, again, hand].forEach(b => { b.disabled = busy; });
+        if (!kept) yes.disabled = true;
       };
       const close = () => { sheet.remove(); sizeSheetOpen = false; samRelease(); document.querySelector(`.fb-sc-card[data-ref="${p.ref}"]`)?._paintMs?.(); saveScDraft(); };
       const measure = async want => {
@@ -10547,7 +10561,11 @@ function sopOpen() {
         busy = false; picking = st !== 'done';
         paint();
       };
-      yes.onclick = () => { p.size_ok = true; (p.measures || []).forEach(m => { if (m.by === 'auto') m.confirmed = true; }); close(); };
+      yes.onclick = () => {
+        p.measures = (p.measures || []).filter(m => m.by !== 'auto' || m.keep);
+        p.measures.forEach(m => { if (m.by === 'auto') m.confirmed = true; });
+        p.size_ok = true; close();
+      };
       bigger.onclick = () => measure(1);
       smaller.onclick = () => measure(-1);
       again.onclick = () => { pts = []; samState.delete(p); picking = true; paint(); };
@@ -10702,7 +10720,7 @@ function sopOpen() {
     // Plant health
     lists.health = el('div');
     panes.health.append(el('div', 'config-hint', 'A photo of anything that looks wrong on a plant: where in the zone if you want (row and metres, B6), a comment, the AI note if you want it. Tap a photo to zoom.'),
-                        addBar('health', 'Add a photo'), lists.health, verdictBlock('health', 'Plant health'));
+                        addBar('health', 'Add a photo'), lists.health, verdictBlock('health', 'Health'));
     // Growth
     lists.growth = el('div');
     panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'A photo of a fruit or leaf with the scale card beside it, or a ruler or tape along it: the size comes by itself (or 📏). Tap a photo to zoom.'),
@@ -10725,15 +10743,15 @@ function sopOpen() {
     d.append(el('summary', null, 'How the scouting works'));
     const list = el('ol');
     [
-      ['Today\u2019s sections are the tabs.', 'Each tab has a dot: red while it is required today and its minimum is not reached yet, green when it is, or when it is not required today (it says not today, and still opens: more is always welcome). The minimum: every trap of the zone, both sides (or marked taken down / out of reach); 2 plant-health photos; 2 growth photos. Traps on Monday, Wednesday and Friday, Plant health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day.'],
+      ['Today\u2019s sections are the tabs.', 'Each tab has a dot: red while it is required today and its minimum is not reached yet, green when it is, or when it is not required today (it says not today, and still opens: more is always welcome). The minimum: every trap of the zone, both sides (or marked taken down / out of reach); 2 plant-health photos; 2 growth photos. Traps on Monday, Wednesday and Friday, Health every working day, Growth on Tuesday and Thursday (set in the console). One missed on its day comes back the next day.'],
       ['Work in parallel.', 'Walk the greenhouse once and photograph what you meet — a trap, a sick plant, a fruit to measure — each in its tab, in any order. Switching tab loses nothing, and neither does the app closing: it comes back as you left it.'],
       ['Writing the position.', 'Always the same spot: on the blue side, in the plain band at the top, above the three holes and at least 1 cm from the edge, clear of the holes and the hanging wire. Black marker, capitals about 1 cm high, on one line, a little apart (1B6, no dashes). Photograph the blue side first. A trap of the list is never read: tap it in the list. If a new card is not read, the AI reads it or you type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['One zone a task.', 'Each zone has its own scouting task (Zone 1, 2, 3, 4.1, 4.2): its traps only, its photos, its OK. In Zone 4 write the table in a card code: 4.1B6, 4.2B6.'],
-      ['Plant health.', 'Anything that looks wrong: the zone comes from the task; write the row and metres if you want (B6), choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
+      ['Health.', 'Anything that looks wrong: the zone comes from the task; write the row and metres if you want (B6), choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
       ['Growth.', 'Fruit or leaves with the scale card beside them (the black 5 cm square, flat, the same distance from the phone, the whole square in the photo): the phone finds it and outlines it in green; 📏 Measure, then tap the two ends — the size is read in the card\u2019s plane, so a tilted card still measures right. The size the phone takes by itself is a suggestion. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
-      ['Each tab ends the same way.', 'At the bottom of Traps, Plant health and Growth: one button, red until you tap it green when that section is OK. Still red? Say why in the note under it.'],
+      ['Each tab ends the same way.', 'At the bottom of Traps, Health and Growth: one button, red until you tap it green when that section is OK. Still red? Say why in the note under it.'],
       ['Review.', 'The Review tab shows everything captured — every photo with its counts, sizes, position, AI note and comment, and each section’s result. Tap a photo to zoom, a line to go back to it.'],
       ['Finish.', 'The result follows by itself: every section OK = OK; a section left red is asked about once and sent as not OK with its note. The phone says what is still missing: a section under its minimum is asked about once, and on a trap day it asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
       ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
@@ -11241,6 +11259,47 @@ function sopOpen() {
     sizeBusy = job.catch(() => {});
     return job;
   }
+  // two straight lines on an outline (0.11.98, owner 4 Oct 2026: "the dimensions are not correct for strange shape crops …
+  // just 2 straight lines: the first the longest from detected borders and the second at 90 degrees from the longest"):
+  // the longest = the two border points farthest apart; across = the longest border-to-border line at a right angle to it
+  function twoLines(m, w, h) {
+    const pts = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; if (!m[i]) continue;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1 || !m[i - 1] || !m[i + 1] || !m[i - w] || !m[i + w]) pts.push([x, y]);
+    }
+    if (pts.length < 8) return null;
+    const srt = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [], upper = [];
+    for (const q of srt) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
+    for (let i = srt.length - 1; i >= 0; i--) { const q = srt[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
+    const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+    let A = hull[0], B = hull[0], best = -1;
+    for (let i = 0; i < hull.length; i++) for (let j = i + 1; j < hull.length; j++) {
+      const d = (hull[i][0] - hull[j][0]) ** 2 + (hull[i][1] - hull[j][1]) ** 2;
+      if (d > best) { best = d; A = hull[i]; B = hull[j]; }
+    }
+    const L = Math.sqrt(best); if (L < 4) return null;
+    const ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L;
+    // across: per slice along the longest line, from the border on one side to the border on the other
+    const n = Math.ceil(L) + 1, lo = new Float32Array(n).fill(Infinity), hi = new Float32Array(n).fill(-Infinity);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {          // every pixel of the outline: no slice is left thin
+      if (!m[y * w + x]) continue;
+      const dx = x - A[0], dy = y - A[1], t = Math.min(n - 1, Math.max(0, Math.round(dx * ux + dy * uy))), v = -dx * uy + dy * ux;
+      if (v < lo[t]) lo[t] = v; if (v > hi[t]) hi[t] = v;
+    }
+    const span = t => (hi[t] >= lo[t] ? hi[t] - lo[t] : -1);
+    let bt = -1, bw = -1;
+    for (let t = 1; t < n - 1; t++) {                                  // the middle of three slices: one stray pixel is not a width
+      const three = [[span(t - 1), t - 1], [span(t), t], [span(t + 1), t + 1]].sort((p, q) => p[0] - q[0])[1];
+      if (three[0] > bw) { bw = three[0]; bt = three[1]; }
+    }
+    if (bt < 0) return null;
+    const cx = A[0] + ux * bt, cy = A[1] + uy * bt;
+    const C = [cx - uy * lo[bt], cy + ux * lo[bt]], D = [cx - uy * hi[bt], cy + ux * hi[bt]];
+    return { A, B, C, D, L: L + 1, W: Math.hypot(D[0] - C[0], D[1] - C[1]) + 1 };
+  }
   // the contour on a copy of the photo; the taps too (green = the object, red = not the object)
   function sizeResult(c, r, m, s, part, ppm, card, point, points, algorithm) {
       // the contour on a copy of the photo (0.11.79): the object's edge drawn, its length and its width lines labelled in
@@ -11269,22 +11328,16 @@ function sopOpen() {
         vx.fillStyle = 'rgba(0,0,0,0.72)'; vx.fillRect(lx - 6, ly - 22, tw + 12, 30);
         vx.fillStyle = '#fff'; vx.fillText(t, lx, ly);
       };
-      const ln = s.line.map(([lx, ly]) => [lx * kv, ly * kv]);
-      // the length: along the curve for a fruit, straight for a head or a leaf
-      vx.strokeStyle = '#00e5ff'; vx.lineWidth = 4; vx.beginPath();
-      if (part === 'fruit') ln.forEach(([lx, ly], i) => i ? vx.lineTo(lx, ly) : vx.moveTo(lx, ly));
-      else { vx.moveTo(ln[0][0], ln[0][1]); vx.lineTo(ln[ln.length - 1][0], ln[ln.length - 1][1]); }
-      vx.stroke();
-      // the width, across the middle
-      const mid = ln[Math.floor(ln.length / 2)], a0 = ln[Math.max(0, Math.floor(ln.length / 2) - 3)], a1 = ln[Math.min(ln.length - 1, Math.floor(ln.length / 2) + 3)];
-      let tx0 = a1[0] - a0[0], ty0 = a1[1] - a0[1]; const tl = Math.hypot(tx0, ty0) || 1; tx0 /= tl; ty0 /= tl;
-      const half = s.W * kv / 2;
-      vx.strokeStyle = '#ff4081'; vx.lineWidth = 4; vx.beginPath();
-      vx.moveTo(mid[0] - ty0 * half, mid[1] + tx0 * half); vx.lineTo(mid[0] + ty0 * half, mid[1] - tx0 * half); vx.stroke();
-      const Lmm = Math.round(s.L / pmm), Wmm = Math.round(s.W / pmm);
-      const lw = part === 'fruit' ? ['L', 'Ø'] : part === 'head' ? ['Ø', 'W'] : ['L', 'W'];
-      label(`${lw[0]} ${Lmm} mm`, ln[0][0], ln[0][1] - 12);
-      label(`${lw[1]} ${Wmm} mm`, mid[0] + ty0 * half + 50, mid[1] - tx0 * half);
+      // the two straight lines: the longest in blue, the one across it in pink
+      const tl = twoLines(m, r.w, r.h);
+      if (!tl) return null;
+      const P = q => [q[0] * kv, q[1] * kv], [A, B, C, D] = [tl.A, tl.B, tl.C, tl.D].map(P);
+      const seg = (a, b, col) => { vx.strokeStyle = col; vx.lineWidth = 4; vx.beginPath(); vx.moveTo(a[0], a[1]); vx.lineTo(b[0], b[1]); vx.stroke();
+        [a, b].forEach(q => { vx.beginPath(); vx.arc(q[0], q[1], 6, 0, 2 * Math.PI); vx.fillStyle = col; vx.fill(); }); };
+      seg(A, B, '#00e5ff'); seg(C, D, '#ff4081');
+      const Lmm = Math.round(tl.L / pmm), Wmm = Math.round(tl.W / pmm);
+      label(`Longest ${Lmm} mm`, A[0], A[1] - 14);
+      label(`Across ${Wmm} mm`, D[0] + 60, D[1] + 30);
       if (card) { vx.strokeStyle = '#00e676'; vx.lineWidth = 2; card.polys.forEach(pl => { vx.beginPath(); pl.forEach(([px, py], i) => i ? vx.lineTo(px * vk, py * vk) : vx.moveTo(px * vk, py * vk)); vx.closePath(); vx.stroke(); }); }
       (points || []).forEach(([px, py, lab]) => {
         const x = px * v.width, y = py * v.height;
@@ -11292,8 +11345,8 @@ function sopOpen() {
         vx.lineWidth = 3; vx.strokeStyle = '#fff'; vx.stroke();
         vx.fillStyle = '#fff'; vx.fillRect(x - 6, y - 1.5, 12, 3); if (lab) vx.fillRect(x - 1.5, y - 6, 3, 12);
       });
-      return { length_mm: Math.round(s.L / (ppm * r.w / c.width)), width_mm: Math.round(s.W / (ppm * r.w / c.width)), point,
-               view: v.toDataURL('image/jpeg', 0.78), algorithm, part };
+      return { length_mm: Lmm, width_mm: Wmm, point,
+               view: v.toDataURL('image/jpeg', 0.78), algorithm: 'lines-v3', part };
   }
 
   // ── a photo full screen (0.11.52): pinch, wheel or double-tap to zoom (to 8×), drag to move ──
@@ -11568,7 +11621,7 @@ function sopOpen() {
       seen.set(p.code, p);
     }
     // plant health and growth under today's minimum (0.11.74): asked once, then sent as it is
-    const SHORT_LABEL = { health: 'Plant health', growth: 'Growth' };
+    const SHORT_LABEL = { health: 'Health', growth: 'Growth' };
     const short = ['health', 'growth'].filter(k => sc.due?.[k] && plants.filter(p => p.section === k).length < (sc.minPhotos?.[k] ?? 2));
     if (!(R.edit && !R.resume) && short.length && sc.sentShort !== short.join()) {
       const txt = short.map(k => `${SHORT_LABEL[k]} ${plants.filter(p => p.section === k).length} of ${sc.minPhotos?.[k] ?? 2} photos`).join(', ');
@@ -11639,7 +11692,7 @@ function sopOpen() {
         code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: null, ai: S.ai || null }))),
       observations: plants.map(p => ({ client_ref: p.ref, section: p.section, part: p.part || 'other', crop_id: p.crop_id || null,
         zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, taken_at: p.taken_at,
-        pos_code: posOf(p.pos_code), gps: null, measures: p.measures || [], px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
+        pos_code: posOf(p.pos_code), gps: null, measures: (p.measures || []).filter(m => m.by !== 'auto' || m.confirmed), px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
     };
     const uploads = [
       ...trapsP.flatMap(p => SIDES.map(([k]) => [k, p.sides[k]]).filter(([, S]) => S.full instanceof Blob && !S.photo_path && !S.sent)
@@ -13039,7 +13092,7 @@ function sopOpen() {
               observations: go.map(q => ({ client_ref: q.ref, section: q.section, part: q.part || 'other', crop_id: q.crop_id || null,
                 zone_id: q.zone_id || t.zone_id || null, item_id: q.item_id || null, note: q.note || null, photo_data: q.thumb || null, taken_at: q.taken_at,
                 pos_code: parsePos(String(q.pos_code || '').toUpperCase().replace(/\s/g, '')) ? String(q.pos_code).toUpperCase().replace(/\s/g, '') : null,
-                gps: null, measures: q.measures || [], px_per_mm: q.px_per_mm ?? null, ai: q.ai || null })),
+                gps: null, measures: (q.measures || []).filter(m => m.by !== 'auto' || m.confirmed), px_per_mm: q.px_per_mm ?? null, ai: q.ai || null })),
             };
             await api('/rest/v1/rpc/submit_run', { method: 'POST', body: JSON.stringify({ p: payload }) });
             // the full photos follow through the outbox; the draft keeps what it sent and the run it went to
