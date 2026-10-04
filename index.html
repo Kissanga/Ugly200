@@ -1234,7 +1234,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.110';
+  const CURRENT_VERSION = '0.11.111';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1398,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.111', '2026-10-05', 'Android: the in-app camera again, at 4000 px', 'On Android the photos are taken with the camera inside the app again, and worked on at 4000 px, which the insect count needs. The phone\'s own camera closed the app on a Samsung S24 FE every time it opened, also after the app was made lighter. An iPhone keeps its own camera. Settings, Camera still lets a phone choose.'],
     ['0.11.110', '2026-10-05', 'Less memory while the camera is open', 'On a Samsung S24 FE the app was closed by the phone at the second photo, while the phone\'s own camera was open. The app now holds much less memory at that moment: photos are worked on at 3000 px on every phone, the working copies of a trap count are given back at once, and the text reader is stopped while the camera is open. If a phone still closes the app, it comes back in the checklist as it was; Settings, Camera, In the app avoids it.'],
     ['0.11.109', '2026-10-05', 'The phone\'s own camera on every phone', 'Photos are taken with the phone\'s own camera on Android too, as on iPhone: its full quality, autofocus, close-up and options. The in-app camera stays as a choice in Settings, Camera, for a phone that closes the app while its camera is open.'],
     ['0.11.108', '2026-10-04', 'Force send leaves harvest weights alone', 'Force send no longer sends harvest weights that were started and not finished: a weight is a record (a last cut closes its batch) and could not be corrected by Finish afterwards. They are listed instead: open the task and press Finish, or remove them from this phone. Everything else goes as before.'],
@@ -2100,11 +2101,11 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="set-row" style="margin-top:var(--space-3)">
         <label for="fb-camMode">Camera</label>
         <select id="fb-camMode" class="set-select" aria-label="Camera">
-          <option value="phone">The phone's own camera</option>
           <option value="app">In the app</option>
+          <option value="phone">The phone's own camera</option>
         </select>
       </div>
-      <div class="config-hint">The phone's own camera gives its full quality, autofocus, close-up and all its options; it is the choice by itself on every phone. In the app: a camera that never leaves Naked Brain, for an Android phone short of memory that closes the app while its own camera is open.</div>
+      <div class="config-hint">In the app: a camera that never leaves Naked Brain, with lens, zoom and focus controls — the choice by itself on Android, where the phone closes the app while its own camera is open. The phone's own camera: its full quality and options — the choice by itself on an iPhone, where the in-app camera can only save a video frame.</div>
     </div>
 
     <div class="set-title">App</div>
@@ -12404,7 +12405,8 @@ function sopOpen() {
   // 0.11.99: 3000 px on an iPhone (a 4000 px working canvas is 48 MB, and an iPhone gives a web app far less)
   // 0.11.110: 3000 px on every phone — a Samsung S24 FE (8 GB) closed the app at the second photo with its own camera
   // open (client_log: "resumed", twice); a 4000 px working canvas is 48 MB, its pixels read out another 48
-  const FULL_PX = 3000, FULL_Q = 0.9;
+  // 0.11.111: 4000 px again on Android (owner: "important for insect detection"), with the in-app camera; 3000 on an iPhone
+  const FULL_PX = IS_IOS ? 3000 : 4000, FULL_Q = 0.9;
   // Lens, close-up and zoom (0.11.41, owner: "open the camera in macro mode"). A web app cannot
   // press the Macro button of the phone's own camera app; it can pick another back lens (on many
   // phones the ultra-wide is the macro one — some makers hide it from every app but their own),
@@ -12469,7 +12471,7 @@ function sopOpen() {
   // own camera app for its macro and its processing (a run killed meanwhile comes back from its draft).
   // which camera (0.11.99): the phone's own on an iPhone — a web app gets only a video frame there, with no focus or
   // close-up — the in-app one elsewhere; Settings › Camera changes it
-  const camMode = () => { try { const v = localStorage.getItem('fb_cam_mode'); if (v === 'phone' || v === 'app') return v; } catch (e) {} return 'phone'; };   // every phone since 0.11.109 (owner 5 Oct 2026)
+  const camMode = () => { try { const v = localStorage.getItem('fb_cam_mode'); if (v === 'phone' || v === 'app') return v; } catch (e) {} return IS_IOS ? 'phone' : 'app'; };   // Android back in the app since 0.11.111: a Samsung S24 FE closed Naked Brain every time its own camera opened
   function phoneCamera() {
     return new Promise(resolve => {
       const inp = document.createElement('input');
