@@ -799,6 +799,8 @@
     .fb-chip.run { background: var(--primary); color: var(--text-inverse); }
     .fb-chip.run.other { background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1.5px var(--primary); }   /* somebody else has it running */
     .fb-chip.ok.wait { box-shadow: inset 0 0 0 1.5px var(--warning, #d98a1f); }   /* done here, not on the server yet */
+    .fb-resp { font-weight: 600; white-space: nowrap; }
+    .fb-resp.none { font-weight: 400; font-style: italic; opacity: .75; }
     .fb-extra { margin: var(--space-2) 0 var(--space-3); background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1.5px var(--primary); }
     .fb-chip.paused { background: color-mix(in srgb, var(--warning, #b7791f) 16%, var(--surface)); color: var(--text); }
     .fb-chip.todo { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
@@ -1141,7 +1143,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.95';
+  const CURRENT_VERSION = '0.11.96';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1305,6 +1307,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.96', '2026-10-04', 'Who is responsible; swipe an extra scouting', 'Every task card says who is responsible for it (👤 Dial, or "nobody yet"), the extra scoutings too, and the checklist says it under its title. An extra scouting is closed with a swipe and no question: right = done, left = cancelled, with the usual five seconds to undo. A closed extra scouting still opens to add photos.'],
     ['0.11.95', '2026-10-04', 'Extra scouting: the planned one first', 'Opening a zone in an Extra scouting while your own planned scouting of that zone is still open today asks once: do the planned scouting now, or only add extra photos. An extra scouting card no longer shows "0 min".'],
     ['0.11.94', '2026-10-04', 'Extra scouting', 'A new button above the day, ＋ Extra scouting: anybody can add photos and counts to today\'s report at any time. Pick a zone, then Traps, Plant health and Growth are all open with no minimum; Finish sends that zone as it is and you can come back and send again all day. In the report the photos carry a small "extra" tag with your name. It works without signal. The planned scouting of each zone stays its own task and is not replaced by an extra. A growth photo still needs the scale card, and an extra trap photo counts only when it found more insects than the card already had.'],
     ['0.11.93', '2026-10-03', 'Live updates', 'What somebody does on a task reaches the other phones and Naked Heart in about a second instead of at the next minute: a task taken shows its lock at once, a task finished shows Done. A Farm manager can now take a held task back from the phone, like the Admin. A done task that this phone sent or opened before opens without signal to add photos and notes; they go up when there is signal.'],
@@ -7134,9 +7137,11 @@ function sopOpen() {
       if (row.dead) { if (!isUp(row)) held.add(chainOf(row)); continue; }
       if (held.has(chainOf(row))) continue;
       try {
-        if (row.payload.__tick) await api('/rest/v1/rpc/complete_task', {
-          method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes })
-        });
+        if (row.payload.__tick) {
+          try { await api('/rest/v1/rpc/complete_task', {
+            method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_minutes: row.payload.actual_minutes }) }); }
+          catch (e) { if (!(row.payload.quiet && refusedForGood(e))) throw e; }   // an extra the server never had
+        }
         else if (row.payload.__clock) {
           try {
             await api('/rest/v1/rpc/clock', { method: 'POST', body: JSON.stringify({ p_farm: farm.id, p_action: row.payload.action,
@@ -7156,9 +7161,11 @@ function sopOpen() {
             if (r && r.refused && row.payload.action === 'start') timerCloseLocal(row.payload.task_id);   // FarmBox 0201: somebody else holds it
           } catch (e) { if (!refusedForGood(e)) throw e; }   // a task gone or closed: the event has nothing left to do
         }
-        else if (row.payload.__skip) await api('/rest/v1/rpc/skip_task', {
-          method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_reason: row.payload.reason, p_note: row.payload.note })
-        });
+        else if (row.payload.__skip) {
+          try { await api('/rest/v1/rpc/skip_task', {
+            method: 'POST', body: JSON.stringify({ p_task: row.payload.task_id, p_reason: row.payload.reason, p_note: row.payload.note }) }); }
+          catch (e) { if (!(row.payload.quiet && refusedForGood(e))) throw e; }
+        }
         else if (row.payload.__feedback) {
           // a feedback on a task (0.11.85, FarmBox 0189): its voice notes, photos and video go to the evidence bucket —
           // each noted on the row as it lands, so a failure half-way re-sends none twice — then the feedback itself
@@ -7351,6 +7358,13 @@ function sopOpen() {
   const othersTimed = g => peopleOn(g, b => !b.me);
   const doneBy = g => uniq((g.members || []).filter(m => m.status === 'done').map(m => firstName(WNAMES.get(m.done_by))));
   const names = xs => xs.length > 2 ? `${xs[0]} +${xs.length - 1}` : xs.join(' + ');
+  // who is responsible for a task (0.11.96, owner 4 Oct 2026): the people it is given to; an extra scouting is its maker's
+  function whoOf(g) {
+    const ids = [...(g.workerIds || [])];
+    const m = /^extra:scouting:([^:]+):/.exec(String(g.generation_key || ''));
+    if (m && !ids.includes(m[1])) ids.push(m[1]);
+    return uniq(ids.map(id => firstName(WNAMES.get(id))));
+  }
   // the hold (FarmBox 0201): one person on a task at a time. Somebody else's name here = the task is theirs until they
   // finish it, hand it over, a manager takes it back, or the day ends (as of the last sync, a minute at most).
   const heldOther = g => { for (const m of (g.members || [])) { const h = (TTIMES.get(m.id) || {}).held;
@@ -7809,12 +7823,20 @@ function sopOpen() {
     const zn = zonesOf(g).size;
     const zl = zonesLine(g);
     const where = zl || g.zone_name || g.area || (zn > 1 ? `${zn} zones` : null);
-    if (where) { meta.append(el('span', 'fb-where', where)); meta.append(document.createTextNode(' · ')); }
+    if (where) meta.append(el('span', 'fb-where', where));
     // what the task asks for, just before its time: none said = it can be swiped done (0.11.29)
-    const bits = zl ? [fmtMin(g.minutes)] : qtyBits(g);        // the zones already say the places (0.11.60)
+    const bits = zl ? (g.extra ? [] : [fmtMin(g.minutes)]) : qtyBits(g);        // the zones already say the places (0.11.60)
     const k = isClosed(g.status) ? 0 : inputsOf(g);
-    if (k) bits.splice(fmtMin(g.minutes) ? bits.length - 1 : bits.length, 0, typeof k === 'string' ? k : `${k} input${k > 1 ? 's' : ''}`);
-    meta.append(document.createTextNode(bits.join(' · ')));
+    if (k) bits.splice(bits.length && !(g.extra || g.extraZone) ? bits.length - 1 : bits.length, 0, typeof k === 'string' ? k : `${k} input${k > 1 ? 's' : ''}`);
+    if (bits.length) meta.append(document.createTextNode((where ? ' · ' : '') + bits.join(' · ')));
+    // the responsible (0.11.96): the people the task is given to, or "nobody yet" while it is open
+    const resp = whoOf(g);
+    if (resp.length || !isClosed(g.status)) {
+      if (meta.textContent) meta.append(document.createTextNode(' · '));
+      const w = el('span', 'fb-resp' + (resp.length ? '' : ' none'), resp.length ? '👤 ' + names(resp) : 'nobody yet');
+      w.title = resp.length ? 'Responsible: ' + resp.join(', ') : 'Nobody is responsible for this task yet';
+      meta.append(w);
+    }
     body.append(meta);
     b.append(body);
     // only the states worth a word get one; "Open" is what a card already is — and the time worked (0.11.56)
@@ -7928,7 +7950,31 @@ function sopOpen() {
     return wrap;
   }
 
+  // an extra scouting (0.11.96, owner: "could be cancelled or marked as done with a swipe without any other questions"):
+  // right = done, left = cancelled — no reason, no note, only the five seconds of Undo. Its maker or the Admin.
+  function swipeExtra(g, done) {
+    if (g.extraZone) { notice('Swipe the Extra scouting card itself — this is one of its zones.'); return; }
+    if (!(SW.admin || whoOf(g).length === 0 || (SW.me && String(g.generation_key || '').includes(':' + SW.me + ':')) || maySkip(g))) {
+      notice('Only the person who started this extra scouting, or the Admin, can close it.'); return;
+    }
+    const open = g.members.filter(m => !isClosed(m.status));
+    if (!open.length) return;
+    const now = new Date().toISOString();
+    const patch = done ? { status: 'done', done_at: now } : { status: 'skipped', skip_reason: 'not_needed', skip_note: null };
+    open.forEach(t => swipeOverlay.set(t.id, patch));
+    showWeek();
+    holdForUndo(`${done ? 'Done' : 'Cancelled'}: ${g.title}`, async () => {
+      open.forEach(t => swipeOverlay.delete(t.id));
+      await putAll('tasks', open.map(t => ({ ...t, ...patch })));
+      // quiet: an extra that never reached the server has nothing to close there
+      await queue(open.map(t => done
+        ? { __tick: true, quiet: true, client_run_id: 'tick-' + t.id, task_id: t.id, actual_minutes: null }
+        : { __skip: true, quiet: true, client_run_id: 'skip-' + t.id, task_id: t.id, reason: 'not_needed', note: null }));
+    }, () => { open.forEach(t => swipeOverlay.delete(t.id)); showWeek(); });
+  }
+
   function swipeDone(g) {
+    if (g.extra || g.extraZone) return swipeExtra(g, true);
     if (g.status === 'partial') { notice('Part of this is done already — open it to finish the rest.', () => openTask(g.key)); return; }
     if (!canSwipeDone(g)) { notice(`This one needs input: ${needsOf(g)}.`, () => openTask(g.key)); return; }
     const open = g.members.filter(m => !isClosed(m.status));
@@ -7944,6 +7990,7 @@ function sopOpen() {
   }
 
   function swipeNotDone(g) {
+    if (g.extra || g.extraZone) return swipeExtra(g, false);
     if (!maySkip(g)) { notice('Only the Admin or the people on this task can cancel it.'); return; }
     // cancelling is a decision (0.11.61): a reason chosen and a note saying why
     const sheet = el('div', 'fb-sheet');
@@ -8088,6 +8135,7 @@ function sopOpen() {
     const sop = (await all('sops')).find(s => s.id === t.sop_id);
     await refreshSW();
     const hasChecklist = !!sop && (sop.validation || 'checklist') !== 'tick';
+    if (t.extraZone && sop) return startRun(t, sop);      // an extra's zone always opens to add, even once the extra is closed
     if (t.status === 'done') {
       if (hasChecklist) return editTask(t, sop);
       await loadTimers();
@@ -8172,7 +8220,7 @@ function sopOpen() {
       if (!farmId) return;
     }
     const mineKey = `extra:scouting:${me || 'me'}:${today}`;
-    let t = tasks.find(x => x.farm_id === farmId && x.planned_date === today && x.generation_key === mineKey && !isClosed(x.status) && x.status !== 'cancelled');
+    let t = tasks.find(x => x.farm_id === farmId && x.planned_date === today && x.generation_key === mineKey && x.status !== 'cancelled');
     if (!t) {
       const u = byFarm.get(farmId), id = uuid();
       t = { id, farm_id: farmId, title: 'Extra scouting', family: u.sample.family, sop_id: sop.id, sop_version_id: u.sample.sop_version_id,
@@ -8628,7 +8676,9 @@ function sopOpen() {
     const where = zonesLine(task)
       || (itemsOf.length ? itemsOf.map(p => p.label).join(' · ') : null)
       || task.zone_name || (task.area && !['Whole unit', 'All zones'].includes(task.area) ? task.area : null);
-    head.append(el('p', 'fb-runfacts', [where, task.crop_name, `about ${fmtMin(task.minutes)}`,
+    const respNames = whoOf(task);
+    head.append(el('p', 'fb-runfacts', [where, task.crop_name, respNames.length ? '👤 ' + respNames.join(' + ') : null,
+      task.extraZone ? null : `about ${fmtMin(task.minutes)}`,
       sop?.safety_ppe ? 'PPE: ' + sop.safety_ppe : null, sop?.tools ? 'Tools: ' + sop.tools : null].filter(Boolean).join(' · ')));
     // the scouting's how-to, folded under its title (0.11.74; it was the ? tab)
     if (isScouting(sop)) head.append(howItWorks());
