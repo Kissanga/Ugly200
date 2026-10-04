@@ -1234,7 +1234,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.109';
+  const CURRENT_VERSION = '0.11.110';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1398,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.110', '2026-10-05', 'Less memory while the camera is open', 'On a Samsung S24 FE the app was closed by the phone at the second photo, while the phone\'s own camera was open. The app now holds much less memory at that moment: photos are worked on at 3000 px on every phone, the working copies of a trap count are given back at once, and the text reader is stopped while the camera is open. If a phone still closes the app, it comes back in the checklist as it was; Settings, Camera, In the app avoids it.'],
     ['0.11.109', '2026-10-05', 'The phone\'s own camera on every phone', 'Photos are taken with the phone\'s own camera on Android too, as on iPhone: its full quality, autofocus, close-up and options. The in-app camera stays as a choice in Settings, Camera, for a phone that closes the app while its camera is open.'],
     ['0.11.108', '2026-10-04', 'Force send leaves harvest weights alone', 'Force send no longer sends harvest weights that were started and not finished: a weight is a record (a last cut closes its batch) and could not be corrected by Finish afterwards. They are listed instead: open the task and press Finish, or remove them from this phone. Everything else goes as before.'],
     ['0.11.107', '2026-10-04', 'The button is Force send, and says what it does', 'The Send button at the top is now called Force send. Before it runs it explains itself: the normal way to send is Finish inside a task; Force send sends everything this phone still holds as it stands, even if not complete, and lists what can only be removed. You confirm, or cancel.'],
@@ -9437,6 +9438,13 @@ function sopOpen() {
   function loadScript(src) {
     return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('could not load ' + src)); document.head.append(s); });
   }
+  // the reader's worker holds some tens of MB: it is ended before the phone's own camera opens (0.11.110) and loads
+  // again when a code is next read (its files are kept by the service worker)
+  function ocrRelease() {
+    const was = ocrP; if (!was) return;
+    ocrP = null;
+    ocrBusy = ocrBusy.then(() => was.then(w => w.terminate()).catch(() => {}));
+  }
   function ocr() {
     if (!ocrP) ocrP = (async () => {
       if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
@@ -12394,7 +12402,9 @@ function sopOpen() {
   // FULL_PX on the long side (about 15 px/mm on a trap card — beyond that the lens, not
   // the pixels, limits the detail, and a 50 MP file can push the app out of memory)
   // 0.11.99: 3000 px on an iPhone (a 4000 px working canvas is 48 MB, and an iPhone gives a web app far less)
-  const FULL_PX = IS_IOS ? 3000 : 4000, FULL_Q = 0.9;
+  // 0.11.110: 3000 px on every phone — a Samsung S24 FE (8 GB) closed the app at the second photo with its own camera
+  // open (client_log: "resumed", twice); a 4000 px working canvas is 48 MB, its pixels read out another 48
+  const FULL_PX = 3000, FULL_Q = 0.9;
   // Lens, close-up and zoom (0.11.41, owner: "open the camera in macro mode"). A web app cannot
   // press the Macro button of the phone's own camera app; it can pick another back lens (on many
   // phones the ultra-wide is the macro one — some makers hide it from every app but their own),
@@ -12476,7 +12486,7 @@ function sopOpen() {
     });
   }
   function takeTrapPhoto(code, hintText, purpose = 'trap') {
-    if (camMode() === 'phone') { samRelease(); return phoneCamera(); }
+    if (camMode() === 'phone') { samRelease(); ocrRelease(); return phoneCamera(); }
     return new Promise(async resolve => {
       samRelease();                                                   // the camera and a 4000 px photo need the memory (0.11.82)
       if (!navigator.mediaDevices?.getUserMedia) return resolve(null);
@@ -12705,7 +12715,9 @@ function sopOpen() {
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(canvas.width * k)); c.height = Math.max(1, Math.round(canvas.height * k));
     c.getContext('2d').drawImage(canvas, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', quality);
+    const url = c.toDataURL('image/jpeg', quality);
+    freeCanvas(c);
+    return url;
   }
 
   // Opening the camera can push the app out of memory on Android; when it
@@ -12791,7 +12803,16 @@ function sopOpen() {
   // 6. what is left is grouped (8-neighbour) and counted by size: tiny < 1.5 mm (thrips), small < 3 (whitefly,
   //    gnats), medium < 6 (aphids, leaf miners), large ≤ 9; bigger is writing, a leaf or a finger.
   // A count of dark specks, not a species identification: the person corrects it and says what they mostly are.
+  // the working copies of a count (the small one, the 12 px/mm one, a brightened one) are given back when it ends
+  // (0.11.110): they were left for the garbage collector, which had not run when the camera opened for the next side
+  const countScratch = []; let countDepth = 0;
+  const scratch = (c, src) => { if (c !== src) countScratch.push(c); return c; };
   function countInsects(canvas, trap) {
+    countDepth++;
+    try { return countInsects0(canvas, trap); }
+    finally { if (--countDepth === 0) { countScratch.splice(0).forEach(c => { if (c !== canvas) freeCanvas(c); }); } }
+  }
+  function countInsects0(canvas, trap) {
     const blue = trap.colour === 'blue';
     const cardOf = d => i => { const r = d[i], g = d[i + 1], b = d[i + 2];
       // relative to the light: the lower half of a card is often in shade
@@ -12799,7 +12820,7 @@ function sopOpen() {
       return blue ? (b > 80 && b > r + 35 && b > g + 10) : (r > 95 && g > 75 && r > 0.82 * g && r - b > 50 && g - b > 35); };
     const empty = { counts: { tiny: 0, small: 0, medium: 0, large: 0 }, total: 0, blobs: [], confidence: 0, algorithm: 'blobs-v3', scale: 'none', px_per_mm: null };
     // 1. the card, on a small copy
-    const sm = scaleCanvas(canvas, 800), sw = sm.width, sh = sm.height;
+    const sm = scratch(scaleCanvas(canvas, 800), canvas), sw = sm.width, sh = sm.height;
     const sd = sm.getContext('2d').getImageData(0, 0, sw, sh).data, sIs = cardOf(sd);
     // how light the photo is: its 95th brightest pixel (0.11.71). A dark photo is brightened once and counted
     // again — the colour test needs a lit card — and says so, because a dim photo hides the smallest insects
@@ -12808,7 +12829,7 @@ function sopOpen() {
     let p95 = 255; for (let v = 255, acc = 0; v >= 0; v--) { acc += hist[v]; if (acc >= 0.05 * hN) { p95 = v; break; } }
     if (!trap.gain && p95 < 150) {
       const gain = Math.min(4, 210 / Math.max(20, p95));
-      const r = countInsects(brighten(canvas, gain), { ...trap, gain });
+      const r = countInsects(scratch(brighten(canvas, gain), canvas), { ...trap, gain });
       r.light = { ...(r.light || {}), gain: Math.round(gain * 10) / 10, photo_p95: p95 };
       return r;
     }
@@ -12840,7 +12861,7 @@ function sopOpen() {
     // 2. the working copy: ~12 px a mm from the card's short side (about 100 mm), never upscaled, at most 4000 px
     const estSm = Math.min(cx1 - cx0, cy1 - cy0) / 100;
     const want = Math.min(4000, Math.max(canvas.width, canvas.height), Math.round(Math.max(sw, sh) * 12 / Math.max(estSm, 0.01)));
-    const C = scaleCanvas(canvas, want), kk = C.width / sw;
+    const C = scratch(scaleCanvas(canvas, want), canvas), kk = C.width / sw;
     const X0 = Math.max(0, Math.floor((cx0 - 2) * kk)), Y0 = Math.max(0, Math.floor((cy0 - 2) * kk));
     const BW = Math.min(C.width, Math.ceil((cx1 + 3) * kk)) - X0, BH = Math.min(C.height, Math.ceil((cy1 + 3) * kk)) - Y0;
     const d = C.getContext('2d').getImageData(X0, Y0, BW, BH).data, isC = cardOf(d);
