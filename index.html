@@ -1141,7 +1141,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.94';
+  const CURRENT_VERSION = '0.11.95';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1305,6 +1305,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.95', '2026-10-04', 'Extra scouting: the planned one first', 'Opening a zone in an Extra scouting while your own planned scouting of that zone is still open today asks once: do the planned scouting now, or only add extra photos. An extra scouting card no longer shows "0 min".'],
     ['0.11.94', '2026-10-04', 'Extra scouting', 'A new button above the day, ＋ Extra scouting: anybody can add photos and counts to today\'s report at any time. Pick a zone, then Traps, Plant health and Growth are all open with no minimum; Finish sends that zone as it is and you can come back and send again all day. In the report the photos carry a small "extra" tag with your name. It works without signal. The planned scouting of each zone stays its own task and is not replaced by an extra. A growth photo still needs the scale card, and an extra trap photo counts only when it found more insects than the card already had.'],
     ['0.11.93', '2026-10-03', 'Live updates', 'What somebody does on a task reaches the other phones and Naked Heart in about a second instead of at the next minute: a task taken shows its lock at once, a task finished shows Done. A Farm manager can now take a held task back from the phone, like the Admin. A done task that this phone sent or opened before opens without signal to add photos and notes; they go up when there is signal.'],
     ['0.11.92', '2026-10-03', 'A check of the whole app: nothing lost, nothing sent twice', 'A check of the whole app. Notes: Send works once at a time (a second tap made a second Notion page); what was typed, recorded or added during a long upload stays, and a switch of tab during it no longer sends to the wrong list; a photo or video that failed to upload stays on the note instead of being thrown away under a “Sent ✓”; a voice note that could not be transcribed (offline) stays as an attachment — tap it to try again; a transcript is added to what the box holds instead of replacing it; a stalled video compression no longer holds Send, and a video is not compressed twice after a trip to the background. SOP runs: a run finished during an upload is no longer dropped from the outbox, and a run is only cleared once the phone really saved it. Editing a SOP adds the new blocks before removing the old. Scouting: a draft writes each photo once (it rewrote every 4000 px photo at each change), a gallery photo is decoded at the size kept, and the photo viewer opens a smaller copy. Also: a refused Notion or Groq key no longer signs you out, the unlock check gives up after 20 s, the update check stops filling the phone with copies of the page, and the last skin chosen wins.'],
@@ -7573,6 +7574,7 @@ function sopOpen() {
     || groups.flatMap(x => x.zones || []).find(x => x.key === key || x.id === key) || null;
   const hubOf = (groups, key) => groups.find(x => x.hub && x.zones.some(z => z.key === key)) || null;
   let hubReturn = null;      // the hub a zone's scouting was opened from: Finish and Back come back to it
+  const nudged = new Set();  // the extra zones already asked "the planned scouting instead?" in this session
 
   // "3 positions · 24 trays · 45 min" — only the parts we know. A quantity in
   // positions is the position count already, so it is not said twice.
@@ -7583,7 +7585,7 @@ function sopOpen() {
     const one = n === 1 ? g.positions[0].label : null;
     return [n > 1 ? `${n} positions` : (one && one !== g.area && one !== g.zone_name ? one : null),
             g.quantity && !isPosUnit(g.unit) && !['system', 'area'].includes(String(g.unit || '').toLowerCase()) ? fmtQty(g.quantity, g.unit) : null,
-            fmtMin(g.minutes)].filter(Boolean);
+            g.extra || g.extraZone ? null : fmtMin(g.minutes)].filter(Boolean);       // an extra scouting has no planned time
   };
   const groupMeta = g => [g.zone_name || g.area, ...qtyBits(g)].filter(Boolean).join(' · ');
   // the zones (or bays) a task visits, when its places are zones: "Zones 1 · 2 · 3 · 4.1 · 4.2" (0.11.60)
@@ -8068,6 +8070,20 @@ function sopOpen() {
     const t = findGroup(groups, key);
     if (!t) return;
     if (t.hub) { hubReturn = null; return openHub(t); }
+    // an extra scouting never replaces the planned one (0.11.95): when this person's own planned scouting of the zone is
+    // still open today, it is offered first — once a zone
+    if (t.extraZone && !nudged.has(t.key)) {
+      nudged.add(t.key);
+      const me = await getKV('me'), line = t.positions[0] || {};
+      await loadTimers();
+      const planned = groups.flatMap(g => g.hub && !g.extra ? g.zones : [g]).find(g =>
+        String(g.generation_key || '').startsWith('routine:scouting:') && g.planned_date === todayISO()
+        && (g.farm_id || '') === (t.farm_id || '') && !isClosed(g.status) && !heldOther(g)
+        && (g.positions || []).some(p => p.ref_id && p.ref_id === line.ref_id)
+        && (g.workerIds.size === 0 || (me && g.workerIds.has(me))));
+      if (planned && confirm(`Today's planned scouting of ${line.label || 'this zone'} is still open.\n\nOK = do the planned scouting now\nCancel = only add extra photos`))
+        return openTask(planned.key);
+    }
     hubReturn = fromHub || hubOf(groups, t.key)?.key || null;     // a zone of a hub comes back to it
     const sop = (await all('sops')).find(s => s.id === t.sop_id);
     await refreshSW();
