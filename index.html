@@ -1234,7 +1234,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.106';
+  const CURRENT_VERSION = '0.11.107';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1398,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.107', '2026-10-04', 'The button is Force send, and says what it does', 'The Send button at the top is now called Force send. Before it runs it explains itself: the normal way to send is Finish inside a task; Force send sends everything this phone still holds as it stands, even if not complete, and lists what can only be removed. You confirm, or cancel.'],
     ['0.11.106', '2026-10-04', 'Send forces everything, and clears the phone', 'The Send button at the top now sends everything this phone still holds, as it stands: growth photos without the scale card (with no sizes), harvest weights and trap rounds started and not finished, feedback drafts. What cannot be sent at all — a report the server refused, a checklist whose task is gone, a trap photo with no position or count — is listed with one button, Remove from this phone. After that the phone holds nothing it cannot send.'],
     ['0.11.105', '2026-10-04', 'A report is kept when its task was replanned', 'When a task is taken off the plan while you are doing it (a batch moved, a new schedule), your report is no longer refused: it is kept, and the app says so. Two phones opening the same task in the same instant no longer both get in, and a cancel that arrives after a finish leaves the task done.'],
     ['0.11.104', '2026-10-04', 'Line icons instead of emoji', 'Every emoji in the app is now a line icon drawn like the ones in Naked Heart: camera, gallery, video, voice note, feedback, ruler, lock, person, play and pause, send, edit, warning. They look the same on every phone and follow the light and dark theme. An icon chosen for a procedure or a callout in Notion is drawn the same way when the app knows it.'],
@@ -1781,7 +1782,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <button id="fb-back" class="btn-icon hidden" aria-label="Back">←</button>
     <div id="fb-title" class="hdr-title">Tasks</div>
     <span id="fb-net" class="net-pill hidden">Offline</span>
-    <button id="fb-sendall" class="btn-icon fb-sendall" aria-label="Send everything on this phone now" title="Send everything on this phone now"><i data-ic="upload"></i> Send</button>
+    <button id="fb-sendall" class="btn-icon fb-sendall" aria-label="Force send: everything on this phone, as it stands" title="Force send: everything on this phone, as it stands"><i data-ic="upload"></i> Force send</button>
     <button id="fb-sync" class="btn-icon" aria-label="Sync now" title="Sync now">⟳</button>
   </div>
 
@@ -8819,7 +8820,7 @@ function sopOpen() {
     // 0.11.91: a report still on this phone is not on the server yet — editing now would make a second report
     if (!d || !d.run) {
       const waiting = (await all('outbox')).some(r => r.payload && t.members.some(m => m.id === r.payload.task_id) && !r.payload.__timer && !r.payload.__upload && !r.payload.__feedback);
-      if (waiting) { showToast('The report of this task is still waiting to be sent — press Send, then open it again', 'error'); return; }
+      if (waiting) { showToast('The report of this task is still waiting to be sent — press Force send, then open it again', 'error'); return; }
     }
     // everybody may add to a done task (FarmBox 0201): photos, notes, answers — nothing already sent is removed;
     // changing or removing what was sent stays with the task's people, the Admin and the managers
@@ -13392,12 +13393,35 @@ function sopOpen() {
   // a count, on the run the task already has (nothing of it is replaced — no answers, no OK / not OK) or on a run kept
   // `partial` that Finish completes later (the draft remembers its id). A trap count goes as the phone counted it or as
   // the person corrected it so far. Other unfinished checklists are not sent: the result says how many stayed.
+  // Force send says what it is before it runs (0.11.107, owner: "change the sending in force send, with a message to
+  // advise"): the normal way is Finish inside a task; this one sends whatever the phone holds, complete or not
+  function askForce() {
+    return new Promise(resolve => {
+      const sheet = el('div', 'fb-sheet');
+      const box = el('div', 'fb-sheet-card');
+      box.append(el('h3', null, 'Force send?'));
+      box.append(el('p', null, 'The normal way to send is Finish inside a task. Force send is for clearing this phone: it sends everything it still holds, as it stands, even if it is not complete.'));
+      const ul = el('ul', 'fb-sendlist');
+      ['Growth photos without the scale card go with no sizes.',
+       'Checklists, harvest weights and trap rounds not finished go half-done; their tasks stay open.',
+       'What cannot be sent at all is listed after, and you may remove it from this phone.'].forEach(t => ul.append(el('li', null, t)));
+      const done = v => { sheet.remove(); resolve(v); };
+      const no = el('button', 'fb-btn', 'Cancel'); no.type = 'button'; no.onclick = () => done(false);
+      const yes = el('button', 'fb-btn fb-btn-primary', 'Force send'); yes.type = 'button'; yes.onclick = () => done(true);
+      const acts = el('div', 'fb-actions'); acts.append(no, yes);
+      box.append(ul, acts);
+      sheet.append(box);
+      sheet.onclick = e => { if (e.target === sheet) done(false); };
+      document.body.append(sheet);
+    });
+  }
   async function sendAllNow() {
     const btn = $('sendall');
     if (!session) { showToast('Sign in first', 'error'); return; }
     if (!navigator.onLine) { showToast('Sending needs a connection', 'error'); return; }
     const openRun = document.getElementById('fb-run');
-    if (openRun && !openRun.classList.contains('hidden')) { showToast('Finish this task or go back first, then Send', 'error'); return; }
+    if (openRun && !openRun.classList.contains('hidden')) { showToast('Finish this task or go back first, then Force send', 'error'); return; }
+    if (!await askForce()) return;
     btn.disabled = true; nbLabel(btn, '{i:upload} Sending…');
     const lines = [];
     const say = (text, bad) => lines.push([text, !!bad]);
@@ -13585,12 +13609,12 @@ function sopOpen() {
       // offered for removal. What never reached the server (no signal, a time-out) waits for the next Send.
       const said = r => r.dead || /^\d{3} /.test(String(r.error || ''));
       const refused = after.filter(said), left = after.filter(r => !said(r));
-      if (left.length) say(`${left.length} still waiting for a connection — press Send again.`, true);
+      if (left.length) say(`${left.length} still waiting for a connection — press Force send again.`, true);
       refused.forEach(r => cant(`Refused by the server: ${String(r.error || 'no reason given').replace(/^\d+ /, '').slice(0, 140)}`, () => del('outbox', r.id)));
       if (!lines.length) say('Nothing was waiting on this phone: everything had already been sent.');
       sync(false, true).catch(() => {});
     } catch (e) { say('Send stopped: ' + String(e.message || e).slice(0, 140), true); }
-    btn.disabled = false; nbLabel(btn, '{i:upload} Send');
+    btn.disabled = false; nbLabel(btn, '{i:upload} Force send');
     paintFoot();
     const sheet = el('div', 'fb-sheet');
     const box = el('div', 'fb-sheet-card');
