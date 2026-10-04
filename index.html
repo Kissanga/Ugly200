@@ -799,6 +799,7 @@
     .fb-chip.run { background: var(--primary); color: var(--text-inverse); }
     .fb-chip.run.other { background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1.5px var(--primary); }   /* somebody else has it running */
     .fb-chip.ok.wait { box-shadow: inset 0 0 0 1.5px var(--warning, #d98a1f); }   /* done here, not on the server yet */
+    .nb-ic { width: 1.15em; height: 1.15em; vertical-align: -0.2em; flex: none; display: inline-block; }
     .fb-resp { font-weight: 600; white-space: nowrap; }
     .fb-resp.none { font-weight: 400; font-style: italic; opacity: .75; }
     .fb-extra { margin: var(--space-2) 0 var(--space-3); background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1.5px var(--primary); }
@@ -831,7 +832,7 @@
     .fb-runtitle { display:flex; align-items: baseline; gap: var(--space-3); }
     .fb-runtitle h1 { flex: 1; min-width: 0; margin: 0; }
     .fb-runtitle .fb-link { flex: none; }
-    /* feedback on a task (0.11.85): the 💬 on a card, and its page */
+    /* feedback on a task (0.11.85): the feedback button on a card, and its page */
     .fb-fbk { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 40px; margin: -6px -8px -6px -6px;
       border-radius: var(--radius-full); font-size: 18px; opacity: .75; }
     .fb-fbk:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
@@ -1149,12 +1150,91 @@
 </head>
 <body class="mode-sop">
 <script>
+  // Line icons, the same drawing as Naked Heart's (console/js/ui.js icon()): 24-unit box, 1.75 stroke, round ends.
+  // No emoji in the app (0.11.104). A label names its icon as {i:name}; nbLabel / nbFrag draw it.
+  const NB_ICONS = {
+    camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3.5"/>',
+    pin: '<path d="M20 10c0 5-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 15 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+    alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+    moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V4"/><path d="m9 13 2 2 4-4"/>',
+    database: '<ellipse cx="12" cy="5.5" rx="8" ry="2.5"/><path d="M4 5.5v13c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-13"/><path d="M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5"/>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    sprout: '<path d="M12 21v-9"/><path d="M12 12C12 8 9 5 4 5c0 4 3 7 8 7Z"/><path d="M12 10c0-3.5 2.5-6 7-6 0 3.5-2.5 6-7 6Z"/>',
+    wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+    external: '<path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    video: '<path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+    mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/>',
+    message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>',
+    ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/>',
+    square: '<path d="M4 4v16h16Z"/><path d="M8 13.5V16h2.5"/>',
+    bulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5A5.6 5.6 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    unlock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    save: '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"/>',
+    play: '<path d="M7 4.5v15l12-7.5Z"/>',
+    pause: '<rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/>',
+    stop: '<rect x="5.5" y="5.5" width="13" height="13" rx="2"/>',
+    bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7Z"/>',
+    pencil: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
+    file: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/>',
+    clip: '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.1a2 2 0 0 1-2.8-2.8l8.5-8.4"/>',
+    refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',
+    table: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>',
+    briefcase: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>',
+    target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+    shield: '<path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z"/>',
+    drop: '<path d="M12 2.7 6.3 8.4a8 8 0 1 0 11.4 0Z"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
+    ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
+    flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1.1-2.1-.2-4 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5Z"/>',
+  };
+  function nbIcon(name) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '1.75'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'nb-ic');
+    s.innerHTML = NB_ICONS[name] || '';
+    return s;
+  }
+  function nbFrag(str) {
+    str = String(str);
+    if (!str.includes('{i:')) return document.createTextNode(str);
+    const f = document.createDocumentFragment();
+    str.split(/(\{i:[a-zA-Z]+\})/).forEach(part => {
+      const m = /^\{i:([a-zA-Z]+)\}$/.exec(part);
+      if (m && NB_ICONS[m[1]]) f.append(nbIcon(m[1])); else if (part) f.append(part);
+    });
+    return f;
+  }
+  function nbLabel(node, str) { node.textContent = ''; node.append(nbFrag(str == null ? '' : str)); }
+  // An icon chosen in Notion is an emoji there; the ones the app knows are drawn as line icons, any other is shown as written.
+  const NB_EMOJI = { '\u26A0': 'alert', '\u2757': 'alert', '\u203C': 'alert', '\u2620': 'alert', '\u{1F52A}': 'alert', '\u{1F6AB}': 'ban', '\u26D4': 'ban',
+    '\u{1F525}': 'flame', '\u{1F9E4}': 'shield', '\u{1F97D}': 'shield', '\u{1F4A1}': 'bulb', '\u2139': 'info', '\u{1F3AF}': 'target', '\u{1F4CC}': 'pin',
+    '\u{1F4A7}': 'drop', '\u{1F4CB}': 'clipboard', '\u{1F331}': 'sprout', '\u{1F527}': 'wrench', '\u{1F5C2}': 'database', '\u{1F4C4}': 'file', '\u{1F4DD}': 'pencil' };
+  const NB_EMOJI_WORD = { alert: 'Warning', bulb: 'Tip', info: 'Info', target: 'Purpose', pin: 'Note', shield: 'PPE', drop: 'Water', ban: 'Forbidden', flame: 'Fire' };
+  const nbEmojiName = e => NB_EMOJI[String(e || '').replace(/\uFE0F/g, '')];
+  function nbEmoji(e) { const n = nbEmojiName(e); return n ? nbIcon(n) : document.createTextNode(e || ''); }
+  document.addEventListener('DOMContentLoaded', () =>
+    document.querySelectorAll('i[data-ic]').forEach(i => i.replaceWith(nbIcon(i.dataset.ic))));
+</script>
+
+<script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.103';
+  const CURRENT_VERSION = '0.11.104';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1207,7 +1287,7 @@
     const n = document.createElement('div');
     n.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top) + 72px);left:50%;transform:translateX(-50%);z-index:10002;' +
       'background:var(--ink);color:var(--ink-text);padding:12px 16px;border-radius:var(--radius-xl);font-size:var(--text-sm);box-shadow:var(--shadow-lg)';
-    n.textContent = '✨ Updating to ' + v + '…';
+    nbLabel(n, '{i:download} Updating to ' + v + '…');
     document.body.appendChild(n);
     setTimeout(() => applyUpdate(v), 900);
   }
@@ -1259,7 +1339,7 @@
       gap: 12px;
     `;
     notification.innerHTML = `
-      <span style="font-size:1.3rem">✨</span>
+      <span style="font-size:1.3rem;display:inline-flex">${nbIcon('download').outerHTML}</span>
       <div style="flex:1">
         <div style="font-weight:700;margin-bottom:2px">v ${newVersion} available</div>
         <div style="font-size:var(--text-xs);color:var(--ink-muted)">${stuck
@@ -1318,6 +1398,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.104', '2026-10-04', 'Line icons instead of emoji', 'Every emoji in the app is now a line icon drawn like the ones in Naked Heart: camera, gallery, video, voice note, feedback, ruler, lock, person, play and pause, send, edit, warning. They look the same on every phone and follow the light and dark theme. An icon chosen for a procedure or a callout in Notion is drawn the same way when the app knows it.'],
     ['0.11.103', '2026-10-04', 'The right name after a change of person', 'A phone that somebody else had used before kept that person as the one doing the work: an extra scouting was filed under the earlier name. Signing out now forgets the person, and every sync says who is signed in.'],
     ['0.11.102', '2026-10-04', 'Camera as before; no question on an extra scouting', 'The in-app camera closes after each Health photo again, as before. Opening a zone of an Extra scouting no longer asks whether to do the planned scouting instead: it opens straight away.'],
     ['0.11.101', '2026-10-04', 'A simpler scouting', 'A section is OK unless you report a problem: one button at the bottom of each tab, and its note; Finish asks nothing about red buttons any more. A photo shows only the picture, its sizes and the AI button; part, crop, position and comment are behind Details. With the in-app camera the Health camera comes back for the next photo until you close it. A trap side shows its count as a line; tap it to correct. Leaving a zone of an Extra scouting sends what you captured there. A line under the tabs says how many photos are kept on the phone and how many are uploaded.'],
@@ -1325,18 +1406,18 @@
     ['0.11.99', '2026-10-04', 'Scouting on an iPhone; sizes by hand', 'Sizes are measured by hand, at once: drag the blue ends onto the two ends of the fruit, leaf or head and the pink ends onto its edges, read the millimetres live, Save. No download and no waiting; Outline it for me stays as a button on phones that can run it. On an iPhone the photos are taken with the phone\'s own camera (full quality, autofocus, close-up) and are a little smaller, so the app is not closed by the phone; Settings has a Camera choice. Each full photo goes up as soon as it is taken instead of waiting for Finish.'],
     ['0.11.98', '2026-10-04', 'Sizes: two straight lines, tapped to keep', 'The scouting tab Plant health is called Health. A measured fruit, leaf or head now gets two straight lines whatever its shape: blue, the longest from edge to edge, and pink, the longest at a right angle to it. Neither is kept by itself: tap Longest, Across or both, then Save. A size nobody tapped is not sent with the report.'],
     ['0.11.97', '2026-10-04', 'Extra scouting: both units, and finished zones', 'With two units, Extra scouting opens one list with the zones of both, each under its unit — no question about which unit. A zone scouting that somebody else already finished today opens as an extra of that zone: your photos are added to the day\'s report, the finished report stays theirs to correct.'],
-    ['0.11.96', '2026-10-04', 'Who is responsible; swipe an extra scouting', 'Every task card says who is responsible for it (👤 Dial, or "nobody yet"), the extra scoutings too, and the checklist says it under its title. An extra scouting is closed with a swipe and no question: right = done, left = cancelled, with the usual five seconds to undo. A closed extra scouting still opens to add photos.'],
+    ['0.11.96', '2026-10-04', 'Who is responsible; swipe an extra scouting', 'Every task card says who is responsible for it (Dial, or "nobody yet"), the extra scoutings too, and the checklist says it under its title. An extra scouting is closed with a swipe and no question: right = done, left = cancelled, with the usual five seconds to undo. A closed extra scouting still opens to add photos.'],
     ['0.11.95', '2026-10-04', 'Extra scouting: the planned one first', 'Opening a zone in an Extra scouting while your own planned scouting of that zone is still open today asks once: do the planned scouting now, or only add extra photos. An extra scouting card no longer shows "0 min".'],
     ['0.11.94', '2026-10-04', 'Extra scouting', 'A new button above the day, ＋ Extra scouting: anybody can add photos and counts to today\'s report at any time. Pick a zone, then Traps, Plant health and Growth are all open with no minimum; Finish sends that zone as it is and you can come back and send again all day. In the report the photos carry a small "extra" tag with your name. It works without signal. The planned scouting of each zone stays its own task and is not replaced by an extra. A growth photo still needs the scale card, and an extra trap photo counts only when it found more insects than the card already had.'],
     ['0.11.93', '2026-10-03', 'Live updates', 'What somebody does on a task reaches the other phones and Naked Heart in about a second instead of at the next minute: a task taken shows its lock at once, a task finished shows Done. A Farm manager can now take a held task back from the phone, like the Admin. A done task that this phone sent or opened before opens without signal to add photos and notes; they go up when there is signal.'],
     ['0.11.92', '2026-10-03', 'A check of the whole app: nothing lost, nothing sent twice', 'A check of the whole app. Notes: Send works once at a time (a second tap made a second Notion page); what was typed, recorded or added during a long upload stays, and a switch of tab during it no longer sends to the wrong list; a photo or video that failed to upload stays on the note instead of being thrown away under a “Sent ✓”; a voice note that could not be transcribed (offline) stays as an attachment — tap it to try again; a transcript is added to what the box holds instead of replacing it; a stalled video compression no longer holds Send, and a video is not compressed twice after a trip to the background. SOP runs: a run finished during an upload is no longer dropped from the outbox, and a run is only cleared once the phone really saved it. Editing a SOP adds the new blocks before removing the old. Scouting: a draft writes each photo once (it rewrote every 4000 px photo at each change), a gallery photo is decoded at the size kept, and the photo viewer opens a smaller copy. Also: a refused Notion or Groq key no longer signs you out, the unlock check gives up after 20 s, the update check stops filling the phone with copies of the page, and the last skin chosen wins.'],
-    ['0.11.91', '2026-10-03', 'One person on a task at a time', 'A task somebody has open — running or paused — is theirs: the others see 🔒 with the name and cannot open it until it is finished or handed over (Hand over to somebody else… under Finish sends what is entered so far, and the next person continues the same report); an Admin can take it back. A done task says who did it and in how long (Done · Dial + Naison · 25 min total) and everybody can open it to add photos and notes — nothing already sent is removed. The timer no longer stops at 18:00: it stops 20 minutes after the last touch in the checklist, Back pauses it, and a task only opened to look keeps no time. Reports now go up before the photos, and one that fails no longer holds the others; a card says "waiting to send" until the server has it.'],
+    ['0.11.91', '2026-10-03', 'One person on a task at a time', 'A task somebody has open — running or paused — is theirs: the others see a lock with the name and cannot open it until it is finished or handed over (Hand over to somebody else… under Finish sends what is entered so far, and the next person continues the same report); an Admin can take it back. A done task says who did it and in how long (Done · Dial + Naison · 25 min total) and everybody can open it to add photos and notes — nothing already sent is removed. The timer no longer stops at 18:00: it stops 20 minutes after the last touch in the checklist, Back pauses it, and a task only opened to look keeps no time. Reports now go up before the photos, and one that fails no longer holds the others; a card says "waiting to send" until the server has it.'],
     ['0.11.90', '2026-10-02', 'Send recovers photos whose task is gone', 'Send now also sends the photos of a scouting whose task has left the list (cancelled, replanned or more than a week old): on that task when the farm still has it, otherwise as photos of the day with the position written on them. One item that fails no longer holds back everything behind it, and the list says why anything is still waiting.'],
     ['0.11.89', '2026-10-02', 'Send sends half-done checklists too (for now)', 'While the app is being developed, the Send button at the top also sends any checklist that was started and not finished: the answers given so far and their photos go to Naked Heart as they stand. The task stays open, and Finish later completes the same report. This is temporary and will be locked again.'],
     ['0.11.88', '2026-10-02', 'Send sends the scouting as it stands', 'The Send button at the top now sends a scouting that is not finished as it stands: its plant photos and every trap side that has its position and a count, with the count as the phone made it or as you corrected it so far. The report is in Naked Heart at once; the task stays open, and Finish later completes the same report. Only a trap photo with no position or no count stays on the phone.'],
     ['0.11.87', '2026-10-02', 'Send everything now', 'A Send button at the top of Tasks, beside ⟳. It sends everything this phone still holds: what is waiting or was refused, the full photos on any connection (the Wi-Fi-only choice is lifted for that once), and the plant photos of a scouting that was started or changed but never finished — before, those stayed on the phone until Finish. It then lists what was sent and what could not be: trap photos and unfinished checklists still need their own Finish, because their counts and answers have to be checked.'],
     ['0.11.86', '2026-10-02', 'A ✕ on every picture; growth needs the scale card', 'Every picture you take — plant health, growth, each side of a trap, the photos of a checklist — has a small ✕ in its top right corner: tap it to remove the picture (it asks first). The Remove link and the ⋯ menu under a scouting photo are gone. A growth photo is now only kept when the phone finds the printed scale card in it: without the card it says so straight away and offers to take the photo again, because the sizes are measured against the card.'],
-    ['0.11.85', '2026-10-02', 'Feedback on a task', 'When the farm switches it on, every task has a 💬 button (on its card and at the top of its checklist). It opens a page to say what should change in the task, its checklist or the app: record a voice note, write a note, add photos or a short video, and say which step it is about. It works offline and is sent when there is signal. The voice is written down and put in points for the manager; under the form you see what was already said on the task and the answer you got.'],
+    ['0.11.85', '2026-10-02', 'Feedback on a task', 'When the farm switches it on, every task has a feedback button (on its card and at the top of its checklist). It opens a page to say what should change in the task, its checklist or the app: record a voice note, write a note, add photos or a short video, and say which step it is about. It works offline and is sent when there is signal. The voice is written down and put in points for the manager; under the form you see what was already said on the task and the answer you got.'],
     ['0.11.84', '2026-10-01', 'Who is on each task', 'Every task says who: In progress with the name of the person doing it, Paused and Not done with who worked on it, Done with who finished it. The list refreshes by itself every minute. Opening a task somebody else is doing asks first, and the phone says so when somebody else is on it or has already sent it. If two people do send the same task, the first report stays the one of the task and the second is kept as a second report.'],
     ['0.11.83', '2026-09-30', 'Scouting: sent when you press Finish', 'The zone no longer sends itself with a 5 second countdown once the minimum photos are in: take as many photos as you like and press Finish when the zone is done. The outline tool says it downloads about 40 MB only the very first time on the phone; after that it says Preparing, because it is read from the phone storage and uses no data.'],
     ['0.11.82', '2026-09-30', 'A second photo after measuring', 'After measuring a fruit the next photo could crash the app (Aw, Snap): the outline tool kept its model and memory after the measurement, and the camera then ran the phone out of memory. The tool now runs apart and is closed, giving all its memory back, when the Tap the fruit sheet closes, when the camera opens and when the app goes to the background. The screen also stays responsive while it works.'],
@@ -1491,7 +1572,7 @@
       note.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top) + 72px);left:50%;transform:translateX(-50%);' +
         'width:max-content;max-width:calc(100% - 40px);background:var(--ink);color:var(--ink-text);padding:10px 18px;' +
         'border-radius:9999px;font-size:var(--text-sm);font-weight:600;box-shadow:var(--shadow-lg);z-index:10002;animation:nbPopIn 300ms ease-out;';
-      note.textContent = '✨ Updated to v ' + CURRENT_VERSION;
+      nbLabel(note, '{i:check} Updated to v ' + CURRENT_VERSION);
       document.body.appendChild(note);
       setTimeout(() => note.remove(), 4500);
     };
@@ -1640,7 +1721,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="pw-input-wrap">
       <input id="appPasswordInput" type="password" placeholder="Password" autocomplete="current-password"
         onkeydown="if(event.key==='Enter') tryUnlockApp()">
-      <button class="pw-eye-btn" onclick="togglePwVisibility()" aria-label="Show / hide password">👁</button>
+      <button class="pw-eye-btn" onclick="togglePwVisibility()" aria-label="Show / hide password"><i data-ic="eye"></i></button>
     </div>
     <div id="appPasswordError" class="pw-error" style="display:none"></div>
     <button class="pw-unlock-btn" id="unlockBtn" onclick="tryUnlockApp()">Unlock</button>
@@ -1698,7 +1779,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <button id="fb-back" class="btn-icon hidden" aria-label="Back">←</button>
     <div id="fb-title" class="hdr-title">Tasks</div>
     <span id="fb-net" class="net-pill hidden">Offline</span>
-    <button id="fb-sendall" class="btn-icon fb-sendall" aria-label="Send everything on this phone now" title="Send everything on this phone now">⇪ Send</button>
+    <button id="fb-sendall" class="btn-icon fb-sendall" aria-label="Send everything on this phone now" title="Send everything on this phone now"><i data-ic="upload"></i> Send</button>
     <button id="fb-sync" class="btn-icon" aria-label="Sync now" title="Sync now">⟳</button>
   </div>
 
@@ -1746,7 +1827,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <button id="sop-backBtn" class="btn-icon hidden" aria-label="Back">←</button>
     <div id="sop-hdrTitle" class="hdr-title"></div>
     <span id="sop-netPill" class="net-pill hidden">Offline</span>
-    <button id="sop-syncBtn" class="btn-icon hidden" aria-label="Upload pending runs" title="Upload pending runs">⇪</button>
+    <button id="sop-syncBtn" class="btn-icon hidden" aria-label="Upload pending runs" title="Upload pending runs"><i data-ic="upload"></i></button>
     <button id="sop-menuBtn" class="btn-icon" aria-label="SoP menu">⋯</button>
   </div>
   <div id="sop-view" class="sop-main"></div>
@@ -1818,7 +1899,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="recorder-status" id="recStatus">Tap to record voice note</div>
     <!-- LOCATION: added on demand; live precision until the user saves it -->
     <div class="gps-box">
-      <button class="btn-copy gps-add" id="gpsAddBtn" aria-label="Add GPS location">📍 Add location</button>
+      <button class="btn-copy gps-add" id="gpsAddBtn" aria-label="Add GPS location"><i data-ic="pin"></i> Add location</button>
       <div class="gps-live" id="gpsLive" hidden>
         <div class="gps-acc" id="gpsAcc" aria-live="polite">Searching GPS…</div>
         <div class="gps-coords" id="gpsCoords"></div>
@@ -1979,8 +2060,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="set-title">Appearance</div>
     <div class="set-group">
       <div class="segmented" role="group" aria-label="Theme">
-        <button type="button" data-theme-choice="light">☀️ Light</button>
-        <button type="button" data-theme-choice="dark">🌙 Dark</button>
+        <button type="button" data-theme-choice="light"><i data-ic="sun"></i> Light</button>
+        <button type="button" data-theme-choice="dark"><i data-ic="moon"></i> Dark</button>
         <button type="button" data-theme-choice="system">Auto</button>
       </div>
       <div class="config-hint" style="margin-top:var(--space-2)">Auto follows the phone's own light/dark setting.</div>
@@ -2029,7 +2110,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="set-title">Version log</div>
     <div class="set-group" id="versionLog"></div>
 
-    <div class="set-title">Configuration <span class="lock-badge" id="configLockBadge">🔒 PIN required</span></div>
+    <div class="set-title">Configuration <span class="lock-badge" id="configLockBadge"><i data-ic="lock"></i> PIN required</span></div>
     <div class="set-group">
       <div id="pinOverlay" style="display:flex;flex-direction:column;align-items:center;gap:var(--space-3);padding:var(--space-2) 0">
         <div style="font-size:var(--text-sm);color:var(--text-muted);text-align:center">Enter the 4-digit PIN to see and change the Notion settings.</div>
@@ -2075,7 +2156,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       <!-- CREATE DATABASE HELPER -->
       <div id="createDbWrap" style="margin-bottom:var(--space-3);padding:var(--space-3);background:var(--surface-offset);border:1px solid var(--border);border-radius:var(--radius-lg);">
-        <div style="font-size:var(--text-xs);font-weight:600;color:var(--text-muted);margin-bottom:var(--space-2);">🚀 No databases yet? Create all automatically</div>
+        <div style="font-size:var(--text-xs);font-weight:600;color:var(--text-muted);margin-bottom:var(--space-2);"><i data-ic="database"></i> No databases yet? Create all automatically</div>
         <div class="config-field" style="margin-bottom:var(--space-2);">
           <label for="notionParentId" style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-muted);display:block;margin-bottom:var(--space-1);">Parent Page ID</label>
           <input type="text" id="notionParentId" placeholder="Page ID from URL — notion.so/workspace/PAGE_ID" autocomplete="off" spellcheck="false">
@@ -2102,7 +2183,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <!-- SAVE/CLEAR -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-4);padding-top:var(--space-3);border-top:1px solid var(--divider);">
         <button class="btn-sm" id="saveConfigBtn" style="background:var(--primary);color:var(--text-inverse);border-color:var(--primary);font-weight:600;">
-          💾 Save Config on This Device
+          <i data-ic="save"></i> Save Config on This Device
         </button>
         <div style="display:flex;align-items:center;gap:var(--space-3);">
           <span class="config-saved-badge" id="configSavedBadge">✓ Saved</span>
@@ -2250,7 +2331,7 @@ function setConfigLocked(locked) {
   document.getElementById('pinError').style.display = 'none';
   document.getElementById('pinInput').value = '';
   const badge = document.getElementById('configLockBadge');
-  badge.textContent = locked ? '🔒 PIN required' : '🔓 Unlocked';
+  nbLabel(badge, locked ? '{i:lock} PIN required' : '{i:unlock} Unlocked');
   badge.classList.toggle('open', !locked);
 }
 
@@ -2291,9 +2372,9 @@ function renderNoteStamp() {
 }
 
 // ─── GPS LOCATION ────────────────────────────────────────────
-// Added on demand with "📍 Add location" (never automatic): the live precision
+// Added on demand with "Add location" (never automatic): the live precision
 // is shown while the GPS settles, and the user saves the fix once it is close
-// enough to their target. Sent with the note as a 📍 line with a map link in
+// enough to their target. Sent with the note as a location line with a map link in
 // the page, plus Location / Precision columns when the DB has them.
 let captureLocation = null;   // the saved fix: { lat, lon, acc, at }
 let _gpsLive = null;          // latest live fix, not saved yet
@@ -2312,7 +2393,7 @@ function renderGpsStamp() {
   document.getElementById('gpsSaved').hidden = live || !captureLocation;
   if (captureLocation) {
     const el = document.getElementById('gpsStamp');
-    el.textContent = '📍 ' + locationText(captureLocation);
+    nbLabel(el, '{i:pin} ' + locationText(captureLocation));
     el.href = mapsUrl(captureLocation);
   }
 }
@@ -3014,7 +3095,7 @@ const COMPRESS_PLAYBACK_RATE = 4;
 // groqAudioP: Promise<m4a File|null> from the transcription extraction,
 // reused by the fast path so the source AAC is only demuxed once.
 async function compressVideoFast(file, onProgress, audioLazy = null, groqAudioP = null) {
-  // Tag results with the path that produced them (shown as ⚡ in the label
+  // Tag results with the path that produced them (shown as a bolt in the label
   // for the fast path — tells us on-device which pipeline made a given file).
   const tag = (f, path) => { try { f._compressPath = path; } catch(_) {} return f; };
   if (typeof VideoEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
@@ -4040,21 +4121,21 @@ function startBackgroundCompression(entry) {
   const lbl = () => document.getElementById('cl-' + entry.uid);
   const setLbl = (text, done = false) => {
     const el = lbl(); if (!el) return;
-    el.textContent = text;
+    nbLabel(el, text);
     done ? el.classList.add('done') : el.classList.remove('done');
   };
-  setLbl('⚙ 0%');
+  setLbl('{i:settings} 0%');
   acquireWakeLock();
 
   entry.compressPromise = compressVideoFast(entry.file, p => {
     entry.compressProgress = p;
-    setLbl(`⚙ ${Math.round(p * 100)}%`);
+    setLbl(`{i:settings} ${Math.round(p * 100)}%`);
   }, entry._audioP || null, entry._groqAudioP || null).then(compressed => {
     entry.compressing = false;
     entry.compressed = compressed;
     releaseWakeLock();
     const sizeMB = compressed.size / 1024 / 1024;
-    const badge = compressed._compressPath === 'demux' ? ' ⚡' : '';
+    const badge = compressed._compressPath === 'demux' ? ' {i:bolt}' : '';
     setLbl(`✓ ${sizeMB.toFixed(1)} MB${badge}`, true);
     return compressed;
   }).catch(err => {
@@ -4062,7 +4143,7 @@ function startBackgroundCompression(entry) {
     entry.compressInterrupted = true;      // only a compression that really stopped is restarted on return
     releaseWakeLock();
     console.warn('Background compression interrupted:', err.message);
-    setLbl('⚙ paused');
+    setLbl('{i:settings} paused');
     return null; // visibilitychange handler will restart; upload fallback if not
   });
 }
@@ -4088,7 +4169,7 @@ document.addEventListener('visibilitychange', async () => {
     // Restart interrupted compressions
     const toResume = mediaFiles.filter(e => e.type === 'video' && e.compressInterrupted && !e.compressed && !e.compressing);
     if (toResume.length) {
-      showToast(`▶ Resuming compression (${toResume.length} video${toResume.length > 1 ? 's' : ''})…`, 'info');
+      showToast(`Resuming compression (${toResume.length} video${toResume.length > 1 ? 's' : ''})…`, 'info');
       toResume.forEach(startBackgroundCompression);
     }
   }
@@ -4256,7 +4337,7 @@ function renderMediaPreviews() {
     if (m.type === 'audio') {
       const a = document.createElement('button');
       a.type = 'button'; a.className = 'video-link-thumb';
-      a.textContent = '🎙 Voice note — tap to transcribe';
+      nbLabel(a, '{i:mic} Voice note — tap to transcribe');
       a.onclick = () => transcribeAudio(m.blob || m.file, m);
       thumb.appendChild(a);
     } else if (m.type === 'image') {
@@ -4280,9 +4361,9 @@ function renderMediaPreviews() {
         const lbl = document.createElement('div');
         lbl.id = 'cl-' + m.uid;
         lbl.className = 'compress-label' + (m.compressed ? ' done' : '');
-        lbl.textContent = m.compressed
+        nbLabel(lbl, m.compressed
           ? `✓ ${(m.compressed.size / 1024 / 1024).toFixed(1)} MB`
-          : `⚙ ${Math.round((m.compressProgress || 0) * 100)}%`;
+          : `{i:settings} ${Math.round((m.compressProgress || 0) * 100)}%`);
         inner.appendChild(lbl);
       }
       thumb.appendChild(inner);
@@ -4802,7 +4883,7 @@ async function submitToNotion() {
   const authorName = document.getElementById('authorName').value.trim();
 
   if (!dbId) {
-    showToast('Configuration needed — open ⚙️ (ask the admin for the settings PIN)', 'error');   // the PIN is not shown in the app any more
+    showToast('Configuration needed — open Settings (ask the admin for the settings PIN)', 'error');   // the PIN is not shown in the app any more
     return;
   }
 
@@ -4863,7 +4944,7 @@ async function submitToNotion() {
       else               children.push({ object:'block', type:'file',  file:{  type:'file_upload', file_upload:{ id: uploadId }, caption:[{ type:'text', text:{ content: m.file.name } }] } });
     } catch(e) {
       failedMedia.push(m);                    // kept on the phone after the send, to be sent again
-      showToast(`⚠️ ${e.message} — note will still be sent`, 'error');
+      showToast(`${e.message} — note will still be sent`, 'error');
       children.push({ object:'block', type:'paragraph', paragraph:{ rich_text:[{ type:'text', text:{ content:`[File not uploaded: ${m.file.name} — ${e.message}]` } }] } });
     }
   };
@@ -4922,7 +5003,7 @@ async function submitToNotion() {
     if (authorValue) {
       properties[authorEntry[0]] = authorValue;
     } else if (authorEntry[1].type === 'people') {
-      showToast(`⚠️ No Notion member matches "${authorName}" — Author left blank`, 'error');
+      showToast(`No Notion member matches "${authorName}" — Author left blank`, 'error');
     }
   }
 
@@ -5117,7 +5198,7 @@ function renderEntries() {
 
     const statusText = entry.status === 'sent' ? '✓ Sent to Notion'
                      : entry.status === 'failed' ? '✗ Failed'
-                     : '⏳ Pending';
+                     : 'Pending';
     card.appendChild(div(`entry-status ${entry.status}`, statusText));
     list.appendChild(card);
   });
@@ -5276,8 +5357,9 @@ const SOP_DB = '3581301d4ab8819693a1e1d1f958e6d6';      // Naked Farm / Brain+ /
 const RUNS_DB = '2bb3587c362a490882496c3967dda7db';     // Naked Farm / Brain+ / SOP Runs
 const CATEGORIES = ['Field Ops', 'Safety', 'Hardware', 'Software'];
 // Families = the SOP's "Family" field in Notion; the Tasks dashboard groups by them.
-const FAMILIES = [['Agriculture', '🌱'], ['Maintenance', '🔧'], ['Office', '🗂️']];
+const FAMILIES = [['Agriculture', 'sprout'], ['Maintenance', 'wrench'], ['Office', 'briefcase']];   // family, its line icon
 const FAMILY_ICON = Object.fromEntries(FAMILIES);
+const famIc = f => FAMILY_ICON[f] ? `{i:${FAMILY_ICON[f]}} ` : '';
 const DASH_KEY = 'sopapp_dash_period';
 const STATUSES = ['Draft', 'In Review', 'Approved', 'Archived'];
 // Groq retires models and the old id then hard-fails — check
@@ -5299,12 +5381,12 @@ function el(tag, attrs, ...kids) {
   if (attrs) for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
     if (k === 'class') e.className = v;
-    else if (k === 'text') e.textContent = v;
+    else if (k === 'text') nbLabel(e, v);
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
     else if (k === 'style') e.style.cssText = v;
     else e.setAttribute(k, v === true ? '' : v);
   }
-  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : String(k));
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : nbFrag(k));
   return e;
 }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -5542,7 +5624,7 @@ function renderBlock(b) {
     case 'to_do': return el('div', null,
       el('div', { class: 'todo' }, el('span', { class: 'box' + (d.checked ? ' on' : '') }), el('span', null, renderRich(d.rich_text))), kids());
     case 'callout': return el('div', { class: 'callout' + (WARN_ICONS.has(d.icon?.emoji) ? ' warn' : '') },
-      el('span', { class: 'ic', 'aria-hidden': 'true' }, d.icon?.emoji || '💡'),
+      el('span', { class: 'ic', 'aria-hidden': 'true' }, nbEmoji(d.icon?.emoji || '💡')),
       el('div', null, el('div', null, renderRich(d.rich_text)), b.children?.length ? renderBlocks(b.children) : null));
     case 'quote': return el('blockquote', null, renderRich(d.rich_text), kids());
     case 'divider': return el('hr');
@@ -5571,10 +5653,10 @@ function renderBlock(b) {
     case 'video': case 'file': case 'pdf': case 'audio': {
       const u = safeUrl(d.type === 'external' ? d.external?.url : d.file?.url);
       const name = d.name || plain(d.caption) || b.type;
-      return u ? el('p', null, el('a', { href: u, target: '_blank', rel: 'noopener' }, '📎 ' + name)) : null;
+      return u ? el('p', null, el('a', { href: u, target: '_blank', rel: 'noopener' }, '{i:clip} ' + name)) : null;
     }
-    case 'child_page': return el('p', { class: 'unsupported' }, '📄 Sub-page: ' + (d.title || ''));
-    case 'child_database': return el('p', { class: 'unsupported' }, '🗂 Database: ' + (d.title || ''));
+    case 'child_page': return el('p', { class: 'unsupported' }, '{i:file} Sub-page: ' + (d.title || ''));
+    case 'child_database': return el('p', { class: 'unsupported' }, '{i:database} Database: ' + (d.title || ''));
     default: return el('p', { class: 'unsupported' }, `[${b.type.replace(/_/g, ' ')} — open in Notion to see it]`);
   }
 }
@@ -5593,7 +5675,7 @@ function setHeader(title, back) {
 function view(...nodes) { const v = $('view'); v.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); window.scrollTo(0, 0); return v; }
 function loadingView(msg = 'Loading…') { view(el('div', { class: 'loading' }, el('span', { class: 'spinner' }), msg)); }
 function errorView(msg, retry) {
-  view(el('div', { class: 'empty' }, el('p', { text: '⚠️ ' + msg }),
+  view(el('div', { class: 'empty' }, el('p', { text: '{i:alert} ' + msg }),
     retry ? el('button', { class: 'btn', style: 'margin-top:1rem', onclick: retry }, 'Try again') : null));
 }
 
@@ -5667,7 +5749,7 @@ async function showList({ force = false } = {}) {
       [el('div', { class: 'empty', text: data.list.length ? 'No SOP matches.' : 'No SOPs yet — create or import one.' })]));
     chips.replaceChildren(
       ...(listFilter.fam ? [el('button', { class: 'chip active', 'aria-label': 'Clear family filter',
-        onclick: () => { listFilter.fam = ''; draw(); } }, `${FAMILY_ICON[listFilter.fam] || ''} ${listFilter.fam} ✕`)] : []),
+        onclick: () => { listFilter.fam = ''; draw(); } }, `${famIc(listFilter.fam)}${listFilter.fam} ✕`)] : []),
       ...['', ...CATEGORIES].map(c => el('button', {
       class: 'chip' + (listFilter.cat === c ? ' active' : ''), 'aria-pressed': String(listFilter.cat === c),
       onclick: () => { listFilter.cat = c; draw(); } }, c || 'All')));
@@ -5690,21 +5772,21 @@ async function showList({ force = false } = {}) {
     results,
   );
   bottomBar(
-    el('button', { class: 'btn btn-lg', onclick: () => go('#/import') }, '⤓ Import'),
+    el('button', { class: 'btn btn-lg', onclick: () => go('#/import') }, '{i:download} Import'),
     el('button', { class: 'btn btn-primary btn-lg', onclick: () => go('#/new') }, '＋ New SOP'));
   refreshOutboxBadge();
 }
 
 function sopCard(s) {
   return el('button', { class: 'card sop-card', onclick: () => go('#/sop/' + s.id) },
-    el('span', { class: 'sc-icon', 'aria-hidden': 'true' }, s.icon || '📋'),
+    el('span', { class: 'sc-icon', 'aria-hidden': 'true' }, nbEmoji(s.icon || '📋')),
     el('div', { class: 'sc-body' },
       el('div', { class: 'card-title', text: s.title }),
       s.note ? el('div', { class: 'card-note', text: s.note }) : null,
       el('div', { class: 'meta' },
         s.status ? el('span', { class: 'badge ' + s.status.replace(/\s/g, ''), text: s.status }) : null,
         s.docType ? el('span', { class: 'badge', text: s.docType }) : null,
-        s.family ? el('span', { text: `${FAMILY_ICON[s.family] || ''} ${s.family}` }) : null,
+        s.family ? el('span', { text: `${famIc(s.family)}${s.family}` }) : null,
         s.category ? el('span', { text: s.category }) : null)),
     el('span', { class: 'round', 'aria-hidden': 'true' }, '↗'));
 }
@@ -5777,7 +5859,7 @@ function dashboard(list, onFamily) {
         el('span', { class: 'dash-sep', 'aria-hidden': 'true' }),
         el('span', { class: 'n-open', text: open == null ? '–' : String(open) })),
       el('div', { class: 'dash-bar' }, el('div', { class: 'dash-fill', style: `width:${total ? Math.round(100 * ok / total) : 0}%` })),
-      el('div', { class: 'dash-title', text: `${icon} ${name}` }),
+      el('div', { class: 'dash-title', text: `{i:${icon}} ${name}` }),
       el('div', { class: 'dash-sub' }, el('span', null, 'Complete'), el('span', { 'aria-hidden': 'true' }, '|'), el('span', null, 'Incomplete')));
   };
   const fill = async () => {
@@ -5787,7 +5869,7 @@ function dashboard(list, onFamily) {
     intro.textContent = `Here's a quick peek at your checklists ${word}! Below is your overview.`;
     cards.replaceChildren(...FAMILIES.map(([n, i]) => card(n, i, null, null)));
     const noFam = list.filter(s => !s.family).length;
-    const hint = noFam ? `${noFam} procedure${noFam === 1 ? ' has' : 's have'} no family yet — set it with ✎ Edit.` : '';
+    const hint = noFam ? `${noFam} procedure${noFam === 1 ? ' has' : 's have'} no family yet — set it with Edit.` : '';
     note.textContent = hint;
     try {
       const { rows, offline } = await loadRunStats(period);
@@ -5822,7 +5904,7 @@ function resumeCard(run) {
       el('div', { style: 'flex:1;min-width:0' },
         el('div', { class: 'ink-title', text: run.sopTitle }),
         el('div', { class: 'ink-sub', text: `${done} of ${steps.length} steps · ${run.operator} · started ${fmtTime(run.startedAt)}` })),
-      el('button', { class: 'round light', 'aria-label': 'Resume checklist', onclick: () => go('#/run/' + run.sopId) }, '▶')),
+      el('button', { class: 'round light', 'aria-label': 'Resume checklist', onclick: () => go('#/run/' + run.sopId) }, '{i:play}')),
     el('div', { class: 'ink-track' }, el('div', { class: 'ink-fill', style: `width:${steps.length ? 100 * done / steps.length : 0}%` })));
 }
 
@@ -5838,7 +5920,7 @@ async function showSop(id, { force = false } = {}) {
   view(
     data.offline ? el('div', { class: 'banner warn' }, `Offline copy from ${fmtDate(data.at)} ${fmtTime(data.at)}`) : null,
     el('div', { class: 'sop-head' },
-      el('h1', null, (s.icon ? s.icon + ' ' : '') + s.title),
+      el('h1', null, s.icon ? nbEmoji(s.icon) : null, (s.icon ? ' ' : '') + s.title),
       el('div', { class: 'meta' },
         s.status ? el('span', { class: 'badge ' + s.status.replace(/\s/g, ''), text: s.status }) : null,
         s.category ? el('span', { text: s.category }) : null,
@@ -5847,11 +5929,11 @@ async function showSop(id, { force = false } = {}) {
       s.note ? el('p', { class: 'note', text: s.note }) : null),
     el('div', { class: 'doc' }, renderBlocks(data.blocks)),
     el('div', { style: 'margin-top:2rem', class: 'btn-row' },
-      el('button', { class: 'btn', onclick: () => go('#/edit/' + id) }, '✎ Edit'),
-      el('button', { class: 'btn', onclick: () => showSop(id, { force: true }).catch(e => toast(failureReason(e), 'error')) }, '↻ Refresh')),
+      el('button', { class: 'btn', onclick: () => go('#/edit/' + id) }, '{i:pencil} Edit'),
+      el('button', { class: 'btn', onclick: () => showSop(id, { force: true }).catch(e => toast(failureReason(e), 'error')) }, '{i:refresh} Refresh')),
   );
   bottomBar(el('button', { class: 'btn btn-primary btn-lg', disabled: steps ? null : true, onclick: () => go('#/run/' + id) },
-    steps ? '▶ Start checklist' : 'No numbered steps or to-dos to check'));
+    steps ? '{i:play} Start checklist' : 'No numbered steps or to-dos to check'));
   // Background refresh when showing a cached copy so the next visit is current.
   if (cached && !force && !data.offline && Date.now() - cached.at > 60_000) loadSop(id, { force: true }).catch(() => {});
 }
@@ -5945,7 +6027,7 @@ function drawRun(st, byId) {
   let n = 0;
   const nodes = st.items.map(it => {
     if (it.kind === 'section') return el('div', { class: 'run-section', text: it.text });
-    if (it.kind === 'info') return el('div', { class: 'info-card' + (WARN_ICONS.has(it.icon) ? '' : ' soft') }, el('span', { 'aria-hidden': 'true' }, it.icon), el('span', { text: it.text }));
+    if (it.kind === 'info') return el('div', { class: 'info-card' + (WARN_ICONS.has(it.icon) ? '' : ' soft') }, el('span', { 'aria-hidden': 'true' }, nbEmoji(it.icon)), el('span', { text: it.text }));
     const num = ++n;
     const s = () => (st.state[it.key] ||= { done: false, note: '' });
     const card = el('div', { class: 'step' });
@@ -5957,7 +6039,7 @@ function drawRun(st, byId) {
       card.classList.toggle('done', !!cur?.done);
       mainBtn.setAttribute('aria-pressed', String(!!cur?.done));
       time.textContent = cur?.done ? '✓ ' + fmtTime(cur.doneAt) : '';
-      noteBtn.textContent = cur?.note ? '📝 Edit note' : '📝 Add note';
+      nbLabel(noteBtn, cur?.note ? '{i:pencil} Edit note' : '{i:pencil} Add note');
     };
     const mainBtn = el('button', { class: 'step-main', onclick: () => {
       const cur = s();
@@ -5993,7 +6075,7 @@ function finishRun(st) {
   notes.value = st.notes || '';
   const status = done === steps.length ? 'Completed' : 'Partial';
   let ov;
-  ov = sheet(done === steps.length ? 'All steps done 🎉' : `${done} of ${steps.length} steps done`,
+  ov = sheet(done === steps.length ? 'All steps done' : `${done} of ${steps.length} steps done`,
     done === steps.length ? 'This run will be logged as Completed.' : 'Unticked steps will be logged as not done (status: Partial).',
     el('div', { class: 'field' }, el('label', null, 'Notes'), notes),
     el('div', { class: 'btn-row' },
@@ -6030,7 +6112,7 @@ async function refreshOutboxBadge() {
   const box = (await idbGet('outbox')) || [];
   const b = $('syncBtn');
   b.classList.toggle('hidden', !box.length);
-  b.textContent = box.length ? `⇪${box.length}` : '⇪';
+  nbLabel(b, box.length ? `{i:upload}${box.length}` : '{i:upload}');
   b.title = `${box.length} run(s) waiting to upload`;
 }
 
@@ -6137,7 +6219,7 @@ async function showRuns() {
     el('div', { class: 'meta' }, el('span', { class: 'badge ' + status, text: status }), el('span', { text: when }), sub ? el('span', { text: sub }) : null));
   view(
     box.length ? el('div', null, el('div', { class: 'lbl', text: 'Waiting to upload' }),
-      ...box.map(r => card(r.sopTitle, r.status, `${r.operator} · ${fmtDate(r.startedAt)} ${fmtTime(r.startedAt)}`, r.error ? '⚠ ' + r.error : 'pending')),
+      ...box.map(r => card(r.sopTitle, r.status, `${r.operator} · ${fmtDate(r.startedAt)} ${fmtTime(r.startedAt)}`, r.error ? '{i:alert} ' + r.error : 'pending')),
       el('button', { class: 'btn btn-block', style: 'margin:0.5rem 0 1.5rem', onclick: () => syncOutbox(true).then(showRuns) }, 'Upload now')) : null,
     err ? el('div', { class: 'banner warn', text: 'Could not load history: ' + err }) : null,
     el('div', { class: 'lbl', text: 'Recent runs' }),
@@ -6222,9 +6304,9 @@ function blockToItem(b, idx) {
 }
 function lockedLabel(b) {
   const d = b[b.type] || {};
-  if (b.type === 'image') return '📷 Photo' + (plain(d.caption) ? ' — ' + plain(d.caption) : '');
-  if (b.type === 'table') return `▦ Table (${b.children?.length || '?'} rows)`;
-  if (b.type === 'child_page') return '📄 Sub-page: ' + (d.title || '');
+  if (b.type === 'image') return '{i:camera} Photo' + (plain(d.caption) ? ' — ' + plain(d.caption) : '');
+  if (b.type === 'table') return `{i:table} Table (${b.children?.length || '?'} rows)`;
+  if (b.type === 'child_page') return '{i:file} Sub-page: ' + (d.title || '');
   return b.type.replace(/_/g, ' ');
 }
 const newItem = (type, text = '', extra = {}) => ({ key: uid(), id: null, type, text, checked: false,
@@ -6262,7 +6344,7 @@ async function showEditor(id) {
   // Properties
   const f = (label, input) => el('div', { class: 'field' }, el('label', null, label), input);
   const inTitle = el('input', { class: 'input', value: props.title, placeholder: 'e.g. SOP: Cleaning the dosing tank' });
-  const inIcon = el('input', { class: 'input', value: props.icon, placeholder: '🧱', maxlength: 4, style: 'width:4.5rem;text-align:center' });
+  const inIcon = el('input', { class: 'input', value: props.icon, placeholder: 'emoji', maxlength: 4, style: 'width:4.5rem;text-align:center' });
   const sel = (opts, val) => el('select', { class: 'input' }, opts.map(o => el('option', { value: o, selected: o === val ? true : null }, o)));
   const inCat = sel(CATEGORIES, props.category), inStatus = sel(STATUSES, props.status);
   const inNote = el('textarea', { class: 'input', rows: 2, placeholder: 'One-line summary shown in the list' });
@@ -6272,7 +6354,7 @@ async function showEditor(id) {
   inCat.onchange = () => props.category = inCat.value;
   inStatus.onchange = () => props.status = inStatus.value;
   const inFam = el('select', { class: 'input' }, el('option', { value: '' }, '— none —'),
-    FAMILIES.map(([n, i]) => el('option', { value: n, selected: n === props.family ? true : null }, `${i} ${n}`)));
+    FAMILIES.map(([n, i]) => el('option', { value: n, selected: n === props.family ? true : null }, n)));
   inFam.onchange = () => props.family = inFam.value;
   inNote.oninput = () => props.note = inNote.value;
 
@@ -6295,7 +6377,7 @@ async function showEditor(id) {
     const bar = el('div', { class: 'ed-bar' }, typeSel,
       it.type === 'to_do' ? el('input', { type: 'checkbox', checked: it.checked ? true : null, 'aria-label': 'Checked', onchange: e => { it.checked = e.target.checked; } }) : null,
       it.type === 'callout' ? el('select', { 'aria-label': 'Callout icon', onchange: e => { it.icon = e.target.value; } },
-        [...new Set([it.icon, ...CALLOUT_ICONS])].filter(Boolean).map(ic => el('option', { value: ic, selected: ic === it.icon ? true : null }, ic))) : null,
+        [...new Set([it.icon, ...CALLOUT_ICONS])].filter(Boolean).map(ic => el('option', { value: ic, selected: ic === it.icon ? true : null }, NB_EMOJI_WORD[nbEmojiName(ic)] || ic))) : null,
       el('span', { class: 'sp' }),
       el('button', { class: 'btn-icon', 'aria-label': 'Move up', disabled: fixed || i === 0 ? true : null, onclick: () => move(i, -1) }, '↑'),
       el('button', { class: 'btn-icon', 'aria-label': 'Move down', disabled: fixed || i === items.length - 1 ? true : null, onclick: () => move(i, 1) }, '↓'),
@@ -6340,7 +6422,7 @@ async function showEditor(id) {
     list,
     el('div', { class: 'ed-add' }, addBtn('＋ Step', 'numbered_list_item'), addBtn('＋ Checkbox', 'to_do'), addBtn('＋ Subheading', 'heading_2'),
       addBtn('＋ Text', 'paragraph'), addBtn('＋ Safety note', 'callout', { icon: '⚠️' }),
-      el('button', { class: 'btn btn-sm', onclick: () => photoInput.click() }, '📷 Photo'), photoInput),
+      el('button', { class: 'btn btn-sm', onclick: () => photoInput.click() }, '{i:camera} Photo'), photoInput),
   );
   const saveBtn = el('button', { class: 'btn btn-primary btn-lg', onclick: async () => {
     if (!props.title.trim()) { toast('Give the SOP a title', 'error'); inTitle.focus(); return; }
@@ -6720,7 +6802,7 @@ function showImport() {
       tooLong ? el('div', { class: 'banner warn', style: 'margin-top:0.75rem' },
         `Too long for the free AI tier (${AI_MAX_INPUT_CHARS.toLocaleString()} characters max). Import as-is, or split the document.`) : null,
       el('div', { class: 'btn-row', style: 'margin-top:1rem;flex-direction:column' },
-        el('button', { class: 'btn btn-primary btn-lg', disabled: tooLong ? true : null, onclick: withAi }, '✨ Structure with AI'),
+        el('button', { class: 'btn btn-primary btn-lg', disabled: tooLong ? true : null, onclick: withAi }, '✦ Structure with AI'),
         el('button', { class: 'btn btn-lg', onclick: asIs }, 'Import as-is')),
       el('p', { class: 'hint' }, 'Either way you get an editable draft to review before anything is saved to Notion.'));
   };
@@ -6750,7 +6832,7 @@ function showImport() {
   view(
     el('p', { class: 'hint', style: 'font-size:var(--text-sm);margin-bottom:1rem' },
       'Turn an existing procedure into a draft SOP. Word (.docx) keeps headings, lists and photos; PDFs give text only.'),
-    el('button', { class: 'btn btn-primary btn-lg btn-block', onclick: () => fileIn.click() }, '📄 Choose a file'), fileIn,
+    el('button', { class: 'btn btn-primary btn-lg btn-block', onclick: () => fileIn.click() }, '{i:file} Choose a file'), fileIn,
     el('div', { style: 'margin-top:1rem' }, paste),
     el('button', { class: 'btn btn-block', style: 'margin-top:0.5rem', onclick: () => {
       const text = paste.value.trim();
@@ -6766,12 +6848,12 @@ $('menuBtn').addEventListener('click', () => {
   const item = (label, fn) => el('button', { class: 'btn btn-block', style: 'justify-content:flex-start', onclick: () => { ov.remove(); fn(); } }, label);
   ov = sheet('FarmBox SOP', `Version ${APP_VERSION}`,
     el('div', { style: 'display:flex;flex-direction:column;gap:0.5rem' },
-      item('↻ Refresh SOP list', () => { go('#/'); showList({ force: true }).catch(e => toast(failureReason(e), 'error')); }),
-      item('🕘 Run history', () => go('#/runs')),
-      item('⤓ Import a document', () => go('#/import')),
-      item('↗ Open SOP database in Notion', () => window.open('https://www.notion.so/' + SOP_DB, '_blank', 'noopener')),
-      item('↗ Open SOP Runs in Notion', () => window.open('https://www.notion.so/' + RUNS_DB, '_blank', 'noopener')),
-      item('⎋ Log out', () => { clearAppPassword(); showPasswordGate(); })));
+      item('{i:refresh} Refresh SOP list', () => { go('#/'); showList({ force: true }).catch(e => toast(failureReason(e), 'error')); }),
+      item('{i:clock} Run history', () => go('#/runs')),
+      item('{i:download} Import a document', () => go('#/import')),
+      item('{i:external} Open SOP database in Notion', () => window.open('https://www.notion.so/' + SOP_DB, '_blank', 'noopener')),
+      item('{i:external} Open SOP Runs in Notion', () => window.open('https://www.notion.so/' + RUNS_DB, '_blank', 'noopener')),
+      item('{i:logout} Log out', () => { clearAppPassword(); showPasswordGate(); })));
 });
 
 window.addEventListener('beforeunload', e => { if (leaveGuard?.()) { e.preventDefault(); e.returnValue = ''; } });
@@ -6795,7 +6877,7 @@ function sopOpen() {
 
   const $ = id => document.getElementById('fb-' + id);
   const el = (tag, cls, text) => { const n = document.createElement(tag);
-    if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+    if (cls) n.className = cls; if (text != null) nbLabel(n, text); return n; };
 
   // ── tiny IndexedDB wrapper (one store, keyed records) ───────────────────
   // v2 adds 'positions': the crop positions a grouped task covers (Phase A).
@@ -6972,7 +7054,7 @@ function sopOpen() {
 
   // ── sync ────────────────────────────────────────────────────────────────
   let farm = null, syncing = false;
-  // the 💬 on every task (0.11.85, FarmBox 0189): on while the farm has the feedback switched on; kept for offline days
+  // the feedback button on every task (0.11.85, FarmBox 0189): on while the farm has the feedback switched on; kept for offline days
   let FEEDBACK_ON = null;
   async function feedbackOn() {
     if (FEEDBACK_ON === null) { try { FEEDBACK_ON = !!(await getKV('feedback_on')); } catch (e) { FEEDBACK_ON = false; } }
@@ -7028,7 +7110,7 @@ function sopOpen() {
       await putAll('traps', d.sticky_traps);
       if (d.ipm_threshold) await setKV('ipm_threshold', d.ipm_threshold);
       if (Array.isArray(d.scouting_state)) await setKV('scouting_state', d.scouting_state);   // FarmBox 0145
-      // FarmBox 0189: the 💬 on every task, while the farm has the feedback switched on
+      // FarmBox 0189: the feedback button on every task, while the farm has the feedback switched on
       const fbkWas = !!FEEDBACK_ON;
       if (typeof d.feedback === 'boolean') { FEEDBACK_ON = d.feedback; await setKV('feedback_on', d.feedback); }
       for (const x of (d.deleted || [])) {
@@ -7499,8 +7581,8 @@ function sopOpen() {
     await saveTimers();
     if (ev.length) await queue(ev);
   }
-  // the words on the right of a task (the same in the console): Done in 42 min · ▶ 12 min · Pause ·
-  // ⏸ 12 min so far · Not finished · 12 min (an earlier day) · Done (never timed)
+  // the words on the right of a task (the same in the console): Done in 42 min · (play) 12 min · Pause ·
+  // (pause) 12 min so far · Not finished · 12 min (an earlier day) · Done (never timed)
   // To do · In progress · Paused · Done · Cancelled · Not done (its day ended, still open) — the same words in the console
   function timeChip(g, late) {
     const m = groupMinutes(g), on = groupRunning(g);
@@ -7534,7 +7616,7 @@ function sopOpen() {
     const lock = (g.hub && !g.extra) || on ? null : heldOther(g);
     if (lock) {
       const live = (g.members || []).some(x => (TTIMES.get(x.id) || {}).running);
-      return el('span', 'fb-chip run other', `🔒 ${live ? 'In progress' : 'Paused'} · ${lock}` + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
+      return el('span', 'fb-chip run other', `{i:lock} ${live ? 'In progress' : 'Paused'} · ${lock}` + (m >= 1 ? ` · ${fmtWork(m)}` : ''));
     }
     const also = othersRunning(g);
     if (on) {
@@ -7558,7 +7640,7 @@ function sopOpen() {
     document.querySelectorAll('[data-timer-ids]').forEach(c => {
       const ids = c.dataset.timerIds.split(',');
       const m = ids.reduce((a, id) => a + taskMinutes(id), 0);
-      c.textContent = (c.dataset.timerWord || '▶ {t}').replace('{t}', fmtClock(m)).replace('{m}', fmtWork(m));
+      nbLabel(c, (c.dataset.timerWord || '{i:play} {t}').replace('{t}', fmtClock(m)).replace('{m}', fmtWork(m)));
     });
   }, 1000);                 // every second: the timers show their seconds (0.11.62)
   const posLabel = p => p.position_code || p.label || p.code || p.position_name || p.name || p.position_label || null;
@@ -7754,9 +7836,9 @@ function sopOpen() {
       const strip = el('div', 'fb-going');
       const txt = el('div', 'fb-going-text');
       txt.append(el('small', null, 'In progress'), el('b', null, going.title));
-      const tm = el('span', 'fb-going-time', `▶ ${fmtClock(groupMinutes(going))}`);
-      tm.dataset.timerIds = going.members.map(x => x.id).join(','); tm.dataset.timerWord = '▶ {t}';
-      const pz = el('button', 'btn btn-sm', '⏸'); pz.title = 'Pause'; pz.setAttribute('aria-label', 'Pause ' + going.title);
+      const tm = el('span', 'fb-going-time', `{i:play} ${fmtClock(groupMinutes(going))}`);
+      tm.dataset.timerIds = going.members.map(x => x.id).join(','); tm.dataset.timerWord = '{i:play} {t}';
+      const pz = el('button', 'btn btn-sm', '{i:pause}'); pz.title = 'Pause'; pz.setAttribute('aria-label', 'Pause ' + going.title);
       pz.onclick = async e => { e.stopPropagation(); for (const x of going.members) await timerPause(x.id); showWeek(); };
       const op = el('button', 'btn btn-sm btn-primary', 'Open');
       op.onclick = e => { e.stopPropagation(); openTask(going.key); };
@@ -7902,7 +7984,7 @@ function sopOpen() {
     const resp = whoOf(g);
     if (resp.length || !isClosed(g.status)) {
       if (meta.textContent) meta.append(document.createTextNode(' · '));
-      const w = el('span', 'fb-resp' + (resp.length ? '' : ' none'), resp.length ? '👤 ' + names(resp) : 'nobody yet');
+      const w = el('span', 'fb-resp' + (resp.length ? '' : ' none'), resp.length ? '{i:user} ' + names(resp) : 'nobody yet');
       w.title = resp.length ? 'Responsible: ' + resp.join(', ') : 'Nobody is responsible for this task yet';
       meta.append(w);
     }
@@ -7913,7 +7995,7 @@ function sopOpen() {
     if (chip) b.append(chip);
     // feedback on this task (0.11.85): its own tap — not the card's, and not the start of a swipe
     if (FEEDBACK_ON && !g.hub) {
-      const f = el('span', 'fb-fbk', '💬');
+      const f = el('span', 'fb-fbk', '{i:message}');
       f.setAttribute('role', 'button'); f.setAttribute('aria-label', 'Feedback on this task'); f.title = 'Feedback on this task';
       f.addEventListener('pointerdown', e => e.stopPropagation());
       f.onclick = e => { e.stopPropagation(); openFeedback(g); };
@@ -8400,7 +8482,7 @@ function sopOpen() {
   }
 
   // ── feedback on a task (0.11.85, FarmBox 0189; owner 2 Oct 2026) ────────
-  // Switched on per farm in Naked Heart (Settings › Task feedback). The 💬 on a task opens this page: say it, write
+  // Switched on per farm in Naked Heart (Settings › Task feedback). The feedback button on a task opens this page: say it, write
   // it or show it — voice notes, a note, photos, one short video — about the task, its checklist or the app.
   // It leaves through the outbox (offline too): the files to the evidence bucket, then submit_feedback; the
   // server writes the voice down and puts it in points (Groq). Under the form: what was already said on this
@@ -8443,7 +8525,7 @@ function sopOpen() {
     const recBtn = el('button', 'btn btn-lg btn-block fb-fbk-rec');
     const paintRec = () => {
       const on = !!rec, s = on ? Math.floor((Date.now() - recStart) / 1000) : 0;
-      recBtn.textContent = on ? `⏹ Stop · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '🎙 Record a voice note';
+      nbLabel(recBtn, on ? `{i:stop} Stop · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '{i:mic} Record a voice note');
       recBtn.classList.toggle('on', on);
     };
     paintRec();
@@ -8482,7 +8564,7 @@ function sopOpen() {
     const tools = el('div', 'fb-actions');
     const pickPhoto = el('input'); pickPhoto.type = 'file'; pickPhoto.accept = 'image/*'; pickPhoto.style.display = 'none';
     const pickVideo = el('input'); pickVideo.type = 'file'; pickVideo.accept = 'video/*'; pickVideo.setAttribute('capture', 'environment'); pickVideo.style.display = 'none';
-    const photoBtn = el('button', 'fb-btn', '📷 Photo'), videoBtn = el('button', 'fb-btn', '🎥 Video');
+    const photoBtn = el('button', 'fb-btn', '{i:camera} Photo'), videoBtn = el('button', 'fb-btn', '{i:video} Video');
     const addPhoto = async f => {
       let b = f;
       try {
@@ -8507,20 +8589,20 @@ function sopOpen() {
     pickVideo.onchange = async () => {
       let f = pickVideo.files[0]; pickVideo.value = '';
       if (!f) return;
-      busy = true; videoBtn.textContent = '🎥 Checking…';
+      busy = true; nbLabel(videoBtn, '{i:video} Checking…');
       try {
         const secs = typeof getVideoDuration === 'function' ? await getVideoDuration(f) : null;
         if (secs != null && secs > FBK_VIDEO_S + 3) { showToast(`Keep the video under a minute — this one is ${Math.round(secs)} s`, 'error'); return; }
         // a phone films at ~17 Mbps: made smaller on the phone (720p), or it would not fit the upload
         if (f.size > 8 * 1024 * 1024 && typeof compressVideoFast === 'function') {
           try {
-            const small = await compressVideoFast(f, p => { videoBtn.textContent = `🎥 Making it smaller… ${Math.round((p || 0) * 100)}%`; });
+            const small = await compressVideoFast(f, p => { nbLabel(videoBtn, `{i:video} Making it smaller… ${Math.round((p || 0) * 100)}%`); });
             if (small && small.size && small.size < f.size) f = small;
           } catch (e) { console.warn('video not compressed', e); }
         }
         if (f.size > FBK_MAX_BYTES) { showToast(`This video is too big to send (${fmtMB(f.size)}) — make a shorter one`, 'error'); return; }
         st.items.push({ kind: 'video', blob: f, seconds: secs != null ? Math.round(secs * 10) / 10 : null }); save(); paintItems();
-      } finally { busy = false; videoBtn.textContent = '🎥 Video'; }
+      } finally { busy = false; nbLabel(videoBtn, '{i:video} Video'); }
     };
     tools.append(photoBtn, videoBtn, pickPhoto, pickVideo);
     box.append(tools);
@@ -8596,7 +8678,7 @@ function sopOpen() {
         const textOf = r.ai_summary || r.note || r.transcript;
         if (textOf) c.append(el('div', 'fb-fbk-text', textOf));
         if ((r.ai_points || []).length) { const ul = el('ul', 'fb-fbk-points'); r.ai_points.forEach(p => ul.append(el('li', null, p))); c.append(ul); }
-        const media = [[r.voice, '🎙'], [r.photos, '📷'], [r.videos, '🎥']].filter(([n]) => n).map(([n, i]) => `${i} ${n}`).join('  ');
+        const media = [[r.voice, '{i:mic}'], [r.photos, '{i:camera}'], [r.videos, '{i:video}']].filter(([n]) => n).map(([n, i]) => `${i} ${n}`).join('  ');
         if (media || r.ai_status === 'queued') c.append(el('div', 'fb-meta', [media, r.ai_status === 'queued' ? 'being written down…' : null].filter(Boolean).join(' · ')));
         if (r.reply) c.append(el('div', 'fb-fbk-reply', 'Answer: ' + r.reply));
         said.append(c);
@@ -8647,7 +8729,7 @@ function sopOpen() {
     row('Quantity', t.quantity && !isPosUnit(t.unit) ? fmtQty(t.quantity, t.unit) : null);
     row('Takes', fmtMin(t.minutes));
     const worked = groupMinutes(t);
-    if (worked >= 1 || groupRunning(t)) row('Worked', (groupRunning(t) ? '▶ running · ' : '') + fmtWork(worked) + (isClosed(t.status) ? '' : ' so far'));
+    if (worked >= 1 || groupRunning(t)) row('Worked', (groupRunning(t) ? 'running · ' : '') + fmtWork(worked) + (isClosed(t.status) ? '' : ' so far'));
     if (sop?.safety_ppe) row('Safety', sop.safety_ppe);
     if (sop?.tools) row('Tools', sop.tools);
     box.append(facts);
@@ -8665,7 +8747,7 @@ function sopOpen() {
     } else if (t.status === 'done') {
       box.append(el('div', 'config-hint', hasChecklist ? 'Done. What was sent can still be changed.' : 'Done. Nothing more to do here.'));
       if (hasChecklist) {
-        const ed = el('button', 'btn btn-lg btn-block', '✎ Edit what was sent');
+        const ed = el('button', 'btn btn-lg btn-block', '{i:pencil} Edit what was sent');
         ed.onclick = () => editTask(t, sop);
         box.append(ed);
       }
@@ -8680,7 +8762,7 @@ function sopOpen() {
       b.onclick = () => startRun(t, sop);
       box.append(b);
       if (groupRunning(t)) {
-        const pz = el('button', 'btn btn-block', '⏸ Pause the timer');
+        const pz = el('button', 'btn btn-block', '{i:pause} Pause the timer');
         pz.style.marginTop = 'var(--space-2)';
         pz.onclick = async () => { for (const x of t.members) await timerPause(x.id); taskPage(t.key); };
         box.append(pz);
@@ -8729,7 +8811,7 @@ function sopOpen() {
     // 0.11.91: a report still on this phone is not on the server yet — editing now would make a second report
     if (!d || !d.run) {
       const waiting = (await all('outbox')).some(r => r.payload && t.members.some(m => m.id === r.payload.task_id) && !r.payload.__timer && !r.payload.__upload && !r.payload.__feedback);
-      if (waiting) { showToast('The report of this task is still waiting to be sent — press ⇪ Send, then open it again', 'error'); return; }
+      if (waiting) { showToast('The report of this task is still waiting to be sent — press Send, then open it again', 'error'); return; }
     }
     // everybody may add to a done task (FarmBox 0201): photos, notes, answers — nothing already sent is removed;
     // changing or removing what was sent stays with the task's people, the Admin and the managers
@@ -8795,7 +8877,7 @@ function sopOpen() {
     }
     // feedback on this task, from inside its checklist (0.11.85): the checklist stays as it is underneath
     if (await feedbackOn()) {
-      const fk = el('button', 'fb-link', '💬 Feedback');
+      const fk = el('button', 'fb-link', '{i:message} Feedback');
       fk.onclick = () => openFeedback(task, true);
       tline.append(fk);
     }
@@ -8806,7 +8888,7 @@ function sopOpen() {
       || (itemsOf.length ? itemsOf.map(p => p.label).join(' · ') : null)
       || task.zone_name || (task.area && !['Whole unit', 'All zones'].includes(task.area) ? task.area : null);
     const respNames = whoOf(task);
-    head.append(el('p', 'fb-runfacts', [where, task.crop_name, respNames.length ? '👤 ' + respNames.join(' + ') : null,
+    head.append(el('p', 'fb-runfacts', [where, task.crop_name, respNames.length ? '{i:user} ' + respNames.join(' + ') : null,
       task.extraZone ? null : `about ${fmtMin(task.minutes)}`,
       sop?.safety_ppe ? 'PPE: ' + sop.safety_ppe : null, sop?.tools ? 'Tools: ' + sop.tools : null].filter(Boolean).join(' · ')));
     // the scouting's how-to, folded under its title (0.11.74; it was the ? tab)
@@ -8831,12 +8913,12 @@ function sopOpen() {
       run.paintTimer = () => {                       // in the top bar, where "Checklist" was written (0.11.59)
         const on = groupRunning(task), m = fmtClock(groupMinutes(task));
         const t = $('title'); t.textContent = '';
-        // the timer is the button (0.11.60): ⏸ pauses it, ▶ goes on
-        const sp = el('button', 'fb-hdr-timer' + (on ? '' : ' paused'), (on ? '⏸ ' : '▶ ') + m);
+        // the timer is the button (0.11.60): pause stops it, play goes on
+        const sp = el('button', 'fb-hdr-timer' + (on ? '' : ' paused'), (on ? '{i:pause} ' : '{i:play} ') + m);
         sp.type = 'button'; sp.title = on ? 'Pause the timer' : 'Resume the timer';
         sp.setAttribute('aria-label', (on ? 'Pause' : 'Resume') + ' the timer, ' + m);
         sp.dataset.timerIds = task.members.map(x => x.id).join(',');
-        sp.dataset.timerWord = on ? '⏸ {t}' : '▶ {t}';
+        sp.dataset.timerWord = on ? '{i:pause} {t}' : '{i:play} {t}';
         sp.onclick = () => timerToggle();
         t.append(sp);
       };
@@ -8913,7 +8995,7 @@ function sopOpen() {
     end.append(note);
     const shot = el('div', 'fb-shot');
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.style.display = 'none';
-    const btn = el('button', 'fb-btn', '📷 Add a photo');
+    const btn = el('button', 'fb-btn', '{i:camera} Add a photo');
     const key = run.perItem && run.itemList[0] ? stepKey(steps[0], run.itemList[0]) : steps[0].seq;
     const add = async f => {
       try {
@@ -9047,7 +9129,7 @@ function sopOpen() {
       };
     }
     p.classList.toggle('hidden', !on);
-    p.textContent = run && groupRunning(run.task) ? '⏸ Pause' : '▶ Resume';
+    nbLabel(p, run && groupRunning(run.task) ? '{i:pause} Pause' : '{i:play} Resume');
   }
 
   // ── the checklist's own draft (0.11.39): answers, notes and photos kept in
@@ -9780,7 +9862,7 @@ function sopOpen() {
         .filter(x => x.full instanceof Blob || x.photo_path);
       const n = files.length, up = files.filter(x => x.photo_path).length;
       safe.classList.toggle('hidden', !n);
-      safe.textContent = n ? `🔒 ${n} photo${n === 1 ? '' : 's'} kept on this phone · ${up === n ? 'all uploaded' : `${up} uploaded, ${n - up} waiting`}` : '';
+      nbLabel(safe, n ? `{i:lock} ${n} photo${n === 1 ? '' : 's'} kept on this phone · ${up === n ? 'all uploaded' : `${up} uploaded, ${n - up} waiting`}` : '');
     };
     box.append(tabs, safe, ...SC_TABS.map(([k]) => panes[k]), panes.review);
     const count = k => [...sc.photos.values()].filter(p => p.section === k).length;
@@ -9810,7 +9892,7 @@ function sopOpen() {
         const ok = !need(k) || met(k);
         const name = el('span', 'fb-sc-name');
         name.append(el('span', 'fb-sc-v ' + (ok ? 'ok' : 'nok'), ok ? '✓' : ''));
-        if (sc.verdict[k] && sc.verdict[k].ok === false) name.append(document.createTextNode('⚠ '));
+        if (sc.verdict[k] && sc.verdict[k].ok === false) name.append(nbIcon('alert'), document.createTextNode(' '));
         // a phone is narrow: "Plant health" is "Health" on the tab under 420 px
         if (k === 'health') name.append(el('span', 'fb-sc-long', label), el('span', 'fb-sc-short', 'Health'));
         else name.append(document.createTextNode(label));
@@ -9848,7 +9930,7 @@ function sopOpen() {
       b._paint = () => {
         const v = sc.verdict[k] || {}, ok = !!v.ok;
         tick.classList.toggle('on', ok);
-        tick.textContent = ok ? `✓ ${label} OK · tap to report a problem` : `⚠ Problem in ${label.toLowerCase()} · tap if it is OK after all`;
+        nbLabel(tick, ok ? `✓ ${label} OK · tap to report a problem` : `{i:alert} Problem in ${label.toLowerCase()} · tap if it is OK after all`);
         tick.setAttribute('aria-pressed', String(ok));
         note.placeholder = ok ? 'Note (optional)' : `What is the problem in ${label.toLowerCase()}? (the manager is told)`;
         note.classList.toggle('hidden', ok && !String(v.note || '').trim() && document.activeElement !== note);
@@ -9901,7 +9983,7 @@ function sopOpen() {
             const crop = crops.find(c => c.id === p.crop_id)?.name;
             txt.append(el('b', null, [wordOf(k === 'growth' ? GROWTH_PARTS : PARTS, p.part), crop].filter(Boolean).join(' · ')));
             lines.push(posWords(fullPos(p.pos_code)) ? 'Position ' + fullPos(p.pos_code) : zoneLines.length === 1 ? (zoneLines[0].label || 'this zone') : '— no position');
-            const ms = (p.measures || []).map(m => `${wordOf(MEASURE_WHAT, m.what).toLowerCase()} ${m.mm} mm${m.by === 'auto' ? ' 📐' : ''}`);
+            const ms = (p.measures || []).map(m => `${wordOf(MEASURE_WHAT, m.what).toLowerCase()} ${m.mm} mm${m.by === 'auto' ? ' {i:square}' : ''}`);
             if (ms.length) lines.push('Size: ' + ms.join(' · '));
             else if (p.px_per_mm) lines.push(scaleWords(p));
             if (p.ai) lines.push('✦ ' + aiText(p));
@@ -10012,7 +10094,7 @@ function sopOpen() {
         el('div', 'fb-meta', offline
           ? 'The card reader needs a connection the first time on this phone. Connect once, then take the photo again — a growth photo is only kept with its scale card.'
           : 'A growth photo is only kept with the printed scale card in the picture: the fruit or leaf is measured against it. Hold the card flat beside what you photograph, all of it in view, and take it again.'));
-      const again = el('button', 'fb-btn fb-btn-primary', '📷 Take it again'); again.type = 'button';
+      const again = el('button', 'fb-btn fb-btn-primary', '{i:camera} Take it again'); again.type = 'button';
       const drop = el('button', 'fb-btn', 'Leave it out'); drop.type = 'button';
       again.onclick = () => { sheet.remove(); out(); shoot('growth'); };
       drop.onclick = () => { sheet.remove(); out(); };
@@ -10276,8 +10358,8 @@ function sopOpen() {
       const b = el('div', 'fb-trap-side ' + k);
       b.append(el('div', 'fb-sec', label));
       if (!S) {
-        const go = el('button', 'fb-btn', '📷 ' + label); go.type = 'button';
-        const gal = el('button', 'fb-btn', '🖼'); gal.type = 'button'; gal.setAttribute('aria-label', label + ' from the gallery');
+        const go = el('button', 'fb-btn', '{i:camera} ' + label); go.type = 'button';
+        const gal = el('button', 'fb-btn', '{i:image}'); gal.type = 'button'; gal.setAttribute('aria-label', label + ' from the gallery');
         go.onclick = () => addSide(p, k, card);
         gal.onclick = () => addSide(p, k, card, true);
         const r = el('div', 'fb-actions'); r.append(go, gal); b.append(r);
@@ -10294,7 +10376,7 @@ function sopOpen() {
                             said.textContent = S.algo_total != null ? (S.corrected ? `phone said ${S.algo_total}` : 'counted') : ''; paintSide(); paintFew(); paintTotal(); saveScDraft(); };
       // 0.11.101: nobody corrected a count in 58 readings — the number is a line to read, and opens on a tap
       const cnt = el('button', 'fb-btn fb-trap-cnt'); cnt.type = 'button';
-      const paintCnt = () => { cnt.textContent = `${S.total} insect${S.total === 1 ? '' : 's'} ✎`; cnt.title = 'Tap to correct the count'; };
+      const paintCnt = () => { nbLabel(cnt, `${S.total} insect${S.total === 1 ? '' : 's'} {i:pencil}`); cnt.title = 'Tap to correct the count'; };
       const showNum = on => { num.classList.toggle('hidden', !on); cnt.classList.toggle('hidden', on); };
       cnt.onclick = () => { showNum(true); num.focus(); num.select?.(); };
       num.addEventListener('blur', () => { if (S.total != null) { paintCnt(); showNum(false); } });
@@ -10522,13 +10604,13 @@ function sopOpen() {
               p.px_per_mm ? scaleWords(p) : p.scale_state === 'busy' ? 'looking for the scale card…'
                 : p.scale_state === 'offline' ? 'no scale card read — the card reader needs a connection the first time' : 'no scale card seen'));
             (p.measures || []).forEach((m, i) => {
-              const c = el('button', 'fb-btn' + (m.by === 'auto' ? ' fb-auto' : ''), `${m.by === 'auto' ? '📐 ' : ''}${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
+              const c = el('button', 'fb-btn' + (m.by === 'auto' ? ' fb-auto' : ''), `${m.by === 'auto' ? '{i:square} ' : ''}${(MEASURE_WHAT.find(x => x[0] === m.what) || [0, m.what])[1]} ${m.mm} mm ✕`); c.type = 'button';
               if (m.by === 'auto') c.title = 'Measured by the phone on the outline; ✕ removes it';
               c.onclick = () => { p.measures.splice(i, 1); paintMs(); saveScDraft(); };
               ms.append(c);
             });
             if (p.full instanceof Blob) {
-              const go = el('button', 'fb-btn', p.px_per_mm ? '📏 Measure' : '📏 Measure on a ruler or tape'); go.type = 'button';
+              const go = el('button', 'fb-btn', p.px_per_mm ? '{i:ruler} Measure' : '{i:ruler} Measure on a ruler or tape'); go.type = 'button';
               go.title = p.px_per_mm ? 'Tap the two ends of what you measure' : 'No scale card: tap two marks on the ruler or tape, say how far apart they are, then measure';
               go.onclick = () => measurePhoto(p, paintMs);
               ms.append(go);
@@ -10539,12 +10621,12 @@ function sopOpen() {
               est.onclick = () => aiBtn.click();
               ms.append(est);
             }
-            if (p.auto_state === 'busy') ms.append(el('span', 'fb-chip', '📐 measuring…'));
+            if (p.auto_state === 'busy') ms.append(el('span', 'fb-chip', '{i:square} measuring…'));
             else if (p.px_per_mm && p.full instanceof Blob && p.auto_state !== 'done') {
               const t = el('button', 'fb-btn fb-btn-primary',
-                p.auto_state === 'none' ? '📐 Nothing outlined — tap it again'
-                : p.auto_state === 'failed' ? '📐 The outline tool needs a connection the first time — try again'
-                : '📐 Measure: two lines'); t.type = 'button';
+                p.auto_state === 'none' ? '{i:square} Nothing outlined — tap it again'
+                : p.auto_state === 'failed' ? '{i:square} The outline tool needs a connection the first time — try again'
+                : '{i:square} Measure: two lines'); t.type = 'button';
               t.onclick = () => sc.sizeCheck(p);
               ms.append(t);
             }
@@ -10584,8 +10666,8 @@ function sopOpen() {
     const lists = {};
     const addBar = (section, label) => {
       const bar = el('div', 'fb-actions fb-sc-add');
-      const cam = el('button', 'btn btn-primary', '📷 ' + label); cam.type = 'button';
-      const gal = el('button', 'fb-btn', '🖼'); gal.type = 'button'; gal.title = 'From the gallery'; gal.setAttribute('aria-label', 'Photo from the gallery');
+      const cam = el('button', 'btn btn-primary', '{i:camera} ' + label); cam.type = 'button';
+      const gal = el('button', 'fb-btn', '{i:image}'); gal.type = 'button'; gal.title = 'From the gallery'; gal.setAttribute('aria-label', 'Photo from the gallery');
       cam.onclick = () => shoot(section);
       gal.onclick = () => shoot(section, null, true);
       bar.append(cam, gal);
@@ -10620,7 +10702,7 @@ function sopOpen() {
       return p.auto_state;
     };
     // ── "Is this the fruit?" (0.11.79, owner: "a special fruit detection with a visible contour"): the contour, the length
-    // and the width, large; Yes confirms the sizes; Tap the fruit measures what is tapped; Measure by hand opens 📏 ──
+    // and the width, large; Yes confirms the sizes; Tap the fruit measures what is tapped; Measure by hand opens the ruler ──
     let sizeSheetOpen = false;
     async function sizeCheck(p) {
       while (document.querySelector('.fb-cam, .fb-viewer, .fb-measure, .fb-sheet')) await new Promise(r => setTimeout(r, 500));
@@ -10638,7 +10720,7 @@ function sopOpen() {
       const bigger = el('button', 'fb-btn', '⊕ Bigger'); bigger.type = 'button';
       const smaller = el('button', 'fb-btn', '⊖ Smaller'); smaller.type = 'button';
       const again = el('button', 'fb-btn', 'Start again'); again.type = 'button';
-      const hand = el('button', 'fb-btn', '📏 Measure by hand'); hand.type = 'button';
+      const hand = el('button', 'fb-btn', '{i:ruler} Measure by hand'); hand.type = 'button';
       const later = el('button', 'fb-link', 'Not now'); later.type = 'button';
       const measured = () => p.auto_state === 'done' && !!p.auto_view;
       let picking = !measured(), busy = false, note = '';
@@ -10737,8 +10819,8 @@ function sopOpen() {
       const m = el('div', 'fb-tl-menu');
       const st = sc.status.get(t.id);
       const row = el('div', 'fb-actions');
-      const cam = el('button', 'fb-btn', '📷 Photograph'); cam.type = 'button'; cam.onclick = () => { sc.menu = null; shoot('trap', t); };
-      const gal = el('button', 'fb-btn', '🖼'); gal.type = 'button'; gal.setAttribute('aria-label', 'From the gallery'); gal.onclick = () => { sc.menu = null; shoot('trap', t, true); };
+      const cam = el('button', 'fb-btn', '{i:camera} Photograph'); cam.type = 'button'; cam.onclick = () => { sc.menu = null; shoot('trap', t); };
+      const gal = el('button', 'fb-btn', '{i:image}'); gal.type = 'button'; gal.setAttribute('aria-label', 'From the gallery'); gal.onclick = () => { sc.menu = null; shoot('trap', t, true); };
       const down = el('button', 'fb-btn', 'Taken down'); down.type = 'button'; down.title = 'Replaced or removed: this card leaves the list';
       down.setAttribute('aria-pressed', String(st?.status === 'taken_down'));
       down.onclick = () => { st?.status === 'taken_down' ? sc.status.delete(t.id) : sc.status.set(t.id, { status: 'taken_down' }); paintTabs(); paintCoverage(); saveScDraft(); };
@@ -10767,13 +10849,13 @@ function sopOpen() {
         : !p ? 'to do'
         : !p.code_ok ? (p.code ? `is it ${p.code}? tap to confirm` : 'which trap? tap to write it')
         : miss ? `${miss[1].toLowerCase()} left` : shortLevel(p);
-      r.append(dot, el('b', 'fb-tl-code', code), el('span', 'fb-tl-text', text), el('span', 'fb-tl-act', !p ? '📷' : sc.open.has(p.ref) ? '▴' : '▾'));
+      r.append(dot, el('b', 'fb-tl-code', code), el('span', 'fb-tl-text', text), el('span', 'fb-tl-act', !p ? '{i:camera}' : sc.open.has(p.ref) ? '▴' : '▾'));
       r.setAttribute('aria-label', `Trap ${code}: ${text}`);
       line.append(r);
       if (p) {
         if (!p.code_ok) sc.open.add(p.ref);
         r.onclick = () => { sc.open.has(p.ref) ? sc.open.delete(p.ref) : sc.open.add(p.ref); paintCoverage(); };
-        if (miss && p.code_ok) { const go = el('button', 'fb-tl-more', '📷'); go.type = 'button'; go.setAttribute('aria-label', `Photograph the ${miss[1].toLowerCase()} of trap ${code}`);
+        if (miss && p.code_ok) { const go = el('button', 'fb-tl-more', '{i:camera}'); go.type = 'button'; go.setAttribute('aria-label', `Photograph the ${miss[1].toLowerCase()} of trap ${code}`);
           go.onclick = () => addSide(p, miss[0], cardOf(p)); line.append(go); }
         wrap.append(line);
         if (sc.open.has(p.ref)) wrap.append(cardOf(p));
@@ -10812,9 +10894,9 @@ function sopOpen() {
     const missedLine = k => sc.missed[k] ? el('div', 'fb-hold fb-sc-missed', `Not done ${/^(Yesterday|Today|Tomorrow)$/.test(fmtDay(sc.missed[k])) ? fmtDay(sc.missed[k]).toLowerCase() : 'on ' + fmtDay(sc.missed[k])} — due today.`) : '';
     lists.trap = el('div', 'fb-tl');
     const scan = el('div', 'fb-actions fb-sc-add');
-    const scanBtn = el('button', 'btn btn-primary', traps.length ? '📷 Scan a trap not in the list' : '📷 Scan a trap'); scanBtn.type = 'button';
+    const scanBtn = el('button', 'btn btn-primary', traps.length ? '{i:camera} Scan a trap not in the list' : '{i:camera} Scan a trap'); scanBtn.type = 'button';
     scanBtn.title = 'The phone reads the position written on the card';
-    const scanGal = el('button', 'fb-btn', '🖼'); scanGal.type = 'button'; scanGal.title = 'From the gallery'; scanGal.setAttribute('aria-label', 'Trap photo from the gallery');
+    const scanGal = el('button', 'fb-btn', '{i:image}'); scanGal.type = 'button'; scanGal.title = 'From the gallery'; scanGal.setAttribute('aria-label', 'Trap photo from the gallery');
     scanBtn.onclick = () => shoot('trap'); scanGal.onclick = () => shoot('trap', null, true);
     scan.append(scanBtn, scanGal);
     // no trap photo today (0.11.77, owner 30 Sept 2026): the section counts as done, the report says so, nothing is counted
@@ -10852,7 +10934,7 @@ function sopOpen() {
                         addBar('health', 'Add a photo'), lists.health, verdictBlock('health', 'Health'));
     // Growth
     lists.growth = el('div');
-    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'A photo of a fruit or leaf with the scale card beside it, or a ruler or tape along it: the size comes by itself (or 📏). Tap a photo to zoom.'),
+    panes.growth.append(missedLine('growth'), el('div', 'config-hint', 'A photo of a fruit or leaf with the scale card beside it, or a ruler or tape along it: the size comes by itself (or {i:ruler}). Tap a photo to zoom.'),
                         addBar('growth', 'Add a photo'), lists.growth, verdictBlock('growth', 'Growth'));
     // 0.11.63: no box for the greenhouse as a whole — each section says OK or not OK, and the result follows
     sc.shoot = shoot;
@@ -10877,14 +10959,14 @@ function sopOpen() {
       ['Writing the position.', 'Always the same spot: on the blue side, in the plain band at the top, above the three holes and at least 1 cm from the edge, clear of the holes and the hanging wire. Black marker, capitals about 1 cm high, on one line, a little apart (1B6, no dashes). Photograph the blue side first. A trap of the list is never read: tap it in the list. If a new card is not read, the AI reads it or you type it.'],
       ['Traps.', 'Photograph one side of the card square-on with its position written on it (1B6 = zone 1, row B, 6 m). The phone reads the position: confirm it or correct it, and the camera opens for the other side. Each side is counted; the insects are sized on the 23 mm grid printed on the card; correct the numbers if needed. A new position is a new trap, added by itself. After changing a card press Replaced (a hard drop in the count is noticed too). The colour is new insects a day, both sides together: green, orange, red.'],
       ['One zone a task.', 'Each zone has its own scouting task (Zone 1, 2, 3, 4.1, 4.2): its traps only, its photos, its OK. In Zone 4 write the table in a card code: 4.1B6, 4.2B6.'],
-      ['Health.', 'Anything that looks wrong: the zone comes from the task; write the row and metres if you want (B6), choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself (📐, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with 📏 measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
-      ['Growth.', 'Fruit or leaves with the scale card beside them (the black 5 cm square, flat, the same distance from the phone, the whole square in the photo): the phone finds it and outlines it in green; 📏 Measure, then tap the two ends — the size is read in the card\u2019s plane, so a tilted card still measures right. The size the phone takes by itself is a suggestion. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
+      ['Health.', 'Anything that looks wrong: the zone comes from the task; write the row and metres if you want (B6), choose the part, add a note. With the scale card in the photo the phone says Scale detected and measures the fruit or leaf by itself ({i:square}, the object framed in the middle); tap the photo, then Re-measure and tap the right object if it took another; two taps with {i:ruler} measure by hand; Estimate the size asks the AI. Tap any photo to zoom.'],
+      ['Growth.', 'Fruit or leaves with the scale card beside them (the black 5 cm square, flat, the same distance from the phone, the whole square in the photo): the phone finds it and outlines it in green; {i:ruler} Measure, then tap the two ends — the size is read in the card\u2019s plane, so a tilted card still measures right. The size the phone takes by itself is a suggestion. No card? A ruler or tape along the fruit works too: tap two marks on it, say the centimetres between them, then measure.'],
       ['AI note.', 'Only when you press it, one photo at a time; it needs signal. One exception: when the phone cannot read the position on a new card, the AI reads it by itself — you still confirm it.'],
       ['Each tab ends the same way.', 'At the bottom of Traps, Health and Growth: a green line says the section is OK. Something wrong? Tap it — it turns red — and say what in the note under it; the manager is told.'],
       ['Review.', 'The Review tab shows everything captured — every photo with its counts, sizes, position, AI note and comment, and each section’s result. Tap a photo to zoom, a line to go back to it.'],
       ['Finish.', 'The result follows by itself: every section OK = OK; a section left red is asked about once and sent as not OK with its note. The phone says what is still missing: a section under its minimum is asked about once, and on a trap day it asks about the traps not photographed. A trap taken down or out of reach can be marked in its row with the dots.'],
       ['No signal?', 'Everything is kept on the phone and sent later; the full photos follow over the connection chosen in Settings.'],
-    ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), document.createTextNode(t)); list.append(li); });
+    ].forEach(([b, t]) => { const li = el('li'); li.append(el('b', null, b + ' '), nbFrag(t)); list.append(li); });
     d.append(list);
     return d;
   }
@@ -11507,7 +11589,7 @@ function sopOpen() {
     const bar = el('div', 'fb-viewer-bar');
     const fitB = el('button', 'fb-btn', 'Fit'); fitB.type = 'button';
     const close = el('button', 'fb-btn fb-btn-primary', 'Close'); close.type = 'button';
-    if (measure) { const m = el('button', 'fb-btn', '📏 Measure'); m.type = 'button'; m.onclick = () => { done(); measure(); }; bar.append(m); }
+    if (measure) { const m = el('button', 'fb-btn', '{i:ruler} Measure'); m.type = 'button'; m.onclick = () => { done(); measure(); }; bar.append(m); }
     // the phone's outline over the photo, and "tap the fruit" to measure another object (0.11.53)
     let picking = false;
     if (outline) {
@@ -11516,7 +11598,7 @@ function sopOpen() {
       bar.append(o);
     }
     if (pick) {
-      const rm = el('button', 'fb-btn', '📐 Re-measure'); rm.type = 'button';
+      const rm = el('button', 'fb-btn', '{i:square} Re-measure'); rm.type = 'button';
       rm.onclick = () => { picking = true; rm.setAttribute('aria-pressed', 'true'); head.lastChild.textContent = 'Tap the fruit or leaf to measure'; };
       bar.append(rm);
     }
@@ -12091,8 +12173,8 @@ function sopOpen() {
     const shot = el('div', 'fb-shot');
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*';
     pick.capture = 'environment'; pick.style.display = 'none';
-    const btn = el('button', 'fb-btn', '📷 Photo of the trap');
-    const gal = el('button', 'fb-btn', '🖼');
+    const btn = el('button', 'fb-btn', '{i:camera} Photo of the trap');
+    const gal = el('button', 'fb-btn', '{i:image}');
     gal.title = 'From the gallery or the camera app'; gal.setAttribute('aria-label', 'Photo from the gallery');
     gal.onclick = () => pick.click();
     const img = el('img'); img.alt = ''; img.style.display = 'none';
@@ -12412,7 +12494,7 @@ function sopOpen() {
       const bar = el('div', 'fb-cam-bar');
       const cancel = el('button', 'fb-btn', 'Cancel');
       const shutter = el('button', 'fb-cam-shutter'); shutter.setAttribute('aria-label', 'Take the photo');
-      const native = el('button', 'fb-btn', '📷 Phone camera');
+      const native = el('button', 'fb-btn', '{i:camera} Phone camera');
       native.title = "Use the phone's own camera app — its macro and its sharpening";
       bar.append(cancel, shutter, native);
       ov.append(video, hint, ring, ctl, bar);
@@ -13042,7 +13124,7 @@ function sopOpen() {
     if (/photo|video/.test(s.evidence || '')) {
       const shot = el('div', 'fb-shot');
       const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.style.display = 'none';   // the gallery, when the camera is not there
-      const btn = el('button', 'fb-btn', '📷 Photo');
+      const btn = el('button', 'fb-btn', '{i:camera} Photo');
       const addStepPhoto = async f => {
         try {
           const big = await shrinkPhoto(f, FULL_PX, null);
@@ -13225,7 +13307,7 @@ function sopOpen() {
     for (const x of expected) {
       const a = run.answers.get(x.key);
       const blobs = (run.media.get(x.key) || []).filter(f => f instanceof Blob);   // the trap cards carry their own photos
-      // an edited run keeps the photos already on the server (✎ Edit what was sent)
+      // an edited run keeps the photos already on the server (Edit what was sent)
       const saved = (run.media.get(x.key) || []).filter(f => f && f.saved)
         .map(f => typeof f.saved === 'string' ? { path: f.saved, kind: 'photo' } : f.saved);
       steps.push({ ...a, media: saved, ...(blobs.length ? { media_blobs: blobs } : {}), recorded_at: new Date().toISOString() });
@@ -13308,7 +13390,7 @@ function sopOpen() {
     if (!navigator.onLine) { showToast('Sending needs a connection', 'error'); return; }
     const openRun = document.getElementById('fb-run');
     if (openRun && !openRun.classList.contains('hidden')) { showToast('Finish this task or go back first, then Send', 'error'); return; }
-    btn.disabled = true; btn.textContent = '⇪ Sending…';
+    btn.disabled = true; nbLabel(btn, '{i:upload} Sending…');
     const lines = [];
     const say = (text, bad) => lines.push([text, !!bad]);
     try {
@@ -13449,7 +13531,7 @@ function sopOpen() {
       if (!lines.length) say('Nothing was waiting on this phone: everything had already been sent.');
       sync(false, true).catch(() => {});
     } catch (e) { say('Send stopped: ' + String(e.message || e).slice(0, 140), true); }
-    btn.disabled = false; btn.textContent = '⇪ Send';
+    btn.disabled = false; nbLabel(btn, '{i:upload} Send');
     paintFoot();
     const sheet = el('div', 'fb-sheet');
     const box = el('div', 'fb-sheet-card');

@@ -26,6 +26,8 @@
   .hero h1 span { color: #7fe8ec; }
   .hero p { font-size: 1.05rem; opacity: 0.85; max-width: 520px; margin: 0 auto 24px; }
   .hero-badges { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .ic { width: 1.15em; height: 1.15em; vertical-align: -0.2em; display: inline-block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .mock-logo, .mock-mic { color: #fff; }
   .badge { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 99px; padding: 4px 14px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.03em; }
 
   /* LAYOUT */
@@ -138,7 +140,7 @@
     <span class="badge">PWA — works offline</span>
     <span class="badge">5 Notion databases</span>
     <span class="badge">AI powered</span>
-    <span class="badge">🔐 Password protected</span>
+    <span class="badge"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Password protected</span>
   </div>
 </div>
 
@@ -152,12 +154,12 @@
         Naked Brain is a Progressive Web App (PWA) that lets any team member record a voice note in the field, auto-transcribe it with AI, generate a summary, attach photos or videos, and send everything directly to the right Notion database — no typing required.
       </p>
       <div class="features">
-        <div class="feature"><div class="feature-icon">🎙️</div><h3>Voice Recording</h3><p>One tap to record. Auto-transcribed via Groq Whisper.</p></div>
-        <div class="feature"><div class="feature-icon">🤖</div><h3>AI Summary</h3><p>Groq LLaMA generates the minimum bullet points needed to capture the key information.</p></div>
-        <div class="feature"><div class="feature-icon">📸</div><h3>Photo & Video</h3><p>Attach field photos and videos. Videos are auto-transcribed and compressed on upload.</p></div>
-        <div class="feature"><div class="feature-icon">🎬</div><h3>Video Summary</h3><p>Upload a local video or paste a YouTube transcript — AI summarises it instantly.</p></div>
-        <div class="feature"><div class="feature-icon">📲</div><h3>Works Offline</h3><p>Installs on your phone. Works without internet (submit when back online).</p></div>
-        <div class="feature"><div class="feature-icon">🔐</div><h3>Password Protected</h3><p>Team password required on first launch. Only authorised users can send to Notion.</p></div>
+        <div class="feature"><div class="feature-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></div><h3>Voice Recording</h3><p>One tap to record. Auto-transcribed via Groq Whisper.</p></div>
+        <div class="feature"><div class="feature-icon">✦</div><h3>AI Summary</h3><p>Groq LLaMA generates the minimum bullet points needed to capture the key information.</p></div>
+        <div class="feature"><div class="feature-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3.5"/></svg></div><h3>Photo & Video</h3><p>Attach field photos and videos. Videos are auto-transcribed and compressed on upload.</p></div>
+        <div class="feature"><div class="feature-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg></div><h3>Video Summary</h3><p>Upload a local video or paste a YouTube transcript — AI summarises it instantly.</p></div>
+        <div class="feature"><div class="feature-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></div><h3>Works Offline</h3><p>Installs on your phone. Works without internet (submit when back online).</p></div>
+        <div class="feature"><div class="feature-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div><h3>Password Protected</h3><p>Team password required on first launch. Only authorised users can send to Notion.</p></div>
       </div>
     </div>
   </div>
@@ -169,19 +171,19 @@
       <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Open <a href="https://kissanga.github.io/Ugly200/" style="color:var(--primary);font-weight:700;text-decoration:underline">https://kissanga.github.io/Ugly200/</a> in your browser and install it as an app:</p>
       <div class="install-steps">
         <div class="install-step">
-          <div class="os">📱 iPhone / iPad (Safari)</div>
+          <div class="os"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg> iPhone / iPad (Safari)</div>
           <p>Tap the <strong>Share</strong> button (box with arrow) → <strong>Add to Home Screen</strong> → <strong>Add</strong></p>
         </div>
         <div class="install-step">
-          <div class="os">🤖 Android (Chrome)</div>
+          <div class="os"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg> Android (Chrome)</div>
           <p>Tap the <strong>⋮ menu</strong> → <strong>Add to Home Screen</strong> → <strong>Install</strong></p>
         </div>
         <div class="install-step">
-          <div class="os">💻 Desktop (Chrome / Edge)</div>
+          <div class="os"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Desktop (Chrome / Edge)</div>
           <p>Click the <strong>install icon</strong> (⊕) in the address bar → <strong>Install</strong></p>
         </div>
         <div class="install-step">
-          <div class="os">🔐 First launch</div>
+          <div class="os"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> First launch</div>
           <p>Enter the <strong>team password</strong> when prompted. It is saved — you won't need to enter it again unless it changes.</p>
         </div>
       </div>
@@ -195,7 +197,7 @@
       <div class="card">
         <div class="pw-mock">
           <div class="pw-mock-card">
-            <div class="pw-mock-icon">🔐</div>
+            <div class="pw-mock-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
             <div class="pw-mock-title">Naked Brain</div>
             <div class="pw-mock-sub">Enter your team password to continue</div>
             <div class="pw-mock-input">••••••••••••</div>
@@ -212,7 +214,7 @@
           <li>If the password changes, the gate reappears automatically</li>
           <li>The password is never visible in the app source code — it lives only in Cloudflare</li>
         </ul>
-        <div class="tip"><strong>🔑 Ask your admin</strong> for the team password if you don't have it.</div>
+        <div class="tip"><strong><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Ask your admin</strong> for the team password if you don't have it.</div>
       </div>
     </div>
   </div>
@@ -225,7 +227,7 @@
       <div class="card">
         <div class="mock">
           <div class="mock-header">
-            <div class="mock-logo">🎙️</div>
+            <div class="mock-logo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></div>
             <div>
               <div class="mock-title">Naked <span>Brain</span></div>
             </div>
@@ -242,7 +244,7 @@
             <div class="mock-label">Title</div>
             <div class="mock-input">Give this note a title…</div>
           </div>
-          <div class="mock-btn-wrap"><div class="mock-mic">🎙️</div></div>
+          <div class="mock-btn-wrap"><div class="mock-mic"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></div></div>
           <div class="mock-status">Tap to record voice note</div>
         </div>
         <p class="screenshot-caption" style="margin-top:12px">Header with Author button, 5 tabs, Title field and mic button</p>
@@ -267,7 +269,7 @@
               <div class="mock-chip" style="border-style:dashed;color:#4e6a36;border-color:#4e6a36">+ Add</div>
             </div>
           </div>
-          <div class="mock-send">✈ Send to Ugly200</div>
+          <div class="mock-send"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></svg> Send to Ugly200</div>
         </div>
         <p class="screenshot-caption" style="margin-top:12px">AI Summary always in bullet points · Generate + Copy · Tags with + Add</p>
       </div>
@@ -343,7 +345,7 @@
           </div>
         </div>
       </div>
-      <div class="tip"><strong>💡 Tip:</strong> You can also type or paste text manually in any box — you don't have to record audio. All fields are fully editable before sending.</div>
+      <div class="tip"><strong><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5A5.6 5.6 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></svg> Tip:</strong> You can also type or paste text manually in any box — you don't have to record audio. All fields are fully editable before sending.</div>
     </div>
   </div>
 
@@ -353,42 +355,42 @@
     <div class="card">
       <div class="tab-pills">
         <div class="tab-pill">
-          <div class="tab-pill-icon">💩</div>
+          <div class="tab-pill-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-9"/><path d="M12 12C12 8 9 5 4 5c0 4 3 7 8 7Z"/><path d="M12 10c0-3.5 2.5-6 7-6 0 3.5-2.5 6-7 6Z"/></svg></div>
           <div class="tab-pill-body">
             <div class="tab-pill-name">Ugly200</div>
             <div class="tab-pill-desc">General field notes — Tags, Status, Location</div>
           </div>
         </div>
         <div class="tab-pill">
-          <div class="tab-pill-icon">📋</div>
+          <div class="tab-pill-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V4"/><path d="m9 13 2 2 4-4"/></svg></div>
           <div class="tab-pill-body">
             <div class="tab-pill-name">SoP</div>
             <div class="tab-pill-desc">Standard Operating Procedures — Category, Status</div>
           </div>
         </div>
         <div class="tab-pill">
-          <div class="tab-pill-icon">💡</div>
+          <div class="tab-pill-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5A5.6 5.6 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></svg></div>
           <div class="tab-pill-body">
             <div class="tab-pill-name">Ideas</div>
             <div class="tab-pill-desc">Ideas — Category, Status, Priority, Effort</div>
           </div>
         </div>
         <div class="tab-pill">
-          <div class="tab-pill-icon">📅</div>
+          <div class="tab-pill-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M7.5 14h.01M12 14h.01M16.5 14h.01M7.5 17.5h.01M12 17.5h.01"/></svg></div>
           <div class="tab-pill-body">
             <div class="tab-pill-name">Daily</div>
             <div class="tab-pill-desc">Daily standup — Decisions needed, Today (Done), Today's priority, FarmLab Update, Key milestone</div>
           </div>
         </div>
         <div class="tab-pill">
-          <div class="tab-pill-icon">🏗️</div>
+          <div class="tab-pill-icon"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg></div>
           <div class="tab-pill-body">
             <div class="tab-pill-name">FB1Log</div>
             <div class="tab-pill-desc">Greenhouse build log — Phase selector</div>
           </div>
         </div>
       </div>
-      <div class="tip" style="margin-top:16px"><strong>📅 Daily tab note:</strong> The Title and Note fields are hidden on the Daily tab — they are not needed. The Notion entry is titled automatically with your <strong>Author name</strong>. Each Daily entry also records the date automatically.</div>
+      <div class="tip" style="margin-top:16px"><strong><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="M7.5 14h.01M12 14h.01M16.5 14h.01M7.5 17.5h.01M12 17.5h.01"/></svg> Daily tab note:</strong> The Title and Note fields are hidden on the Daily tab — they are not needed. The Notion entry is titled automatically with your <strong>Author name</strong>. Each Daily entry also records the date automatically.</div>
     </div>
   </div>
 
@@ -420,7 +422,7 @@
           </div>
         </div>
       </div>
-      <div class="tip"><strong>💡 Tip:</strong> If the Video transcript box is empty, Generate uses the voice transcript automatically.</div>
+      <div class="tip"><strong><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5A5.6 5.6 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/></svg> Tip:</strong> If the Video transcript box is empty, Generate uses the voice transcript automatically.</div>
     </div>
   </div>
 
@@ -428,9 +430,9 @@
   <div class="section">
     <div class="section-title">Configuration (Admin only)</div>
     <div class="card">
-      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Tap the <strong>⚙️ gear</strong> at the top right to open <strong>Settings</strong>. Light / Dark / Auto mode is open to everyone; the <strong>Configuration</strong> section needs a PIN:</p>
+      <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Tap the <strong><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> gear</strong> at the top right to open <strong>Settings</strong>. Light / Dark / Auto mode is open to everyone; the <strong>Configuration</strong> section needs a PIN:</p>
       <div class="pin-box">
-        <p>🔒 Enter PIN to access Configuration</p>
+        <p><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Enter PIN to access Configuration</p>
         <div class="pin-input">
           <div class="pin-dot"></div>
           <div class="pin-dot"></div>
@@ -439,7 +441,7 @@
         </div>
         <p style="margin-top:10px;font-size:0.75rem;color:#4e6a36;font-weight:700">PIN: 1 2 3 4</p>
       </div>
-      <div class="tip" style="margin-top:16px"><strong>⚠️ Note:</strong> The app comes pre-configured with all 5 Notion database IDs. API keys and tokens are secured in the Cloudflare backend — they are never stored in the app or visible to users. Regular team members do not need to access the configuration.</div>
+      <div class="tip" style="margin-top:16px"><strong><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg> Note:</strong> The app comes pre-configured with all 5 Notion database IDs. API keys and tokens are secured in the Cloudflare backend — they are never stored in the app or visible to users. Regular team members do not need to access the configuration.</div>
     </div>
   </div>
 
@@ -449,7 +451,7 @@
     <div class="card">
       <p style="font-size:0.88rem;color:var(--muted);margin-bottom:16px">Naked Brain checks for updates automatically every 5 minutes. When a new version is deployed you'll see a notification at the bottom of the screen:</p>
       <div style="background:#1c1b19;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:12px">
-        <span style="font-size:1.3rem">✨</span>
+        <span style="font-size:1.3rem"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg></span>
         <div style="flex:1">
           <div style="font-weight:700;color:#fff;font-size:0.88rem">v 1.02 available</div>
           <div style="font-size:0.75rem;color:#888">A new version of Naked Brain is ready</div>
@@ -465,7 +467,7 @@
 
 <footer>
   <strong>Naked Brain</strong> · v 1.02 · Built for the FarmBox team<br>
-  <span style="margin-top:4px;display:block">🔗 <a href="https://kissanga.github.io/Ugly200/" style="color:var(--primary)">kissanga.github.io/Ugly200</a></span>
+  <span style="margin-top:4px;display:block"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg> <a href="https://kissanga.github.io/Ugly200/" style="color:var(--primary)">kissanga.github.io/Ugly200</a></span>
 </footer>
 
 </body>
