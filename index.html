@@ -1149,7 +1149,7 @@
   }
 
   // ─── VERSION CHECK ────────────────────────────────────────
-  const CURRENT_VERSION = '0.11.99';
+  const CURRENT_VERSION = '0.11.100';
   let updateAvailable = false;
 
   let lastSaid = null, notYetAt = 0;
@@ -1313,6 +1313,7 @@
   // Same idea as the console's Settings › Version log (release_note): one line per
   // release, what it changed, in plain words. Add the new release on top with each bump.
   const VERSION_LOG = [
+    ['0.11.100', '2026-10-04', 'Extra scouting photos show in their zone', 'A plant photo taken in an Extra scouting now carries its zone. Until now it was filed with no zone, so the report in Naked Heart did not show it; the photos of 4 October were put back in their zones by hand.'],
     ['0.11.99', '2026-10-04', 'Scouting on an iPhone; sizes by hand', 'Sizes are measured by hand, at once: drag the blue ends onto the two ends of the fruit, leaf or head and the pink ends onto its edges, read the millimetres live, Save. No download and no waiting; Outline it for me stays as a button on phones that can run it. On an iPhone the photos are taken with the phone\'s own camera (full quality, autofocus, close-up) and are a little smaller, so the app is not closed by the phone; Settings has a Camera choice. Each full photo goes up as soon as it is taken instead of waiting for Finish.'],
     ['0.11.98', '2026-10-04', 'Sizes: two straight lines, tapped to keep', 'The scouting tab Plant health is called Health. A measured fruit, leaf or head now gets two straight lines whatever its shape: blue, the longest from edge to edge, and pink, the longest at a right angle to it. Neither is kept by itself: tap Longest, Across or both, then Save. A size nobody tapped is not sent with the report.'],
     ['0.11.97', '2026-10-04', 'Extra scouting: both units, and finished zones', 'With two units, Extra scouting opens one list with the zones of both, each under its unit — no question about which unit. A zone scouting that somebody else already finished today opens as an extra of that zone: your photos are added to the day\'s report, the finished report stays theirs to correct.'],
@@ -11894,7 +11895,10 @@ function sopOpen() {
         notes: p.note || null, read_at: S.taken_at || p.taken_at, code_read: p.code_read || null,
         code_source: p.code_source || null, code_confirmed: !!p.code_ok, gps: null, ai: S.ai || null }))),
       observations: plants.map(p => ({ client_ref: p.ref, section: p.section, part: p.part || 'other', crop_id: p.crop_id || null,
-        zone_id: p.zone_id || null, item_id: p.item_id || null, note: p.note || null, photo_data: p.thumb || null, photo_path: p.photo_path || null, taken_at: p.taken_at,
+        // an extra's photo names its zone line (0.11.100): without it the server filed the photo with no zone, and the
+        // report, which reads by zone, never showed it (20 photos on 4 Oct)
+        zone_id: p.zone_id || (X ? R.task.zone_id || null : null), item_id: p.item_id || (X ? R.task.positions?.[0]?.id || null : null),
+        note: p.note || null, photo_data: p.thumb || null, photo_path: p.photo_path || null, taken_at: p.taken_at,
         pos_code: posOf(p.pos_code), gps: null, measures: (p.measures || []).filter(m => m.by !== 'auto' || m.confirmed), px_per_mm: p.px_per_mm ?? null, ai: p.ai || null })),
     };
     const uploads = [
@@ -13315,7 +13319,7 @@ function sopOpen() {
                 notes: q.note || null, read_at: S.taken_at || q.taken_at, code_read: q.code_read || null,
                 code_source: q.code_source || null, code_confirmed: !!q.code_ok, gps: null, ai: S.ai || null })) } : {}),
               observations: go.map(q => ({ client_ref: q.ref, section: q.section, part: q.part || 'other', crop_id: q.crop_id || null,
-                zone_id: q.zone_id || t.zone_id || null, item_id: q.item_id || null, note: q.note || null, photo_data: q.thumb || null, photo_path: q.photo_path || null, taken_at: q.taken_at,
+                zone_id: q.zone_id || t.zone_id || (g?.extraZone ? g.zone_id || null : null), item_id: q.item_id || (g?.extraZone ? g.positions?.[0]?.id || null : null), note: q.note || null, photo_data: q.thumb || null, photo_path: q.photo_path || null, taken_at: q.taken_at,
                 pos_code: parsePos(String(q.pos_code || '').toUpperCase().replace(/\s/g, '')) ? String(q.pos_code).toUpperCase().replace(/\s/g, '') : null,
                 gps: null, measures: (q.measures || []).filter(m => m.by !== 'auto' || m.confirmed), px_per_mm: q.px_per_mm ?? null, ai: q.ai || null })),
             };
