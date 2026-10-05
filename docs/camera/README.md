@@ -39,7 +39,7 @@ the login then works inside the dashboard on every browser, Safari included.
    (`cloudflared.exe service install <token>`). The tunnel then runs as a Windows service.
 3. **Public hostname**: subdomain `cam`, your domain, **Path** (only these go through, everything else is refused):
    ```
-   ^/(stream\.html|video-stream\.js|video-rtc\.js|api/ws|api/stream\.m3u8|api/hls/.*)$
+   ^/?(stream\.html|video-stream\.js|video-rtc\.js|api/ws|api/stream\.m3u8|api/hls/.*)$
    ```
    Service: `HTTP` `localhost:1984`.
 
