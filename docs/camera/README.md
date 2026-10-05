@@ -65,3 +65,13 @@ page. It shows the live view; the dashboard never holds the camera password.
 - iPhone needs iOS 17.1 or later for the MSE player; older ones fall back to HLS (a few seconds of delay).
 - Change the camera password: run `install-camera.ps1` again.
 - Remove: `Unregister-ScheduledTask 'NakedCam go2rtc'`, delete `C:\NakedCam`, `cloudflared.exe service uninstall`.
+
+## Uninstall (PowerShell as Administrator)
+
+```powershell
+cd C:\
+Unregister-ScheduledTask -TaskName 'NakedCam go2rtc' -Confirm:$false -ErrorAction SilentlyContinue
+Get-Process go2rtc -ErrorAction SilentlyContinue | Stop-Process -Force
+Remove-Item 'C:\NakedCam' -Recurse -Force
+powercfg /change standby-timeout-ac 30
+```

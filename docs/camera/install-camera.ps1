@@ -35,7 +35,8 @@ $cfgPath = Join-Path $Dir 'go2rtc.yaml'
   Replace('CAMERA_PASS', [Uri]::EscapeDataString($plain)).
   Replace('CAMERA_IP', $CameraIp) | Set-Content -Encoding ASCII $cfgPath
 $plain = $null
-icacls $cfgPath /inheritance:r /grant:r 'SYSTEM:F' 'Administrators:F' | Out-Null
+# SIDs, not names: group names change with the Windows language (Administrateurs, Administratoren ...)
+icacls $cfgPath /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
 
 Write-Host "4/6 Starting go2rtc at every boot, restarting it if it stops ..."
 $action = New-ScheduledTaskAction -Execute (Join-Path $Dir 'go2rtc.exe') -Argument "-config `"$cfgPath`"" -WorkingDirectory $Dir
