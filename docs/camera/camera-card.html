@@ -6,10 +6,15 @@
     <iframe id="duo3-live" title="Duo 3 live" allow="autoplay; fullscreen" loading="lazy"
             style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>
   </div>
+  <!-- Naked Heart on github.io and the camera on another domain: Safari (iPhone/iPad) blocks the camera login inside
+       the card, so this link opens the live view in its own tab, where the login always works. -->
+  <a id="duo3-open" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px">Open live view</a>
 </section>
 <script>
   (function () {
     const CAM = 'https://cam.farmbox.life';   // the tunnel hostname (README step 4)
-    document.getElementById('duo3-live').src = CAM + '/stream.html?src=duo3&mode=mse,hls';
+    const live = CAM + '/stream.html?src=duo3&mode=mse,hls';
+    document.getElementById('duo3-live').src = live;
+    document.getElementById('duo3-open').href = live;
   })();
 </script>
