@@ -18,7 +18,7 @@ Reolink Duo 3 (FarmLab)  --RTSP sub-->  go2rtc + ffmpeg on the farm PC  --Cloudf
 |---|---|---|
 | Camera | Reolink **Duo 3** at **192.168.0.250**, static IP set on the camera (the rain *the101 pro* 5G router has no DHCP reservation), router 192.168.0.1 | RTSP on (554), ONVIF on (8000), HTTPS on, HTTP/RTMP off |
 | Camera streams | Clear `h264Preview_01_main` **H.265 7680x2160** 20 fps 10 Mbps · Fluent `h264Preview_01_sub` **H.264 1536x432** 20 fps 1 Mbps · no `_ext` | Clear kept for AI; Fluent is what goes out |
-| Farm PC | the always-on Windows 11 PC (not the office laptop: the first install went on the wrong PC and was removed) | go2rtc 1.9.14, task `NakedVision go2rtc` (SYSTEM, at boot); `cloudflared` service; sleep off on mains |
+| Farm PC | the always-on Windows 11 PC (not the office laptop: the first install went on the wrong PC and was removed) | `C:\NakedVision` (moved from `C:\NakedCam` on 10 Oct 2026, installer from commit 1fde7c2): go2rtc, ffmpeg (pixel-tag fix active), task `NakedVision go2rtc` (SYSTEM, at boot); `cloudflared` service; sleep off on mains |
 | go2rtc settings | `go2rtc.yaml` here = template; installer fills it | API and RTSP on 127.0.0.1 only; WebRTC off; stream `duo3` |
 | Domain | **nkd.farm** on Cloudflare (bought at GoDaddy, nameservers moved; Netlify website records kept DNS-only) | active |
 | Tunnel | Cloudflare One (Zero Trust) tunnel `naked-cam` | route `cam.nkd.farm` → `http://localhost:1984`, path `^/?(stream\.html|video-stream\.js|video-rtc\.js|api/ws|api/stream\.m3u8|api/hls/.*)$` — everything else 404, so go2rtc's settings pages are never public |
