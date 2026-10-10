@@ -6,7 +6,7 @@
 param([string]$Dir = 'C:\NakedCam')
 $ErrorActionPreference = 'Continue'
 $cfgPath = Join-Path $Dir 'go2rtc.yaml'
-if (-not (Test-Path $cfgPath)) { throw "No $cfgPath: go2rtc is not installed on this PC." }
+if (-not (Test-Path $cfgPath)) { throw "No ${cfgPath}: go2rtc is not installed on this PC." }
 $cfg = Get-Content $cfgPath -Raw
 if ($cfg -notmatch 'rtsp://([^:@/\s]+):([^@\s]+)@([\d.]+):(\d+)/(\w+?)(_main|_sub|_ext)') { throw "No camera address found in $cfgPath" }
 $user, $pass, $ip, $port, $base = $Matches[1], $Matches[2], $Matches[3], $Matches[4], $Matches[5]
