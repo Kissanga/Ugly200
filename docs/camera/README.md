@@ -64,6 +64,8 @@ page. It shows the live view; the dashboard never holds the camera password.
   cannot play; showing it needs ffmpeg on the PC to convert it and much more upload bandwidth.
 - iPhone needs iOS 17.1 or later for the MSE player; older ones fall back to HLS (a few seconds of delay).
 - Change the camera password: run `install-camera.ps1` again.
+- Picture squeezed (the camera's sub stream not in the 32:9 panorama shape): run it again with `-Size 1280x360`; it adds
+  ffmpeg in `C:\NakedCam` and go2rtc reshapes the stream (light work for the PC, only while somebody watches).
 - Remove: `Unregister-ScheduledTask 'NakedCam go2rtc'`, delete `C:\NakedCam`, `cloudflared.exe service uninstall`.
 
 ## Uninstall (PowerShell as Administrator)
