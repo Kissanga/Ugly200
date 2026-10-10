@@ -1,6 +1,6 @@
 # go2rtc for the Reolink Duo 3 - template.
-# install-camera.ps1 fills CAMERA_IP, CAMERA_USER and CAMERA_PASS and writes the result to C:\NakedCam\go2rtc.yaml.
-# The filled copy holds the camera password: it stays on the farm PC and never goes into this repo.
+# install-camera.ps1 fills CAMERA_IP, CAMERA_USER, CAMERA_PASS and FFMPEG_BIN and writes the result to
+# C:\NakedCam\go2rtc.yaml. The filled copy holds the camera password: it stays on the farm PC, never in this repo.
 
 api:
   # Only this PC can open go2rtc directly. The internet reaches it through the Cloudflare Tunnel,
@@ -8,11 +8,18 @@ api:
   listen: "127.0.0.1:1984"
 
 rtsp:
-  listen: ""   # go2rtc does not re-share the camera as RTSP
+  # this PC only: go2rtc's own ffmpeg hands the corrected stream back to go2rtc here. Not on the farm network,
+  # not in the tunnel.
+  listen: "127.0.0.1:8554"
 
 webrtc:
   listen: ""   # the tunnel carries HTTP only; the player uses MSE/HLS through it
 
+ffmpeg:
+  bin: 'FFMPEG_BIN'
+
 streams:
-  # Sub stream: H.264, which every browser plays, and light enough for a phone connection.
-  duo3: rtsp://CAMERA_USER:CAMERA_PASS@CAMERA_IP:554/h264Preview_01_sub
+  # Sub stream (Fluent, 1536x432 H.264): plays in every browser, light enough for 5G. Since a reboot (Oct 2026) the
+  # Duo 3 tags it with 3:8 pixels, which browsers stretch to 4:3 (Chrome: 1536x1152). ffmpeg copies the stream
+  # untouched (no re-encoding, almost no CPU) and only rewrites that tag to square pixels: the 32:9 panorama again.
+  duo3: 'ffmpeg:rtsp://CAMERA_USER:CAMERA_PASS@CAMERA_IP:554/h264Preview_01_sub#video=copy#audio=copy#raw=-bsf:v h264_metadata=sample_aspect_ratio=1/1'

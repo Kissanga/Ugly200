@@ -5,10 +5,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$CameraIp,
   [string]$User = 'admin',
-  [string]$Dir = 'C:\NakedCam',
-  # Reshape the camera's sub stream to this size with ffmpeg (e.g. 1280x360 for the Duo 3's 32:9 panorama), for
-  # when the camera's own sub stream comes out squeezed. Empty: the stream is passed on untouched.
-  [string]$Size = ''
+  [string]$Dir = 'C:\NakedCam'
 )
 $ErrorActionPreference = 'Stop'
 $task = 'NakedCam go2rtc'
@@ -30,18 +27,16 @@ $zip = Join-Path $env:TEMP 'go2rtc_win64.zip'
 Invoke-WebRequest 'https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_win64.zip' -OutFile $zip -UseBasicParsing
 Expand-Archive $zip $Dir -Force
 Remove-Item $zip
-if ($Size) {
-  if ($Size -notmatch '^(\d+)x(\d+)$') { throw "-Size must look like 1280x360" }
-  $ff = Join-Path $Dir 'ffmpeg.exe'
-  if (-not (Test-Path $ff)) {
-    Write-Host "    ... and ffmpeg, to reshape the picture to $Size (about 150 MB, once)"
-    $fz = Join-Path $env:TEMP 'ffmpeg-win64.zip'
-    Invoke-WebRequest 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile $fz -UseBasicParsing
-    $fx = Join-Path $env:TEMP 'ffmpeg-win64'
-    Expand-Archive $fz $fx -Force
-    Copy-Item (Get-ChildItem $fx -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName $ff
-    Remove-Item $fz, $fx -Recurse -Force
-  }
+$ff = Join-Path $Dir 'ffmpeg.exe'
+if (-not (Test-Path $ff)) {
+  # go2rtc's ffmpeg fixes the Duo 3's pixel-shape tag (go2rtc.yaml); copy only, no re-encoding
+  Write-Host "    ... and ffmpeg (about 150 MB, once)"
+  $fz = Join-Path $env:TEMP 'ffmpeg-win64.zip'
+  Invoke-WebRequest 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip' -OutFile $fz -UseBasicParsing
+  $fx = Join-Path $env:TEMP 'ffmpeg-win64'
+  Expand-Archive $fz $fx -Force
+  Copy-Item (Get-ChildItem $fx -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName $ff
+  Remove-Item $fz, $fx -Recurse -Force
 }
 
 Write-Host "3/6 Writing $Dir\go2rtc.yaml (only SYSTEM and Administrators can read it) ..."
@@ -49,13 +44,8 @@ $cfgPath = Join-Path $Dir 'go2rtc.yaml'
 $cfg = (Get-Content (Join-Path $PSScriptRoot 'go2rtc.yaml') -Raw).
   Replace('CAMERA_USER', [Uri]::EscapeDataString($User)).
   Replace('CAMERA_PASS', [Uri]::EscapeDataString($plain)).
-  Replace('CAMERA_IP', $CameraIp)
-if ($Size) {
-  # go2rtc decodes the small sub stream and encodes it again at the panorama's own shape (light work for a PC)
-  $w, $h = $Size -split 'x'
-  $cfg = $cfg -replace '(?m)^(\s*duo3:\s*)(rtsp://\S+)', "`$1'ffmpeg:`$2#video=h264#width=$w#height=$h'"
-  $cfg += "`nffmpeg:`n  bin: '" + ((Join-Path $Dir 'ffmpeg.exe') -replace '\\', '/') + "'`n"
-}
+  Replace('CAMERA_IP', $CameraIp).
+  Replace('FFMPEG_BIN', ($ff -replace '\\', '/'))
 $cfg | Set-Content -Encoding ASCII $cfgPath
 $plain = $null
 # SIDs, not names: group names change with the Windows language (Administrateurs, Administratoren ...)
