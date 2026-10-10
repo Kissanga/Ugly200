@@ -1,5 +1,7 @@
 # Reolink Duo 3 in Naked Heart
 
+**Current state, decisions and open items: [STATE.md](STATE.md).**
+
 ```
 Duo 3 --RTSP--> go2rtc on the Windows 11 PC --> Cloudflare Tunnel (HTTPS + login) --> Cameras card in Naked Heart
 ```
@@ -55,8 +57,8 @@ Test: open `https://cam.your-domain/stream.html?src=duo3&mode=mse,hls` on a phon
 
 ## 6. The card in Naked Heart
 
-`camera-card.html` is the Cameras card: set `CAM` to `https://cam.your-domain` and mount it on the dashboard
-page. It shows the live view; the dashboard never holds the camera password.
+The tile lives in the Naked Heart repo, `nkdfarm/farmbox-console` `js/cameras.js`: the camera list (stream name,
+label, unit code) and `CAM`, the public address. The dashboard never holds the camera password.
 
 ## Notes
 
