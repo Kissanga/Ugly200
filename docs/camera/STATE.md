@@ -51,8 +51,8 @@ Reolink Duo 3 (FarmLab)  --RTSP sub-->  go2rtc + ffmpeg on the farm PC  --Cloudf
    Owner still to say: manual or scheduled, and what the AI should look for.
 3. **NVIDIA (Jetson) box for YOLO** — planned: it would replace the farm PC (go2rtc + cloudflared + YOLO in Docker,
    cameras listed in Naked Heart). For 10 cameras: PoE cameras on a PoE switch, or a Reolink NVR.
-4. **heart.nkd.farm / brain.nkd.farm** — possible later; phones must send everything before Naked Brain changes address.
-5. This branch (`ccr-1e7fbd56-gec0kx`) is not merged into `main`: merge it so a new session finds `docs/camera`.
+4. **heart.nkd.farm** — Naked Brain already moved to `brain.nkd.farm` (0.11.116, main). Naked Heart is still on
+   github.io; moving it to `heart.nkd.farm` would let the camera login work inside the tile on iPhone too.
 
 ## Scripts here
 
