@@ -24,8 +24,8 @@ Copy this `docs/camera` folder to the PC (or `git pull` the repo), open **PowerS
 powershell -ExecutionPolicy Bypass -File .\install-camera.ps1 -CameraIp 192.168.1.50 -User admin
 ```
 
-It asks for the camera password, installs go2rtc in `C:\NakedCam`, starts it at every boot (scheduled task
-`NakedCam go2rtc`, restarted if it stops), keeps the PC from sleeping on mains power, and opens the live view
+It asks for the camera password, installs go2rtc in `C:\NakedVision`, starts it at every boot (scheduled task
+`NakedVision go2rtc`, restarted if it stops), keeps the PC from sleeping on mains power, and opens the live view
 on the PC. If you see the picture there, step 2 is done.
 
 ## 3. Cloudflare account and domain
@@ -68,14 +68,14 @@ label, unit code) and `CAM`, the public address. The dashboard never holds the c
 - Change the camera password: run `install-camera.ps1` again.
 - Picture squeezed to 4:3: the Duo 3 tags its sub stream with 3:8 pixels since a reboot; go2rtc.yaml has ffmpeg
   rewrite the tag (copy only). Run `install-camera.ps1` again if an older install is on the PC.
-- Remove: `Unregister-ScheduledTask 'NakedCam go2rtc'`, delete `C:\NakedCam`, `cloudflared.exe service uninstall`.
+- Remove: `Unregister-ScheduledTask 'NakedVision go2rtc'`, delete `C:\NakedVision`, `cloudflared.exe service uninstall`.
 
 ## Uninstall (PowerShell as Administrator)
 
 ```powershell
 cd C:\
-Unregister-ScheduledTask -TaskName 'NakedCam go2rtc' -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName 'NakedVision go2rtc' -Confirm:$false -ErrorAction SilentlyContinue
 Get-Process go2rtc -ErrorAction SilentlyContinue | Stop-Process -Force
-Remove-Item 'C:\NakedCam' -Recurse -Force
+Remove-Item 'C:\NakedVision' -Recurse -Force
 powercfg /change standby-timeout-ac 30
 ```
