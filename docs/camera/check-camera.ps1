@@ -1,9 +1,10 @@
 # Deep check of the camera relay on the farm PC: what go2rtc is set to, whether it runs, and the real size and
 # shape of each camera stream (main = Clear, sub = Fluent, ext = Balanced) as ffmpeg reads them.
 # Run in PowerShell as Administrator:  powershell -ExecutionPolicy Bypass -File .\check-camera.ps1
-# Prints no password: it is read from C:\NakedCam\go2rtc.yaml and masked in everything shown.
+# Prints no password: it is read from C:\NakedVision\go2rtc.yaml and masked in everything shown.
 #Requires -RunAsAdministrator
-param([string]$Dir = 'C:\NakedCam')
+param([string]$Dir = 'C:\NakedVision')
+if (-not (Test-Path $Dir) -and (Test-Path 'C:\NakedCam')) { $Dir = 'C:\NakedCam' }   # an install from before the rename
 $ErrorActionPreference = 'Continue'
 $cfgPath = Join-Path $Dir 'go2rtc.yaml'
 if (-not (Test-Path $cfgPath)) { throw "No ${cfgPath}: go2rtc is not installed on this PC." }
@@ -16,7 +17,7 @@ Write-Host "`n== go2rtc settings ($cfgPath, password masked)" -ForegroundColor C
 & $mask $cfg
 
 Write-Host "`n== go2rtc program" -ForegroundColor Cyan
-Get-ScheduledTask 'NakedCam go2rtc' -ErrorAction SilentlyContinue | Select-Object TaskName, State | Format-Table -AutoSize
+Get-ScheduledTask 'NakedVision go2rtc', 'NakedCam go2rtc' -ErrorAction SilentlyContinue | Select-Object TaskName, State | Format-Table -AutoSize
 Get-Process go2rtc -ErrorAction SilentlyContinue | Select-Object Id, StartTime | Format-Table -AutoSize
 & (Join-Path $Dir 'go2rtc.exe') -version 2>&1 | Select-Object -First 2
 

@@ -1,6 +1,6 @@
 # go2rtc for the Reolink Duo 3 - template.
 # install-camera.ps1 fills CAMERA_IP, CAMERA_USER, CAMERA_PASS and FFMPEG_BIN and writes the result to
-# C:\NakedCam\go2rtc.yaml. The filled copy holds the camera password: it stays on the farm PC, never in this repo.
+# C:\NakedVision\go2rtc.yaml. The filled copy holds the camera password: it stays on the farm PC, never in this repo.
 
 api:
   # Only this PC can open go2rtc directly. The internet reaches it through the Cloudflare Tunnel,

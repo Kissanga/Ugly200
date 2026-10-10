@@ -5,10 +5,12 @@
 param(
   [Parameter(Mandatory = $true)][string]$CameraIp,
   [string]$User = 'admin',
-  [string]$Dir = 'C:\NakedCam'
+  [string]$Dir = 'C:\NakedVision'
 )
 $ErrorActionPreference = 'Stop'
-$task = 'NakedCam go2rtc'
+$task = 'NakedVision go2rtc'
+# Naked Vision was called NakedCam until Oct 2026: an install under the old name is moved, not downloaded again
+$oldTask = 'NakedCam go2rtc'; $oldDir = 'C:\NakedCam'
 
 Write-Host "1/6 Checking the camera at $CameraIp ..."
 if (-not (Test-NetConnection $CameraIp -Port 554 -InformationLevel Quiet -WarningAction SilentlyContinue)) {
@@ -19,9 +21,17 @@ $secure = Read-Host "Reolink password for '$User'" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
 
 Write-Host "2/6 Downloading go2rtc ..."
-New-Item -ItemType Directory -Force $Dir | Out-Null
-if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $task }
+foreach ($t in $task, $oldTask) {
+  if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $t }
+}
 Get-Process go2rtc -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 1
+if ((Test-Path $oldDir) -and -not (Test-Path $Dir)) {
+  Write-Host "    moving $oldDir to $Dir"
+  Move-Item $oldDir $Dir
+}
+if (Get-ScheduledTask -TaskName $oldTask -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $oldTask -Confirm:$false }
+New-Item -ItemType Directory -Force $Dir | Out-Null
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $zip = Join-Path $env:TEMP 'go2rtc_win64.zip'
 Invoke-WebRequest 'https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_win64.zip' -OutFile $zip -UseBasicParsing
