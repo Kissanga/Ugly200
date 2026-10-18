@@ -71,7 +71,7 @@
 
   <section class="card" id="none" hidden>
     <p style="margin-top:0"><b id="who2"></b> has no AI access to Naked Heart, or it has ended.</p>
-    <p class="note">Ask the farm manager to give it in Naked Heart › AI access, then connect again.</p>
+    <p class="note">Ask the farm manager to tick MCP for you on the Naked Heart team page, then connect again.</p>
     <div class="row"><button id="deny2">Back to the AI</button><button id="signout2">Sign in as someone else</button></div>
   </section>
 
@@ -82,7 +82,9 @@
 <script>
 const SUPABASE_URL = 'https://azfiajzhzewjcblbltmp.supabase.co';
 const SUPABASE_KEY = '';   // publishable (anon) key — public, the same Naked Heart uses
-const AREAS = { growing: 'Growing', ipm: 'Pests (IPM)', money: 'Money', team: 'Team (names, hours)' };
+const FAMILIES = { crops: 'Crops & batches', harvest: 'Harvests', tasks: 'Tasks & procedures', water: 'Nutrients & irrigation',
+  climate: 'Climate & sensors', pests: 'Pests & disease', equipment: 'Equipment', purchasing: 'Purchasing & stock',
+  sales: 'Sales & customers', costs: 'Costs', team: 'Team (names, hours)' };
 
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => { $(id).hidden = !on; };
@@ -124,7 +126,7 @@ async function start() {
     name.textContent = a.farm;
     const chips = document.createElement('div');
     chips.className = 'chips';
-    for (const ar of a.areas) { const s = document.createElement('span'); s.textContent = AREAS[ar] || ar; chips.append(s); }
+    for (const f of a.families) { const s = document.createElement('span'); s.textContent = FAMILIES[f] || f; chips.append(s); }
     el.append(name, chips);
     if (a.ends_at) { const u = document.createElement('div'); u.className = 'note'; u.textContent = 'until ' + day(a.ends_at); el.append(u); }
     $('farms').append(el);

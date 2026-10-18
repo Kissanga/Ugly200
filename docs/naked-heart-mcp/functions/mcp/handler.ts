@@ -21,7 +21,7 @@ const DEFAULT_ROWS = 200;
 const MAX_TEXT = 150_000;
 
 const INSTRUCTIONS = `Naked Heart is the dashboard of FarmBox hydroponic greenhouse farms. This connection is read-only.
-1. Call describe first: it says which farms and data areas (growing, ipm, money, team) this access covers, until when, and lists the tables with their columns.
+1. Call describe first: it says which farms and data families (crops, harvest, tasks, water, climate, pests, equipment, purchasing, sales, costs, team) this access covers, until when, and lists the tables with their columns.
 2. Use query with ONE PostgreSQL SELECT (or WITH … SELECT) over those tables; no schema prefix is needed. Join on the *_id columns; farm_id is in almost every table.
 3. Times are timestamptz: turn them into the farm's own time with farms.timezone. Money is in the farm's currency (farms.currency); market_prices are rand per kg; ai_usage is in USD.
 4. Pests: trap_readings.day_rate is insects a day on one trap; compare it with ipm_thresholds.watch and .over of the farm. Scouting photos are in scout_observations with tags and the AI's reading.
@@ -33,7 +33,7 @@ const TOOLS = [
   {
     name: 'describe',
     title: 'What I can see in Naked Heart',
-    description: 'The farms and data areas this access covers and until when, and every table you may query with its columns and what it holds. Call it first.',
+    description: 'The farms and data families this access covers and until when, and every table you may query with its columns and what it holds. Call it first.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false, idempotentHint: true },
   },
@@ -229,8 +229,8 @@ function logArgs(name: string, args: Record<string, unknown>) {
 
 async function describe(q: Query): Promise<ToolResult> {
   const [acc] = await q('select mcp.my_access() as info');
-  const info = (acc?.info ?? []) as { areas: string[] }[];
-  const areas = [...new Set(info.flatMap((f) => f.areas))];
+  const info = (acc?.info ?? []) as { families: string[] }[];
+  const families = [...new Set(info.flatMap((f) => f.families))];
   const views = await q(
     `select v.view_name, v.areas, v.about,
             string_agg(c.column_name || ' ' || c.data_type, ', ' order by c.ordinal_position) as columns
@@ -239,7 +239,7 @@ async function describe(q: Query): Promise<ToolResult> {
       where v.areas && $1::text[]
       group by v.view_name, v.areas, v.about, v.sort
       order by v.sort`,
-    [areas],
+    [families],
   );
   const lines = [
     'Your access (read-only):',

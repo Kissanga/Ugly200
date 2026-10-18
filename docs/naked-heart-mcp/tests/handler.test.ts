@@ -27,8 +27,12 @@ const deps = {
 };
 
 await sql`insert into auth.users (id, email, email_confirmed_at) values (${TESTER}, 'tester@consult.test', now()) on conflict do nothing`;
-await sql`insert into mcp.access (farm_id, email, user_id, areas, label)
-          values ('00000000-0000-0000-0000-00000000f00a', 'tester@consult.test', ${TESTER}, '{growing,ipm}', 'test')`;
+await sql`insert into public.worker (id, farm_id, user_id, name, role, email)
+          values ('00000000-0000-0000-0000-0000000060e9', '00000000-0000-0000-0000-00000000f00a', ${TESTER},
+                  'Tester', 'ai_only', 'tester@consult.test')`;
+await sql`insert into mcp.person (worker_id, ai_access) values ('00000000-0000-0000-0000-0000000060e9', true)`;
+await sql`insert into mcp.person_data (worker_id, family)
+          values ('00000000-0000-0000-0000-0000000060e9', 'pests'), ('00000000-0000-0000-0000-0000000060e9', 'tasks')`;
 after(async () => { await sql.end(); await db.close(); });
 
 let n = 0;
@@ -94,20 +98,21 @@ test('unknown method: -32601', async () => {
   assert.equal(r.body.error.code, -32601);
 });
 
-test('describe: the farm, the areas and only their tables', async () => {
+test('describe: the farms, the families and only their tables', async () => {
   const r = await call('describe');
   const t = r.content[0].text as string;
   assert.match(t, /"farm":"Farm A"/);
-  assert.match(t, /- trap_readings \[ipm\]/);
-  assert.match(t, /- tasks \[growing\]/);
+  assert.match(t, /"farm":"Farm A2"/);
+  assert.match(t, /- trap_readings \[pests\]/);
+  assert.match(t, /- tasks \[tasks\]/);
   assert.doesNotMatch(t, /- cost_entries/);
   assert.doesNotMatch(t, /- workers/);
 });
 
-test('query: counts on farm A only', async () => {
+test('query: counts on farm A and its sister unit A2 only', async () => {
   const r = await call('query', { sql: 'select count(*)::int as n, sum(total)::int as insects from trap_readings;' });
   assert.equal(r.isError, undefined);
-  assert.deepEqual(rowsOf(r).rows, [{ n: 2, insects: 42 }]);
+  assert.deepEqual(rowsOf(r).rows, [{ n: 3, insects: 47 }]);
 });
 
 test('query: a comment at the end does not break the wrapping', async () => {
@@ -154,7 +159,7 @@ test('query: switching role from inside a query fails', async () => {
 test('query: what a query sets does not reach the next one', async () => {
   await call('query', { sql: "select set_config('mcp.request', gen_random_uuid()::text, false), set_config('search_path', 'public', false)" });
   const r = await call('query', { sql: 'select count(*)::int as n from trap_readings' });
-  assert.deepEqual(rowsOf(r).rows, [{ n: 2 }]);
+  assert.deepEqual(rowsOf(r).rows, [{ n: 3 }]);
 });
 
 test('query: a database error comes back as a tool error the AI can read', async () => {
@@ -182,10 +187,10 @@ test('no access: every tool says so', async () => {
 });
 
 test('stopped mid-way: the next call is refused', async () => {
-  await sql`update mcp.access set stopped_at = now() where user_id = ${TESTER}`;
+  await sql`update mcp.person set ai_access = false where worker_id = '00000000-0000-0000-0000-0000000060e9'`;
   const r = await call('query', { sql: 'select 1' });
   assert.equal(r.isError, true);
-  await sql`update mcp.access set stopped_at = null where user_id = ${TESTER}`;
+  await sql`update mcp.person set ai_access = true where worker_id = '00000000-0000-0000-0000-0000000060e9'`;
 });
 
 test('every call is logged with the farm, the AI name and the SQL', async () => {
@@ -193,7 +198,7 @@ test('every call is logged with the farm, the AI name and the SQL', async () => 
   assert.ok(rows.length >= 15);
   const q = rows.find((r) => r.tool === 'query' && r.ok);
   assert.equal(q?.client_name, 'Claude');
-  assert.deepEqual(q?.farm_ids, ['00000000-0000-0000-0000-00000000f00a']);
+  assert.deepEqual([...q?.farm_ids].sort(), ['00000000-0000-0000-0000-00000000f00a', '00000000-0000-0000-0000-00000000fa02']);
   assert.match(q?.args.sql, /trap_readings/);
   assert.ok(rows.some((r) => !r.ok));
 });

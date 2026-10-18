@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team · AI access</title>
+<!--
+  Naked Heart MCP: the AI part of the team page, as a page of its own until it is moved into the
+  Naked Heart team page (Platform/console). Same pattern as the task responsibilities there:
+    * a fixed list of AI data families, as chips;
+    * per job (role) the families its people get — click a chip to add or remove it for the job;
+    * per person the MCP tick, an end date, and their own chips — click to add one beyond the job
+      (shown with +) or take a job one away (struck through).
+  Calls: mcp_team, mcp_set_role, mcp_reset_role, mcp_person_family, mcp_set_access, mcp_stop_all,
+  mcp_call_log (20261018120000_mcp_access.sql). Serve it on Naked Heart's address so the sign-in is
+  shared; fill SUPABASE_KEY with the publishable (anon) key Naked Heart already uses.
+-->
+<style>
+  :root { --bg:#f6f5f1; --card:#fff; --text:#23251f; --muted:#6b6e64; --line:#e2e0d8; --accent:#788c5d; --accent-text:#fff; --accent-soft:#e7eddd; --error:#b3412f; --ok:#4f7a3a; --ok-bg:#eef3e6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1b1c19; --card:#262723; --text:#ecebe5; --muted:#a3a59b; --line:#3a3b35; --accent:#9db37f; --accent-text:#16170f; --accent-soft:#33392b; --error:#e07a68; --ok:#9db37f; --ok-bg:#2d3326; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:1.4rem; margin:0; } h2 { font-size:1.05rem; margin:0; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .head { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .muted { color:var(--muted); font-size:.85rem; }
+  input, select { font:inherit; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); }
+  button { font:inherit; font-weight:600; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); cursor:pointer; min-height:38px; }
+  button.danger { color:var(--error); border-color:var(--error); }
+  button.small { min-height:30px; padding:3px 10px; font-weight:500; font-size:.85rem; }
+  button:disabled { opacity:.5; cursor:default; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font:inherit; font-size:.82rem; font-weight:500; min-height:30px; padding:3px 10px; border-radius:99px;
+          border:1px solid var(--line); background:transparent; color:var(--muted); }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:var(--accent-text); }
+  .chip.added { background:var(--accent-soft); border-color:var(--accent); color:var(--text); }
+  .chip.added::before { content:'+ '; font-weight:700; }
+  .chip.away { text-decoration:line-through; border-style:dashed; }
+  .chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns:minmax(150px, 210px) 1fr; gap:10px 16px; padding:12px 0; border-top:1px solid var(--line); align-items:start; }
+  .row:first-of-type { border-top:none; }
+  .who b { display:block; } .who .muted { display:block; }
+  .tag { display:inline-block; font-size:.75rem; font-weight:600; padding:1px 8px; border-radius:99px; border:1px solid var(--line); margin-top:4px; }
+  .tag.live { color:var(--ok); background:var(--ok-bg); border-color:transparent; }
+  .access { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:8px; }
+  .access label { display:flex; gap:6px; align-items:center; font-weight:600; cursor:pointer; }
+  .access input[type=checkbox] { width:18px; height:18px; accent-color:var(--accent); }
+  .dim { opacity:.55; }
+  .legend { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
+  .tbl { overflow-x:auto; } table { border-collapse:collapse; width:100%; min-width:560px; }
+  th, td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:.8rem; color:var(--muted); font-weight:600; }
+  .sql { font-family:ui-monospace, monospace; font-size:.8rem; white-space:pre-wrap; word-break:break-word; max-height:6em; overflow:auto; }
+  .msg { color:var(--error); } code { word-break:break-all; }
+  @media (max-width:640px) { .row { grid-template-columns:1fr; } }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Team · AI access</h1>
+    <select id="farm" aria-label="Farm" hidden></select>
+  </header>
+
+  <section class="card" id="signin" hidden>
+    <h2>Sign in</h2>
+    <form id="pwForm" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+      <input id="email" type="email" autocomplete="email" placeholder="Email" required>
+      <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
+      <button>Sign in</button>
+    </form>
+    <p class="msg" id="signinMsg"></p>
+  </section>
+
+  <div id="app" hidden>
+    <p class="msg" id="err" hidden></p>
+
+    <section class="card">
+      <div class="head"><h2>What each job's AI may read</h2><span class="muted" id="readonly" hidden>Only farm admins and managers can change this.</span></div>
+      <p class="muted" style="margin-top:0">Click a chip to give it to, or take it from, everybody of that job. A person's own chips below can still differ.</p>
+      <div id="roles"></div>
+    </section>
+
+    <section class="card">
+      <div class="head">
+        <h2>People</h2>
+        <button class="danger" id="stopAll">Stop all AI access</button>
+      </div>
+      <p class="muted" style="margin-top:0">Tick MCP to let a person connect their own Claude or ChatGPT, read-only. An AI-only person is in the team only for that: never on the task pages.</p>
+      <div id="people"></div>
+      <div class="legend muted">
+        <span class="chip on">from the job</span><span class="chip added">added for this person</span>
+        <span class="chip away">taken away from this person</span><span class="chip">not given</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>How they connect</h2>
+      <p class="muted">Send them this address. In Claude: Settings › Connectors › Add custom connector. In ChatGPT: add a custom connector (MCP) in Settings › Apps &amp; Connectors (developer mode). They sign in with the email on their team row and press Allow.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><code id="mcpUrl"></code><button class="small" id="copy">Copy</button></div>
+    </section>
+
+    <section class="card">
+      <h2>What was asked</h2>
+      <div class="tbl" style="margin-top:10px"><table>
+        <thead><tr><th>When</th><th>Who</th><th>AI</th><th>Asked</th><th>Rows</th></tr></thead>
+        <tbody id="log"></tbody>
+      </table></div>
+      <p class="muted" id="logEmpty" hidden>No calls yet.</p>
+    </section>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script>
+const SUPABASE_URL = 'https://azfiajzhzewjcblbltmp.supabase.co';
+const SUPABASE_KEY = '';   // publishable (anon) key — public, the same Naked Heart uses
+const MCP_URL = SUPABASE_URL + '/functions/v1/mcp';
+const JOBS = { farm_admin: 'Farm admin', farm_manager: 'Farm manager', farm_assistant: 'Farm assistant', agronomist: 'Agronomist',
+  technician: 'Technician', office: 'Office', worker: 'Worker', trainee: 'Trainee', ai_only: 'AI only' };
+
+const $ = (id) => document.getElementById(id);
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+const fmt = (d, time) => d ? new Date(d).toLocaleString(undefined, time ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }) : '';
+let T = null;   // the last mcp_team answer
+
+function fail(error) { $('err').textContent = error.message || String(error); $('err').hidden = false; }
+async function rpc(name, args) {
+  $('err').hidden = true;
+  const { data, error } = await sb.rpc(name, args);
+  if (error) { fail(error); throw error; }
+  return data;
+}
+
+$('mcpUrl').textContent = MCP_URL;
+$('copy').onclick = async () => { await navigator.clipboard.writeText(MCP_URL); $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = 'Copy', 1500); };
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  $('signin').hidden = !!session; $('app').hidden = !session; $('farm').hidden = !session;
+  if (!session) return;
+  const { data: farms, error } = await sb.from('farm').select('id, name').order('name');
+  if (error) return fail(error);
+  $('farm').innerHTML = '';
+  for (const f of farms) $('farm').append(el('option', { value: f.id, textContent: f.name }));
+  const saved = (() => { try { return localStorage.getItem('nh_team_ai_farm'); } catch { return null; } })();
+  if (saved && farms.some((f) => f.id === saved)) $('farm').value = saved;
+  load();
+}
+$('farm').onchange = () => { try { localStorage.setItem('nh_team_ai_farm', $('farm').value); } catch {} load(); };
+
+async function load() {
+  const farm = $('farm').value;
+  try { T = await rpc('mcp_team', { p_farm: farm }); } catch { return; }
+  drawRoles(); drawPeople();
+  $('stopAll').disabled = !T.may_edit;
+  $('readonly').hidden = T.may_edit;
+  if (T.may_edit) drawLog(await rpc('mcp_call_log', { p_farm: farm, p_limit: 100 }).catch(() => []));
+}
+
+function drawRoles() {
+  $('roles').innerHTML = '';
+  for (const r of T.roles) {
+    const chips = el('div', { className: 'chips' });
+    for (const f of T.families) {
+      const on = r.families.includes(f.code);
+      const b = el('button', { className: 'chip' + (on ? ' on' : ''), textContent: f.label, title: f.about, disabled: !T.may_edit });
+      b.setAttribute('aria-pressed', on);
+      b.onclick = async () => {
+        const next = on ? r.families.filter((c) => c !== f.code) : [...r.families, f.code];
+        try { T = await rpc('mcp_set_role', { p_farm: $('farm').value, p_role: r.role, p_families: next }); } catch { return; }
+        drawRoles(); drawPeople();
+      };
+      chips.append(b);
+    }
+    const who = el('div', { className: 'who' }, el('b', { textContent: JOBS[r.role] || r.role }),
+      el('span', { className: 'muted', textContent: r.own ? 'chosen for this farm' : 'standard' }));
+    if (r.own && T.may_edit) {
+      const reset = el('button', { className: 'small', textContent: 'Back to standard', style: 'margin-top:6px' });
+      reset.onclick = async () => { try { T = await rpc('mcp_reset_role', { p_farm: $('farm').value, p_role: r.role }); } catch { return; } drawRoles(); drawPeople(); };
+      who.append(reset);
+    }
+    $('roles').append(el('div', { className: 'row' }, who, chips));
+  }
+}
+
+function drawPeople() {
+  $('people').innerHTML = '';
+  for (const p of T.people.filter((x) => x.active)) {
+    const roleFams = (T.roles.find((r) => r.role === p.role) || { families: [] }).families;
+    const who = el('div', { className: 'who' },
+      el('b', { textContent: [p.name, p.surname].filter(Boolean).join(' ') }),
+      el('span', { className: 'muted', textContent: (JOBS[p.role] || p.role) + (p.email ? ' · ' + p.email : '') }));
+    if (p.in_force) who.append(el('span', { className: 'tag live', textContent: 'AI access on' }));
+    if (p.last_used) who.append(el('span', { className: 'muted', textContent: `used ${fmt(p.last_used, true)} · ${p.calls_30d} calls in 30 days${p.ai_names?.length ? ' · ' + p.ai_names.join(', ') : ''}` }));
+
+    const canTick = T.may_edit && (p.has_login || p.email);
+    const tick = el('input', { type: 'checkbox', checked: p.ai_access, disabled: !canTick });
+    const until = el('input', { type: 'date', value: p.ai_until ? p.ai_until.slice(0, 10) : '', disabled: !T.may_edit || !p.ai_access });
+    const save = async () => {
+      const u = until.value ? new Date(until.value + 'T23:59:59').toISOString() : null;
+      try { await rpc('mcp_set_access', { p_worker: p.worker_id, p_on: tick.checked, p_until: tick.checked ? u : null }); } catch { tick.checked = p.ai_access; return; }
+      load();
+    };
+    tick.onchange = () => {
+      if (!tick.checked && !confirm(`Stop ${p.name}'s AI access now? Their AI is signed out.`)) { tick.checked = true; return; }
+      save();
+    };
+    until.onchange = save;
+    const access = el('div', { className: 'access' },
+      el('label', {}, tick, 'MCP'),
+      el('span', { className: 'muted' }, 'until ', until, until.value ? '' : ' (empty = until unticked)'));
+    if (!canTick && T.may_edit) access.append(el('span', { className: 'muted', textContent: 'Add an email to this person first: their AI signs in with it.' }));
+
+    const chips = el('div', { className: 'chips' + (p.ai_access ? '' : ' dim') });
+    for (const f of T.families) {
+      const has = p.families.includes(f.code);
+      const fromJob = roleFams.includes(f.code);
+      const cls = has ? (fromJob ? ' on' : ' added') : (fromJob ? ' away' : '');
+      const b = el('button', { className: 'chip' + cls, textContent: f.label, title: f.about, disabled: !T.may_edit });
+      b.setAttribute('aria-pressed', has);
+      b.onclick = async () => {
+        if (!has && f.code === 'team' && !confirm('Team shares names, hours and cost per person. Give it?')) return;
+        try { await rpc('mcp_person_family', { p_worker: p.worker_id, p_family: f.code, p_on: !has }); } catch { return; }
+        load();
+      };
+      chips.append(b);
+    }
+    $('people').append(el('div', { className: 'row' }, who, el('div', {}, access, chips)));
+  }
+}
+
+function drawLog(calls) {
+  $('log').innerHTML = '';
+  $('logEmpty').hidden = calls.length > 0;
+  for (const c of calls) {
+    const what = c.tool === 'query' ? c.args?.sql : c.tool === 'photo' ? `photo ${c.args?.kind} ${c.args?.id}` : c.tool;
+    const asked = el('td', {}, el('div', { className: 'sql', textContent: what || '' }));
+    if (!c.ok) asked.append(el('div', { className: 'msg', textContent: c.error || 'failed' }));
+    $('log').append(el('tr', {}, el('td', { className: 'muted', textContent: fmt(c.at, true) }), el('td', { textContent: c.email || '' }),
+      el('td', { textContent: c.client_name || '' }), asked, el('td', { textContent: c.rows ?? '' })));
+  }
+}
+
+$('stopAll').onclick = async () => {
+  if (!confirm('Untick every AI access of this farm and its sister units now? Their AIs are signed out.')) return;
+  try { const n = await rpc('mcp_stop_all', { p_farm: $('farm').value }); alert(`${n} stopped.`); } catch {}
+  load();
+};
+$('pwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) $('signinMsg').textContent = error.message; else start();
+});
+
+start();
+</script>
+</body>
+</html>

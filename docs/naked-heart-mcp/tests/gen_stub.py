@@ -25,6 +25,12 @@ for name, t in sorted(SNAP.items()):
     out.append(f'grant all on public."{name}" to authenticated, service_role;')
 
 out.append("""
+alter table public.worker add constraint worker_role_check check (role = any (array[
+  'worker','trainee','technician','office','farm_assistant','agronomist','farm_manager','farm_admin']));
+alter table public.worker alter column active set default true;
+alter table public.worker alter column off_tasks set default false;
+alter table public.worker alter column employment set default 'permanent';
+
 create function app.uid() returns uuid language sql stable set search_path = public, app, pg_temp as $$
   select nullif(coalesce(current_setting('request.jwt.claim.sub', true),
     (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'),
@@ -32,12 +38,34 @@ create function app.uid() returns uuid language sql stable set search_path = pub
 create function app.is_franchisor() returns boolean language sql stable security definer
   set search_path = public, app, pg_temp as $$
   select exists (select 1 from membership m where m.user_id = app.uid() and m.active and m.role = 'franchisor_admin') $$;
-create function app.manager_farm_ids() returns uuid[] language sql stable security definer
-  set search_path = public, app as $$
-  select coalesce(array_agg(distinct m.farm_id), '{}') from membership m
-   where m.user_id = app.uid() and m.active and m.role in ('farm_admin','farm_manager','office') and m.farm_id is not null $$;
-create function app.is_farm_manager(p_farm uuid) returns boolean language sql stable
+create function app.admin_org_ids() returns uuid[] language sql stable security definer
   set search_path = public, app, pg_temp as $$
-  select app.is_franchisor() or (p_farm is not null and p_farm = any(app.manager_farm_ids())) $$;
+  select coalesce(array_agg(distinct m.org_id), '{}'::uuid[]) from membership m
+   where m.user_id = app.uid() and m.active and m.role = 'franchisee_admin' and m.org_id is not null $$;
+create function app.sisters(p_farm uuid) returns uuid[] language sql stable security definer
+  set search_path = public, app, pg_temp as $$
+  select coalesce((select array_agg(s.id order by s.created_at, s.id)
+                     from farm f join farm s on s.sister_group = f.sister_group
+                    where f.id = p_farm and f.sister_group is not null), array[p_farm]) $$;
+create function app.home_farm(p_farm uuid) returns uuid language sql stable security definer
+  set search_path = public, app, pg_temp as $$ select (app.sisters(p_farm))[1] $$;
+create function app.farm_ids() returns uuid[] language sql stable security definer
+  set search_path = public, app, pg_temp as $$
+  select coalesce(array_agg(distinct x), '{}'::uuid[]) from (
+    select m.farm_id as x from membership m where m.user_id = app.uid() and m.active and m.farm_id is not null
+    union select f.id from farm f where f.org_id = any(app.admin_org_ids())) s where x is not null $$;
+create function app.can_read_farm(p_farm uuid) returns boolean language sql stable
+  set search_path = public, app, pg_temp as $$
+  select app.is_franchisor() or (p_farm is not null and p_farm = any(app.farm_ids())) $$;
+create function app.may_manage_people(p_farm uuid) returns boolean language sql stable security definer
+  set search_path = public, app, pg_temp as $$
+  select p_farm is not null and (app.is_franchisor()
+      or exists (select 1 from farm f where f.id = p_farm and f.org_id = any (app.admin_org_ids()))
+      or exists (select 1 from membership m where m.user_id = app.uid() and m.active and m.farm_id = p_farm
+                    and m.role in ('farm_admin', 'farm_manager'))) $$;
+create function app.job_rank(p_role text) returns integer language sql immutable as $$
+  select case p_role when 'farm_manager' then 1 when 'farm_assistant' then 2 when 'agronomist' then 3
+                     when 'technician' then 4 when 'worker' then 5 when 'trainee' then 6
+                     when 'office' then 7 when 'farm_admin' then 8 else 9 end $$;
 """)
 print('\n'.join(out))

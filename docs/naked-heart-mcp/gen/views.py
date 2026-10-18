@@ -2,7 +2,7 @@
 """Writes migrations/20261018120100_mcp_views.sql: the read-only views an outside AI sees.
 
 Every view lives in schema mcp, is owned by postgres (so it reads the tables past RLS) and keeps
-only the rows of the farms the current request may see in its area(s): mcp.farms(areas) answers
+only the rows of the farms the current request may see in its families: mcp.farms(families) answers
 from the request the MCP function opened for this person (see 20261018120000_mcp_access.sql).
 
 The column lists come from gen/schema_snapshot.json, a copy of the live public schema
@@ -17,7 +17,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SNAP = json.load(open(os.path.join(HERE, 'schema_snapshot.json')))
 OUT = os.path.join(HERE, '..', 'migrations', '20261018120100_mcp_views.sql')
 
-ALL = ['growing', 'ipm', 'money', 'team']
+# The AI data families: a fixed list (mcp.data_family), clicked per role and per person on the team page.
+FAMILIES = ['crops', 'harvest', 'tasks', 'water', 'climate', 'pests', 'equipment', 'purchasing', 'sales', 'costs', 'team']
+ALL = FAMILIES
 
 # Never shown, in any view: people's contact details and names outside the team area, keys,
 # photos (the photo tool hands those out one at a time), and bookkeeping columns.
@@ -28,22 +30,22 @@ DROP_ALWAYS = {
     'discarded_name', 'created_by', 'updated_by', 'user_id', 'generation_key', 'content_hash',
     'notion_page_id', 'client_id', 'client_ref', 'client_run_id', 'client_out',
 }
-# Outside the team area a worker is not even an id.
+# Outside the team family a worker is not even an id.
 DROP_UNLESS_TEAM = {'worker_id', 'operator_id', 'co_signer_id', 'done_by', 'held_by', 'held_user',
                     'assigned_to', 'raised_by', 'closed_by', 'observer_id', 'added_by',
                     'validated_by', 'approved_by', 'decided_by', 'note_by', 'ai_seen_by',
                     'edited_by', 'removed_by', 'verified_by', 'author'}
 
-# name, table, areas, filter, about, extra (dict: drop / keep / add)
+# name, table, families, filter, about, extra (dict: drop / keep / add)
 #   filter: farm    -> farm_id in the request's farms
 #           scoped  -> the farm's own rows plus the standard (farm_id null) rows of its organisation
-#           catalog -> whole table (franchisor standard lists), shown to anyone with an active access
+#           catalog -> whole table (franchisor standard lists), shown to anyone with one of the families
 #           via:<view>.<col>=<col> -> rows whose parent is in another mcp view
 V = []
 def v(name, table, areas, filt, about, **kw):
     V.append(dict(name=name, table=table, areas=areas, filt=filt, about=about, **kw))
 
-# ── Reference: every area sees the farm's shape ────────────────────────────────
+# ── Reference: every family sees the farm's shape ────────────────────────────────
 v('farms', 'farm', ALL, 'self', 'The FarmBox units this access covers: country, town, time zone, currency, working days, trap map.',
   drop={'attributes', 'model_id'})
 v('zones', 'zone', ALL, 'farm', 'Growing zones of each farm.')
@@ -52,41 +54,40 @@ v('growing_systems', 'growing_system', ALL, 'farm', 'Growing systems (NFT, troug
 v('growing_positions', 'growing_position', ALL, 'farm', 'Each growing position (a channel, a table spot) with its code, row and x/y/z place in metres.')
 v('crops', 'crop', ALL, 'scoped', 'Crop library: the farm\'s own crops and the standard ones of its organisation.')
 v('crop_phases', 'crop_phase', ALL, 'via:crops.id=crop_id', 'Phases of each crop with their days.')
-v('crop_targets', 'crop_target', ALL, 'scoped', 'Climate and nutrient targets per crop and phase (EC, pH, temperature, RH, DLI).')
-v('steady_groups', 'steady_group', ALL, 'farm', 'Zones planned together for a steady harvest.', drop={'undo'})
+v('crop_targets', 'crop_target', ['crops', 'water', 'climate'], 'scoped', 'Climate and nutrient targets per crop and phase (EC, pH, temperature, RH, DLI).')
+v('steady_groups', 'steady_group', ['crops', 'harvest'], 'farm', 'Zones planned together for a steady harvest.', drop={'undo'})
 v('farm_holidays', 'farm_holiday', ALL, 'farm', 'Days a farm is closed or works a public holiday.')
 v('task_families', 'task_family', ALL, 'catalog', 'Families of work.')
 
-# ── Growing ────────────────────────────────────────────────────────────────────
-G = ['growing']
-v('crop_plans', 'crop_plan', ['growing', 'money'], 'farm', 'Crop batches: position, crop, sow/transplant/harvest dates, phase, expected yield, revenue and cost, lot code.')
-v('harvests', 'harvest', ['growing', 'money'], 'farm', 'Harvests: date, batch, quantity and unit, grade, waste and why, destination.')
-v('tasks', 'task', G, 'farm', 'Tasks: what, where, planned and done dates, estimated and actual minutes, status, skip reasons.',
+# ── Crops, harvest, tasks, water, climate, equipment ────────────────────────────────────────────────────────────────────
+v('crop_plans', 'crop_plan', ['crops', 'harvest', 'costs'], 'farm', 'Crop batches: position, crop, sow/transplant/harvest dates, phase, expected yield, revenue and cost, lot code.')
+v('harvests', 'harvest', ['harvest', 'sales', 'costs'], 'farm', 'Harvests: date, batch, quantity and unit, grade, waste and why, destination.')
+v('tasks', 'task', ['tasks'], 'farm', 'Tasks: what, where, planned and done dates, estimated and actual minutes, status, skip reasons.',
   drop={'source_ref', 'group_key', 'labour_plan_id'})
-v('task_items', 'task_item', G, 'via:tasks.id=task_id', 'What each task covered (a batch, an area, an asset, a trap) and its result.')
-v('sops', 'sop', G, 'scoped', 'Standard operating procedures: title, family, frequency, minutes.',
+v('task_items', 'task_item', ['tasks'], 'via:tasks.id=task_id', 'What each task covered (a batch, an area, an asset, a trap) and its result.')
+v('sops', 'sop', ['tasks'], 'scoped', 'Standard operating procedures: title, family, frequency, minutes.',
   keep=['id', 'sop_code', 'slug', 'title', 'family', 'category', 'document_type', 'purpose', 'summary', 'frequency',
         'estimated_minutes', 'minutes_per_unit', 'unit', 'min_workers', 'status', 'current_version', 'effective_date',
         'review_date', 'scope', 'org_id', 'farm_id', 'target_kind'])
-v('checklist_runs', 'checklist_run', G, 'farm', 'Each time a procedure was run: status, outcome, steps done.', drop={'duplicate_of'})
-v('step_results', 'step_result', G, 'via:checklist_runs.id=run_id', 'Results of the procedure steps: values, out of range, notes.', drop={'geo'})
-v('issues', 'issue', ['growing', 'ipm'], 'farm', 'Issues and pest cases: title, severity, where, status, outcome.')
-v('nutrient_recipes', 'nutrient_recipe', G, 'scoped', 'Nutrient recipes and their targets by phase.')
-v('irrigation_cycles', 'irrigation_cycle', G, 'farm', 'Irrigation cycles: pattern, on/off minutes, start times.')
-v('irrigation_events', 'irrigation_event', G, 'farm', 'Irrigation runs reported by devices: volume, EC, pH, drain.')
-v('sump_readings', 'sump_reading', G, 'farm', 'Sump readings: EC, pH, water temperature, when and where.')
-v('readings', 'reading', G, 'farm', 'Sensor readings (metric, value, time).')
-v('metrics', 'metric', G, 'catalog', 'What a sensor can measure, with the standard watch and alarm limits.')
-v('metric_limits', 'metric_limit', G, 'farm', 'The farm\'s own limits per metric and zone.')
-v('devices', 'device', G, 'farm', 'Controllers, sensors and cameras (no keys, no settings).', drop={'config', 'external_id'})
-v('camera_counts', 'camera_count', G, 'farm', 'What the cameras counted (object, count, confidence) and whether a person confirmed it.')
-v('camera_growth', 'camera_growth', G, 'farm', 'Growth seen by the cameras: stage, canopy %, height, kg estimate.')
-v('assets', 'asset', G, 'farm', 'Equipment and its meters.')
-v('maintenance_rules', 'maintenance_rule', G, 'farm', 'Maintenance rules per asset: how often, last done.')
-v('phase_durations_learned', 'phase_duration_learned', G, 'farm', 'Phase lengths the platform learned from this farm\'s own batches.')
+v('checklist_runs', 'checklist_run', ['tasks'], 'farm', 'Each time a procedure was run: status, outcome, steps done.', drop={'duplicate_of'})
+v('step_results', 'step_result', ['tasks'], 'via:checklist_runs.id=run_id', 'Results of the procedure steps: values, out of range, notes.', drop={'geo'})
+v('issues', 'issue', ['tasks', 'pests', 'equipment'], 'farm', 'Issues and pest cases: title, severity, where, status, outcome.')
+v('nutrient_recipes', 'nutrient_recipe', ['water'], 'scoped', 'Nutrient recipes and their targets by phase.')
+v('irrigation_cycles', 'irrigation_cycle', ['water'], 'farm', 'Irrigation cycles: pattern, on/off minutes, start times.')
+v('irrigation_events', 'irrigation_event', ['water'], 'farm', 'Irrigation runs reported by devices: volume, EC, pH, drain.')
+v('sump_readings', 'sump_reading', ['water'], 'farm', 'Sump readings: EC, pH, water temperature, when and where.')
+v('readings', 'reading', ['climate', 'water'], 'farm', 'Sensor readings (metric, value, time).')
+v('metrics', 'metric', ['climate', 'water'], 'catalog', 'What a sensor can measure, with the standard watch and alarm limits.')
+v('metric_limits', 'metric_limit', ['climate', 'water'], 'farm', 'The farm\'s own limits per metric and zone.')
+v('devices', 'device', ['climate', 'water', 'equipment'], 'farm', 'Controllers, sensors and cameras (no keys, no settings).', drop={'config', 'external_id'})
+v('camera_counts', 'camera_count', ['climate', 'crops'], 'farm', 'What the cameras counted (object, count, confidence) and whether a person confirmed it.')
+v('camera_growth', 'camera_growth', ['climate', 'crops'], 'farm', 'Growth seen by the cameras: stage, canopy %, height, kg estimate.')
+v('assets', 'asset', ['equipment'], 'farm', 'Equipment and its meters.')
+v('maintenance_rules', 'maintenance_rule', ['equipment'], 'farm', 'Maintenance rules per asset: how often, last done.')
+v('phase_durations_learned', 'phase_duration_learned', ['crops'], 'farm', 'Phase lengths the platform learned from this farm\'s own batches.')
 
-# ── IPM (pests) ────────────────────────────────────────────────────────────────
-I = ['ipm']
+# ── Pests ────────────────────────────────────────────────────────────────
+I = ['pests']
 v('sticky_traps', 'sticky_trap', I, 'farm', 'Sticky traps: code, zone, row, metres along the row, colour, size.')
 v('trap_readings', 'trap_reading', I, 'farm', 'Trap counts: per reading the total, the insects a day, the species, the AI count and notes. has_photo = the photo tool can show it.',
   drop={'algorithm', 'ai_auto_at', 'ai_auto_tries', 'code_source'}, photo=True)
@@ -108,31 +109,32 @@ v('scout_notes', 'scout_note', I, 'farm', 'What people said or wrote about the w
   where='t.removed_at is null')
 v('scout_note_digests', 'scout_note_digest', I, 'farm', 'One day\'s greenhouse notes rewritten by an AI as one text.')
 
-# ── Money ──────────────────────────────────────────────────────────────────────
-M = ['money']
-v('items', 'item', M, 'scoped', 'Items bought: unit, pack size, unit cost, reorder point.')
-v('suppliers', 'supplier', M, 'scoped', 'Suppliers: name, region, lead days (no contact details).')
-v('item_suppliers', 'item_supplier', M, 'via:items.id=item_id', 'Which supplier sells which item.')
-v('purchase_requests', 'purchase_request', M, 'farm', 'What needs buying: item, quantity, need-by date, status, late.')
-v('purchase_orders', 'purchase_order', M, 'farm', 'Purchase orders: supplier, status, expected delivery.')
-v('sales_orders', 'sales_order', M, 'farm', 'Sales orders: customer, status.')
-v('sales_order_lines', 'sales_order_line', M, 'farm', 'Order lines: crop, kg, delivery date, repeats.')
-v('order_deliveries', 'order_delivery', M, 'farm', 'Deliveries: kg, price per kg, amount.')
-v('customers', 'customer', M, 'farm', 'Customers: kind, channel, price factor, payment terms, credit limit (no contact details).', drop={'attributes', 'referred_by'})
-v('cost_entries', 'cost_entry', M, 'farm', 'Costs: day, category, amount, supplier, batch or zone.')
-v('stock_movements', 'stock_movement', M, 'farm', 'Stock in and out per item.')
-v('item_stock_rules', 'item_stock_rule', M, 'farm', 'The farm\'s reorder rules per item.')
-v('market_prices', 'market_price_week', M, 'catalog', 'Wholesale market prices per region, species and week (rand per kg).')
-v('market_species', 'market_species', M, 'catalog', 'Species names used by the market prices.')
-v('price_references', 'price_reference', M, 'catalog', 'Reference prices per crop (USD).')
-v('price_seasons', 'price_season', M, 'catalog', 'Seasonal price factors per crop category.')
-v('price_channels', 'price_channel', M, 'catalog', 'Sales channels and their price factors.')
-v('price_countries', 'price_country', M, 'catalog', 'Country currency, exchange rate and price index.')
-v('ai_usage', 'ai_usage', M, 'farm', 'What the platform\'s own AI cost: per call the model, tokens and USD.', drop={'ref_kind', 'ref_id'})
+# ── Purchasing, sales, costs ──────────────────────────────────────────────────────────────────────
+P, S, C = ['purchasing'], ['sales'], ['costs']
+v('items', 'item', ['purchasing', 'costs'], 'scoped', 'Items bought: unit, pack size, unit cost, reorder point.')
+v('suppliers', 'supplier', P, 'scoped', 'Suppliers: name, region, lead days (no contact details).')
+v('item_suppliers', 'item_supplier', P, 'via:items.id=item_id', 'Which supplier sells which item.')
+v('purchase_requests', 'purchase_request', P, 'farm', 'What needs buying: item, quantity, need-by date, status, late.')
+v('purchase_orders', 'purchase_order', P, 'farm', 'Purchase orders: supplier, status, expected delivery.')
+v('sales_orders', 'sales_order', S, 'farm', 'Sales orders: customer, status.')
+v('sales_order_lines', 'sales_order_line', S, 'farm', 'Order lines: crop, kg, delivery date, repeats.')
+v('order_deliveries', 'order_delivery', S, 'farm', 'Deliveries: kg, price per kg, amount.')
+v('customers', 'customer', S, 'farm', 'Customers: kind, channel, price factor, payment terms, credit limit (no contact details).', drop={'attributes', 'referred_by'})
+v('cost_entries', 'cost_entry', C, 'farm', 'Costs: day, category, amount, supplier, batch or zone.')
+v('stock_movements', 'stock_movement', P, 'farm', 'Stock in and out per item.')
+v('item_stock_rules', 'item_stock_rule', P, 'farm', 'The farm\'s reorder rules per item.')
+v('market_prices', 'market_price_week', ['sales', 'costs'], 'catalog', 'Wholesale market prices per region, species and week (rand per kg).')
+v('market_species', 'market_species', ['sales', 'costs'], 'catalog', 'Species names used by the market prices.')
+v('price_references', 'price_reference', S, 'catalog', 'Reference prices per crop (USD).')
+v('price_seasons', 'price_season', S, 'catalog', 'Seasonal price factors per crop category.')
+v('price_channels', 'price_channel', S, 'catalog', 'Sales channels and their price factors.')
+v('price_countries', 'price_country', S, 'catalog', 'Country currency, exchange rate and price index.')
+v('ai_usage', 'ai_usage', C, 'farm', 'What the platform\'s own AI cost: per call the model, tokens and USD.', drop={'ref_kind', 'ref_id'})
 
 # ── Team (people) — never given unless asked for ───────────────────────────────
 T = ['team']
-v('workers', 'worker', T, 'farm', 'The team: name, role, employment, hourly cost, working days (no contact details).', drop={'attributes', 'notes'})
+v('workers', 'worker', T, 'farm', 'The team: name, role, employment, hourly cost, working days (no contact details; AI-only people are not listed).',
+  drop={'attributes', 'notes'}, where="t.role <> 'ai_only'")
 v('time_entries', 'time_entry', T, 'farm', 'Clock in and out per worker.')
 v('task_times', 'task_time', T, 'farm', 'Minutes each worker spent on each task.')
 v('task_workers', 'task_worker', T, 'via:tasks.id=task_id', 'Who was on each task.')
@@ -144,7 +146,7 @@ v('camera_presence', 'camera_presence', T, 'farm', 'Minutes of people per area a
 
 # Hand-written views (aggregates), checked against the snapshot by the test run instead.
 CUSTOM = [
-    ('labour_minutes_daily', ['money', 'growing'],
+    ('labour_minutes_daily', ['costs', 'tasks'],
      'Labour per day, task family and zone, without names: people, minutes and cost (minutes x hourly cost).',
      """select tt.farm_id, (tt.started_at at time zone coalesce(f.timezone, 'UTC'))::date as day,
        t.family, t.zone_id, t.sop_id,
@@ -156,9 +158,9 @@ CUSTOM = [
   join public.farm f on f.id = tt.farm_id
   left join public.worker w on w.id = tt.worker_id
  where tt.stopped_at is not null
-   and tt.farm_id = any(mcp.farms('{money,growing}'))
+   and tt.farm_id = any(mcp.farms('{costs,tasks}'))
  group by 1, 2, 3, 4, 5"""),
-    ('clocked_hours_daily', ['money', 'growing'],
+    ('clocked_hours_daily', ['costs'],
      'Hours clocked per farm and day, without names: people and hours.',
      """select te.farm_id, (te.clock_in at time zone coalesce(f.timezone, 'UTC'))::date as day,
        count(distinct te.worker_id) as people,
@@ -166,7 +168,7 @@ CUSTOM = [
   from public.time_entry te
   join public.farm f on f.id = te.farm_id
  where te.clock_out is not null
-   and te.farm_id = any(mcp.farms('{money,growing}'))
+   and te.farm_id = any(mcp.farms('{costs}'))
  group by 1, 2"""),
 ]
 
@@ -234,7 +236,7 @@ def main():
     names = [s['name'] for s in V] + [c[0] for c in CUSTOM]
     assert len(names) == len(set(names)), 'duplicate view name'
     out = ['-- GENERATED by gen/views.py from gen/schema_snapshot.json — edit the generator, not this file.',
-           '-- Naked Heart MCP, part 2 of 2: the views an outside AI may read (schema mcp, read through mcp_reader).',
+           '-- Naked Heart MCP, part 2 of 2: the views a person\'s AI may read (schema mcp, read through mcp_reader).',
            '-- Needs part 1 (20261018120000_mcp_access.sql). Safe to run again: it drops and recreates the views.',
            '', 'begin;', '',
            'do $$ declare r record; begin',

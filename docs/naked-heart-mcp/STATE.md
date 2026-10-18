@@ -1,14 +1,59 @@
 # Naked Heart MCP — state
 
-Lets a person — internal staff or an outside freelancer — connect **their own Claude or ChatGPT** to
-Naked Heart and have it **read** the farm data their access covers, to analyse it. Read-only, per farm,
-per area, with an end date or until a manager stops it, and every question logged.
+Lets a team member — staff, or an outside freelancer in the new **AI only** role — connect **their own
+Claude or ChatGPT** to Naked Heart and have it **read** the farm data their job allows, to analyse it.
+Read-only, per farm (with its sister units), per data family, until an end date or until the MCP tick
+is taken off, and every question logged.
 
 **Status (18 Oct 2026): built and tested here, not deployed.** Nothing was changed on the live
 database: the session only read its schema. Goes into the private Platform repo (`supabase/` and
 `console/`) to go live — see *Go live* below.
 
-## How it works
+## Managed on the team page
+
+The same pattern as task responsibilities (`task_subfamily` list, `job_bundle` per job,
+`worker_responsibility` / `team_exclusion` per person):
+
+| What | Where | Like |
+|---|---|---|
+| a fixed list of 11 AI data families | `mcp.data_family` | `task_subfamily` |
+| the families of each job: standard (`mcp.role_default`), or the farm's own click (`mcp.role_data`, kept on the home farm) | *What each job's AI may read* | `job_bundle` |
+| per person: a family added beyond the job, or a job family taken away | `mcp.person_data`, `mcp.person_data_off` | `worker_responsibility`, `team_exclusion` |
+| per person: the **MCP** tick and an end date | `mcp.person` | — |
+| role **ai_only**: in the team only for their AI | `worker.role` | — |
+
+A job change flows to everybody of that job at once; a person's own additions and removals stay.
+Access ends when the end date passes, the tick is taken off, the person is no longer active in the
+team, or they are left with no family. Taking it off signs their AI out (Supabase sessions of OAuth
+clients are deleted) unless another team row of theirs still gives access.
+
+**AI only** (`ai_only`): forced by a trigger to `off_tasks`, no working days, 0 hours, casual, whatever
+the team page sends; no Naked Heart login (no membership); not listed in the `team` family's data.
+They sign in on the consent page with the email on their team row (magic link or password), so a
+freelancer needs no account set up by the farm. Someone without an email or login cannot be ticked.
+
+### The families and the standard per job
+
+| Family | Gives | Admin, manager | Assistant, agronomist | Technician | Office | Worker, trainee | AI only |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Crops & batches | batches, phases, targets, steady groups, learned phase lengths | ✓ | ✓ | | | ✓ | |
+| Harvests | quantity, grade, waste, destination | ✓ | ✓ | | ✓ | | |
+| Tasks & procedures | tasks, what they covered, procedures and step results, issues | ✓ | ✓ | ✓ | | ✓ | |
+| Nutrients & irrigation | recipes, cycles and runs, sump EC / pH / temperature | ✓ | ✓ | ✓ | | | |
+| Climate & sensors | readings and limits, devices (no keys), camera counts and growth | ✓ | ✓ | ✓ | | | |
+| Pests & disease | traps and counts, scouting photos, cases, treatments, IPM library, AI opinions | ✓ | ✓ | | | | |
+| Equipment | assets, meters, maintenance | ✓ | | ✓ | | | |
+| Purchasing & stock | items, suppliers (no contacts), requests and orders, stock | ✓ | | | ✓ | | |
+| Sales & customers | orders, deliveries, customers (no contacts), market and reference prices | ✓ | | | ✓ | | |
+| Costs | costs, the platform's AI cost, labour minutes and cost per day without names | ✓ | | | ✓ | | |
+| Team (personal data) | names, roles, hourly cost, clock-ins, minutes per person, plans, absences, skills | ✓ | | | | | |
+
+Every family also gets the farm's shape: farm, zones, areas, systems, positions (x/y in metres), the
+crop library and phases, holidays. Never in any view: phone, email, address, contact names, keys,
+`user_id`/`created_by`, photos (only one at a time through **photo**), and outside `team` no worker id
+at all. Tested: a test fails if a view gains such a column, or a view belongs to a family not in the list.
+
+## How a request is served
 
 ```
 Claude / ChatGPT ──OAuth 2.1 (Supabase Auth's own OAuth server)──► person signs in, consent page, Allow
@@ -16,14 +61,14 @@ Claude / ChatGPT ──OAuth 2.1 (Supabase Auth's own OAuth server)──► per
         ▼
 Edge Function mcp  (https://azfiajzhzewjcblbltmp.supabase.co/functions/v1/mcp)
   1. Supabase Auth checks the token
-  2. postgres connection: mcp.begin_request(user) → no access in force = nothing;
-     else a request row: the farms per area, valid 2 min, random id
+  2. postgres connection: mcp.begin_request(user) → nobody ticked = nothing;
+     else a request row: the farms (with sister units) per family, valid 2 min, random id
   3. reader connection, LOGGED IN AS mcp_reader: read-only transaction, mcp.request = id,
      runs the AI's one SELECT over the mcp views → rows; always rolled back and closed
   4. postgres connection: mcp.call_log row (who, which AI, the SQL, rows, ok)
 ```
 
-Tools the AI gets: **describe** (its farms, areas, end date, and every table with its columns),
+Tools the AI gets: **describe** (its farms, families, end date, and every table with its columns),
 **query** (one PostgreSQL SELECT over the views, ≤ 1000 rows), **photo** (one scouting / trap /
 camera photo as an image, so the AI can look at it).
 
@@ -31,27 +76,13 @@ camera photo as an image, so the AI can look at it).
 
 | File | What |
 |---|---|
-| `migrations/20261018120000_mcp_access.sql` | schema `mcp`, login role `mcp_reader`, `mcp.access` (who, farm, areas, until, stopped), `mcp.request`, `mcp.call_log`, the token hook, and the managers' functions `mcp_access_give / _stop / _stop_all / _list`, `mcp_call_log`, `mcp_my_access` |
+| `migrations/20261018120000_mcp_access.sql` | schema `mcp`, login role `mcp_reader`, role `ai_only` and its trigger, the families, job and person tables, requests, call log, token hook, and the team page's functions `mcp_team`, `mcp_set_role`, `mcp_reset_role`, `mcp_person_family`, `mcp_set_access`, `mcp_stop_all`, `mcp_call_log`, `mcp_my_access` |
 | `migrations/20261018120100_mcp_views.sql` | GENERATED: the 78 views the AI reads. Edit `gen/views.py`, then `python3 gen/views.py` |
-| `gen/views.py`, `gen/schema_snapshot.json` | the view list per area, checked against the live columns (snapshot 18 Oct 2026) |
+| `gen/views.py`, `gen/schema_snapshot.json` | the views per family, checked against the live columns (snapshot 18 Oct 2026) |
 | `functions/mcp/` | the Edge Function: `index.ts` (Deno entry), `handler.ts` (MCP over HTTP), `db.ts` (the two connections) |
-| `pages/oauth-consent.html` | the consent page Supabase sends people to (Allow / Deny, shows what they may read) |
-| `pages/ai-access.html` | managers: give access (email, areas, until), who has it, Stop, Stop all, what was asked |
-| `tests/run_local.sh` | 50 database tests + 24 function tests on a local Postgres 16 stub: `PGHOST=… PGPORT=… PGUSER=postgres tests/run_local.sh` |
-
-## Data areas
-
-| Area | Gives |
-|---|---|
-| `growing` | crop batches, harvests, tasks and their results, procedures and step values, nutrient recipes, irrigation, sump and sensor readings, devices (no keys), camera counts and growth, assets, maintenance, labour minutes and cost **per day without names** |
-| `ipm` | traps and readings (rates, species, AI counts), scouting photos (tags, AI readings), pest cases, programmes, applications, product and template library, the AI zone and greenhouse opinions, greenhouse notes (text only) |
-| `money` | items, suppliers (no contacts), purchase requests and orders, sales orders and lines, deliveries, customers (no contacts), costs, stock, market and reference prices, the platform's own AI cost, crop batches and harvests, labour totals |
-| `team` | worker names, roles, hourly cost, clock-ins, minutes per worker per task, labour plans, absences (no reason), skills, camera presence counts. Personal data: the page asks before giving it |
-
-Every area also gets the farm's shape: farm, zones, areas, systems, positions (x/y in metres), crops
-and phases, targets, holidays. Never in any view: phone, email, address, contact names, keys,
-`user_id`/`created_by`, photos (only one at a time through **photo**), and outside `team` no worker id
-at all. Tested: a test fails if a view gains such a column.
+| `pages/team-ai.html` | the AI part of the team page, standalone until moved into it: job chips, people with MCP tick, end date and chips, Stop all, the address to send, what was asked |
+| `pages/oauth-consent.html` | the consent page Supabase sends people to (Allow / Deny, shows their farms and families) |
+| `tests/run_local.sh` | 73 database tests + 24 function tests on a local Postgres 16 stub: `PGHOST=… PGPORT=… PGUSER=postgres tests/run_local.sh` |
 
 ## Go live (in order)
 
@@ -60,40 +91,56 @@ Work in a session that has the Platform repo, then the owner does the dashboard 
 1. **Platform repo**: copy `migrations/*` to `Platform/supabase/migrations/` (give them timestamps after
    the newest there), `functions/mcp/` to `Platform/supabase/functions/mcp/`, and add to
    `supabase/config.toml`: `[functions.mcp]` `verify_jwt = false`. Run `tests/run_local.sh` there.
-2. **Database**: apply the two migrations (`supabase db push`).
-3. **Reader password** — SQL editor, with a long random password that is kept only in step 4:
+2. **Keep AI-only people out of work lists** (Platform functions and console) — see the next section.
+   Do this in the same release as the migration: before it, nobody can be `ai_only`.
+3. **Database**: apply the two migrations (`supabase db push`).
+4. **Reader password** — SQL editor, with a long random password that is kept only in step 5:
    `alter role mcp_reader with password '…';`
-4. **Secret** — Edge Functions › Secrets: `MCP_READER_DB_URL` = the *Session pooler* string from
+5. **Secret** — Edge Functions › Secrets: `MCP_READER_DB_URL` = the *Session pooler* string from
    Connect, with user `mcp_reader.azfiajzhzewjcblbltmp` and that password.
-5. **Deploy**: `supabase functions deploy mcp --no-verify-jwt`.
-6. **Auth › OAuth Server**: enable; dynamic client registration ON (Claude and ChatGPT register
+6. **Deploy**: `supabase functions deploy mcp --no-verify-jwt`.
+7. **Auth › OAuth Server**: enable; dynamic client registration ON (Claude and ChatGPT register
    themselves); Authorization Path `/oauth/consent`. Check Auth › URL Configuration › Site URL is
    Naked Heart's address (`https://heart.nkd.farm`).
-7. **Pages** into `Platform/console`: `oauth-consent.html` served at `/oauth/consent`,
-   `ai-access.html` at `/ai-access.html`; fill `SUPABASE_KEY` (the publishable key the console
-   already uses). Deploy the console (`deploy-console.ps1`).
-8. **Token hook** — Auth › Hooks › Customize access token › Postgres › `public.mcp_token_hook`.
+8. **Console** (`Platform/console`): `oauth-consent.html` served at `/oauth/consent`; the AI part of
+   `team-ai.html` into the team page (or served as `/team-ai.html` first); fill `SUPABASE_KEY` (the
+   publishable key the console already uses). Deploy the console (`deploy-console.ps1`).
+9. **Token hook** — Auth › Hooks › Customize access token › Postgres › `public.mcp_token_hook`.
    Then sign in to Naked Heart and Naked Brain normally: they must work as before.
-9. **Other Edge Functions**: any that checks the caller and then acts with the service key must
-   refuse AI tokens. Add at the top, after reading the bearer token:
-   ```ts
-   const p = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-   if (p.client_id || p.role === 'mcp_reader') return new Response('Not for AI connections', { status: 403 });
-   ```
-   At least `admin-user`; check all 17 (`assistant`, `photo-chat`, `scout-photo`, … ).
-10. **Test with your own account**: in AI access give yourself `ipm` for 1 week; Claude › Settings ›
-    Connectors › Add custom connector › the address; sign in, Allow; ask "describe what you can see",
-    then a question; check *What was asked*; press Stop; the next question must be refused.
+10. **Other Edge Functions**: any that checks the caller and then acts with the service key must
+    refuse AI tokens. Add at the top, after reading the bearer token:
+    ```ts
+    const p = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (p.client_id || p.role === 'mcp_reader') return new Response('Not for AI connections', { status: 403 });
+    ```
+    At least `admin-user`; check all 17 (`assistant`, `photo-chat`, `scout-photo`, … ).
+11. **Test with your own team row**: tick MCP for yourself with one family and an end date in a week;
+    Claude › Settings › Connectors › Add custom connector › the address; sign in, Allow; ask "describe
+    what you can see", then a question; check *What was asked*; untick; the next question must be refused.
 
-**Until step 8 and 9 are done, give access only to people without write rights in Naked Heart**
-(outside freelancers): by Supabase's default an OAuth token carries the person's normal rights at the
-REST API. The MCP function itself is read-only either way.
+**Until steps 9 and 10 are done, tick only AI-only people** (no write rights in Naked Heart): by
+Supabase's default an OAuth token carries the person's normal rights at the REST API. The MCP function
+itself is read-only either way.
+
+## AI-only people in the rest of Naked Heart (Platform, step 2)
+
+The trigger already makes them `off_tasks` with no hours, so planning, rostering and task ownership
+(which check `off_tasks`: `owner_of`, `owner_for_task`, `responsible_for`, `rotation_pick`, `roster`,
+`plan_slot`, `sync_since_unit`) leave them out. But **off_tasks people can still pick up a task on the
+phone**, and some lists do not look at `off_tasks`. Add `role <> 'ai_only'` where people are offered for
+work or counted as staff — on 18 Oct the functions reading `worker` without an `off_tasks` check were:
+`people`, `assign_task`, `auto_assign`, `change_people`, `scouting_people`, `labour_hours`,
+`labour_week`, `task_times`, `team_problems`, `team_names`, `person_history`, `worker_photos`,
+`set_worker_cost`, `batch_cost`, `money`, `reports`, and the phone's people list (`sync_since_unit`
+sends `off_tasks` people). On the team page: no task-subfamily chips, working days or hours for an
+AI-only row, and no "create login" (their AI signs in by email). Also allow `ai_only` where the team
+page lists jobs (`team_setup`, `job_rank` puts unknown roles last, which is right).
 
 ## Checks only the live system can answer
 
 - Supabase accepting `role: mcp_reader` from the hook (its docs list only anon/authenticated). If
   OAuth sign-in then fails, remove the `jsonb_set(… role …)` and keep the access check; the MCP path
-  stays read-only (it never uses the token's role), and step 9 still covers the other functions.
+  stays read-only (it never uses the token's role), and step 10 still covers the other functions.
 - `/auth/v1/user` accepting a token whose role is `mcp_reader` (the function's token check).
 - Claude and ChatGPT finding the OAuth server from the `WWW-Authenticate` header on the
   `supabase.co/functions/v1/mcp` address. If one does not, put `mcp.nkd.farm` (Cloudflare) in front and
@@ -102,20 +149,24 @@ REST API. The MCP function itself is read-only either way.
 
 ## Decisions
 
-- **Supabase Auth's OAuth 2.1 server** (beta, free in beta) instead of an own login: people sign in
-  with their Naked Heart account; freelancers need one (the access can be given to an email before
-  the account exists; it binds when that email is confirmed).
-- **Access is explicit for everyone**, managers included: no `mcp.access` row, no data.
+- **On the team page, same pattern as task responsibilities** (owner, 18 Oct): fixed lists, clicked
+  per job and per person, so hybrid jobs need no new code. Families are finer than the first 4 areas.
+- **AI only is a role of its own** (owner, 18 Oct), not a tick on another role.
+- **The tick is explicit for everyone**, admins included: no tick, no data, whatever the job allows.
+- **Who may change it**: `app.may_manage_people`, the team page's own rule (farm admin, farm manager,
+  franchisee and franchisor admins).
+- **Supabase Auth's OAuth 2.1 server** (beta, free in beta) instead of an own login.
 - **The AI's SQL runs on its own login role** (`mcp_reader`), never on the postgres connection: from a
   postgres connection one `select set_config('role','postgres',…)` inside a query would undo any
   `set role`. As `mcp_reader` there is nothing to switch to.
 - **The request's scope is a random id with a 2-minute life**, read by `mcp.farms()`, not the user id:
   a query can change settings, but it cannot guess another request's id.
-- **One SELECT, read-only, rolled back, connection closed**: the extended protocol refuses a second
-  statement; nothing a query sets (settings, temp tables) survives into the next call.
-- **Standard libraries are shared** (crops, IPM products and templates, market prices) with anyone who
-  has access. If the crop library must stay private from outsiders, make `crops` and `crop_phases`
-  farm-only in `gen/views.py`.
+- **One SELECT, read-only, rolled back, connection closed**: nothing a query sets survives it.
+- **Standard libraries are shared** (crops, IPM products and templates, market prices) with anyone
+  ticked. If the crop library must stay private from outsiders, make `crops` and `crop_phases`
+  family-only in `gen/views.py`.
+- `crop_plans` carries expected revenue and cost and is in Crops; move those columns to Costs if
+  agronomists should not see them.
 - Limits: 60 calls a minute per person, 15 s per query, 1000 rows, 150 kB of text per answer.
 
 ## Learned the hard way (in this session)
@@ -123,14 +174,15 @@ REST API. The MCP function itself is read-only either way.
 - porsager `postgres`: passing `JSON.stringify(x)` to a `::jsonb` parameter stores a JSON *string*;
   use `sql.json(x)`.
 - The worker restart kills a local Postgres in the scratchpad; keep it in `/var/tmp/pgmcp`.
+- Members of a farm get memberships on its sister units by a trigger (`membership_sisters`); the test
+  stub has no triggers, so the tests add that membership by hand.
 
 ## Open
 
 - **Accounting is mostly empty**: `cost_entry`, `sales_order`, `purchase_order` have 0 rows (18 Oct);
   only purchase requests (22), harvests (15), task times and market prices hold data. Where are the
   books (Xero, Sage, Excel)? Either Naked Heart records them, or they are imported into `cost_entry`.
+- Franchisor and franchisee admins have no team row, so they cannot be ticked; give them one if wanted.
 - Full-size photos (Storage `evidence` bucket) are not served, only the 640 px copy in the table.
-- The two pages are tested only for syntax here, not against the live Supabase; later they could
-  become a Naked Heart card.
-- `mcp_access_give` is open to every Naked Heart manager role (`farm_admin`, `farm_manager`, `office`,
-  franchisor). Narrow it to `farm_admin` if wanted.
+- The pages are tested with a stand-in for Supabase here (clicks, layout at 1100 and 390 px), not
+  against the live one.
