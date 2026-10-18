@@ -18,6 +18,7 @@ published at `brain.nkd.farm`. It is also where the notes for the farm's other p
 |---|---|
 | Naked Vision — cameras (Reolink Duo 3 → go2rtc on the farm PC → Cloudflare tunnel `cam.nkd.farm` → Naked Heart tile) | `docs/camera/STATE.md` |
 | FarmBox platform 0.7.57 package (crop library, grouped tasks) | `docs/farmbox-platform-0.7.57/README.md` |
+| Naked Heart MCP — people's own Claude/ChatGPT read the farm data (OAuth, read-only, per farm and area, until a date or stopped) | `docs/naked-heart-mcp/STATE.md` |
 
 ## Keeping the notes useful
 - Each project keeps a `docs/<project>/STATE.md`: what runs, where, the decisions taken, what was learned the hard

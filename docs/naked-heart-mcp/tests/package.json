@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Only for tests/handler.test.ts",
+  "dependencies": {
+    "postgres": "3.4.9"
+  }
+}
