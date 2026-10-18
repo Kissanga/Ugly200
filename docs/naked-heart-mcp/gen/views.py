@@ -60,7 +60,15 @@ v('farm_holidays', 'farm_holiday', ALL, 'farm', 'Days a farm is closed or works 
 v('task_families', 'task_family', ALL, 'catalog', 'Families of work.')
 
 # ── Crops, harvest, tasks, water, climate, equipment ────────────────────────────────────────────────────────────────────
-v('crop_plans', 'crop_plan', ['crops', 'harvest', 'costs'], 'farm', 'Crop batches: position, crop, sow/transplant/harvest dates, phase, expected yield, revenue and cost, lot code.')
+MONEY_IN_SCORE = "'{price,revenue,revenue_per_day}'::text[]"
+v('crop_plans', 'crop_plan', ['crops', 'harvest'], 'farm', 'Crop batches: position, crop, sow/transplant/harvest dates, phase, expected yield, lot code (money is in crop_plan_money).',
+  drop={'expected_revenue', 'expected_cost', 'score_json'},
+  add=[f"t.score_json - {MONEY_IN_SCORE} as score_json"])
+v('crop_plan_money', 'crop_plan', ['costs'], 'farm', 'Expected money of each crop batch: revenue, cost, and the planner\'s price, revenue and revenue a day.',
+  keep=['id', 'farm_id', 'crop_id', 'batch_code', 'lot_code', 'status', 'harvest_start', 'harvest_end', 'expected_yield',
+        'expected_revenue', 'expected_cost'],
+  add=["(t.score_json ->> 'price')::numeric as planned_price", "(t.score_json ->> 'revenue')::numeric as planned_revenue",
+       "(t.score_json ->> 'revenue_per_day')::numeric as planned_revenue_per_day"])
 v('harvests', 'harvest', ['harvest', 'sales', 'costs'], 'farm', 'Harvests: date, batch, quantity and unit, grade, waste and why, destination.')
 v('tasks', 'task', ['tasks'], 'farm', 'Tasks: what, where, planned and done dates, estimated and actual minutes, status, skip reasons.',
   drop={'source_ref', 'group_key', 'labour_plan_id'})
@@ -217,7 +225,7 @@ def build(spec):
     else:
         gone = DROP_ALWAYS | spec.get('drop', set()) | (set() if team else DROP_UNLESS_TEAM)
         chosen = [c for c in cols if c not in gone]
-    sel = [f't.{c}' for c in chosen]
+    sel = [f't.{c}' for c in chosen] + list(spec.get('add', []))
     if spec.get('photo'):
         sel.append('(t.photo_data is not null) as has_photo')
     where = row_filter(spec, spec['areas'], 't')

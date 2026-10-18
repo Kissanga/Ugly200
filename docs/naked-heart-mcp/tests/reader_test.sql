@@ -114,5 +114,9 @@ do $$ begin
   assert (select count(*) from tasks) = 0, 'but the tasks themselves are not given';
   assert (select minutes from labour_minutes_daily) between 89 and 91, 'labour minutes aggregated';
   assert (select cost from labour_minutes_daily) = 60.00, '90 min at 40/h = 60';
+  assert (select planned_price from crop_plan_money) = 40 and (select expected_revenue from crop_plan_money) = 4800, 'costs: the batch money';
+  assert (select count(*) from crop_plans) = 1, 'harvest: the batch itself';
+  assert not (select score_json ? 'revenue' from crop_plans), 'the batch score carries no revenue';
+  assert (select score_json ->> 'grow_days' from crop_plans) = '60', 'but keeps its days';
   raise notice 'PASS the office person sees exactly their clicked families';
 end $$;

@@ -80,6 +80,9 @@ insert into public.crop (id, scope, org_id, farm_id, code, name) values
   (gen_random_uuid(), 'farm', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000f00a', 'MIC', 'Micro (farm A)'),
   (gen_random_uuid(), 'farm', '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000f00b', 'OTH', 'Other farm crop');
 insert into public.pest_catalog (code, label) values ('WF', 'Whitefly');
+insert into public.crop_plan (farm_id, batch_code, status, expected_yield, expected_revenue, expected_cost, score_json) values
+  ('00000000-0000-0000-0000-00000000f00a', 'B-001', 'growing', 120, 4800, 1900,
+   '{"price": 40, "revenue": 4800, "revenue_per_day": 80, "grow_days": 60, "yield_kg": 120}');
 insert into auth.oauth_clients (id, client_name) values ('00000000-0000-0000-0000-0000000000c1', 'Claude');
 insert into auth.sessions (user_id, oauth_client_id) values
   ('00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000c1'),
@@ -269,6 +272,10 @@ select pg_temp.ok(not exists (
 select pg_temp.ok(not exists (select 1 from mcp.view_area v where not v.areas <@ (select array_agg(code) from mcp.data_family)),
   'every view belongs to families of the fixed list');
 select pg_temp.ok((select count(*) from mcp.view_area) = (select count(*) from information_schema.views where table_schema = 'mcp'), 'every view is listed in view_area');
+select pg_temp.ok(not exists (select 1 from information_schema.columns where table_schema = 'mcp' and table_name = 'crop_plans'
+                               and column_name in ('expected_revenue', 'expected_cost')),
+                  'crop batches carry no expected revenue or cost');
+select pg_temp.ok((select areas from mcp.view_area where view_name = 'crop_plan_money') = '{costs}', 'the batch money is in costs only');
 select pg_temp.ok(not exists (select 1 from information_schema.role_table_grants where grantee in ('anon','authenticated','PUBLIC') and table_schema = 'mcp'), 'the API roles have no grant on the mcp schema');
 select pg_temp.ok(not has_schema_privilege('authenticated', 'mcp', 'usage'), 'authenticated cannot even see schema mcp');
 select pg_temp.ok(not has_table_privilege('mcp_reader', 'public.trap_reading', 'select'), 'mcp_reader has no right on the tables');

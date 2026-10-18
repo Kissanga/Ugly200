@@ -36,7 +36,7 @@ freelancer needs no account set up by the farm. Someone without an email or logi
 
 | Family | Gives | Admin, manager | Assistant, agronomist | Technician | Office | Worker, trainee | AI only |
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Crops & batches | batches, phases, targets, steady groups, learned phase lengths | ✓ | ✓ | | | ✓ | |
+| Crops & batches | batches (without money), phases, targets, steady groups, learned phase lengths | ✓ | ✓ | | | ✓ | |
 | Harvests | quantity, grade, waste, destination | ✓ | ✓ | | ✓ | | |
 | Tasks & procedures | tasks, what they covered, procedures and step results, issues | ✓ | ✓ | ✓ | | ✓ | |
 | Nutrients & irrigation | recipes, cycles and runs, sump EC / pH / temperature | ✓ | ✓ | ✓ | | | |
@@ -45,7 +45,7 @@ freelancer needs no account set up by the farm. Someone without an email or logi
 | Equipment | assets, meters, maintenance | ✓ | | ✓ | | | |
 | Purchasing & stock | items, suppliers (no contacts), requests and orders, stock | ✓ | | | ✓ | | |
 | Sales & customers | orders, deliveries, customers (no contacts), market and reference prices | ✓ | | | ✓ | | |
-| Costs | costs, the platform's AI cost, labour minutes and cost per day without names | ✓ | | | ✓ | | |
+| Costs | costs, expected revenue and cost of each batch (`crop_plan_money`), the platform's AI cost, labour minutes and cost per day without names | ✓ | | | ✓ | | |
 | Team (personal data) | names, roles, hourly cost, clock-ins, minutes per person, plans, absences, skills | ✓ | | | | | |
 
 Every family also gets the farm's shape: farm, zones, areas, systems, positions (x/y in metres), the
@@ -77,12 +77,12 @@ camera photo as an image, so the AI can look at it).
 | File | What |
 |---|---|
 | `migrations/20261018120000_mcp_access.sql` | schema `mcp`, login role `mcp_reader`, role `ai_only` and its trigger, the families, job and person tables, requests, call log, token hook, and the team page's functions `mcp_team`, `mcp_set_role`, `mcp_reset_role`, `mcp_person_family`, `mcp_set_access`, `mcp_stop_all`, `mcp_call_log`, `mcp_my_access` |
-| `migrations/20261018120100_mcp_views.sql` | GENERATED: the 78 views the AI reads. Edit `gen/views.py`, then `python3 gen/views.py` |
+| `migrations/20261018120100_mcp_views.sql` | GENERATED: the 79 views the AI reads. Edit `gen/views.py`, then `python3 gen/views.py` |
 | `gen/views.py`, `gen/schema_snapshot.json` | the views per family, checked against the live columns (snapshot 18 Oct 2026) |
 | `functions/mcp/` | the Edge Function: `index.ts` (Deno entry), `handler.ts` (MCP over HTTP), `db.ts` (the two connections) |
 | `pages/team-ai.html` | the AI part of the team page, standalone until moved into it: job chips, people with MCP tick, end date and chips, Stop all, the address to send, what was asked |
 | `pages/oauth-consent.html` | the consent page Supabase sends people to (Allow / Deny, shows their farms and families) |
-| `tests/run_local.sh` | 73 database tests + 24 function tests on a local Postgres 16 stub: `PGHOST=… PGPORT=… PGUSER=postgres tests/run_local.sh` |
+| `tests/run_local.sh` | 75 database tests + 24 function tests on a local Postgres 16 stub: `PGHOST=… PGPORT=… PGUSER=postgres tests/run_local.sh` |
 
 ## Go live (in order)
 
@@ -165,8 +165,11 @@ page lists jobs (`team_setup`, `job_rank` puts unknown roles last, which is righ
 - **Standard libraries are shared** (crops, IPM products and templates, market prices) with anyone
   ticked. If the crop library must stay private from outsiders, make `crops` and `crop_phases`
   family-only in `gen/views.py`.
-- `crop_plans` carries expected revenue and cost and is in Crops; move those columns to Costs if
-  agronomists should not see them.
+- **Batch money is in Costs only** (owner, 18 Oct): `crop_plans` has no expected revenue or cost, and
+  its planner score loses `price`, `revenue` and `revenue_per_day`; those are in `crop_plan_money`.
+- **No franchise job titles** (owner, 18 Oct): a franchisor or franchisee admin who wants AI access is
+  put in a farm's team with a normal job (e.g. Farm admin) and ticked like anyone. Managing the AI
+  access is still open to them through `app.may_manage_people`.
 - Limits: 60 calls a minute per person, 15 s per query, 1000 rows, 150 kB of text per answer.
 
 ## Learned the hard way (in this session)
@@ -182,7 +185,6 @@ page lists jobs (`team_setup`, `job_rank` puts unknown roles last, which is righ
 - **Accounting is mostly empty**: `cost_entry`, `sales_order`, `purchase_order` have 0 rows (18 Oct);
   only purchase requests (22), harvests (15), task times and market prices hold data. Where are the
   books (Xero, Sage, Excel)? Either Naked Heart records them, or they are imported into `cost_entry`.
-- Franchisor and franchisee admins have no team row, so they cannot be ticked; give them one if wanted.
 - Full-size photos (Storage `evidence` bucket) are not served, only the 640 px copy in the table.
 - The pages are tested with a stand-in for Supabase here (clicks, layout at 1100 and 390 px), not
   against the live one.

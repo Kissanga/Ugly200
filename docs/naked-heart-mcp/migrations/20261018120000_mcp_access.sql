@@ -77,7 +77,7 @@ create table if not exists mcp.data_family (
   sort  int not null
 );
 insert into mcp.data_family (code, label, about, sort) values
-  ('crops',      'Crops & batches',        'crop batches, phases, targets, steady groups, learned phase lengths', 1),
+  ('crops',      'Crops & batches',        'crop batches (without money), phases, targets, steady groups, learned phase lengths', 1),
   ('harvest',    'Harvests',               'harvests: quantity, grade, waste, destination', 2),
   ('tasks',      'Tasks & procedures',     'tasks, what they covered, procedures and step results, issues', 3),
   ('water',      'Nutrients & irrigation', 'recipes, irrigation cycles and runs, sump EC / pH / temperature', 4),
@@ -86,7 +86,7 @@ insert into mcp.data_family (code, label, about, sort) values
   ('equipment',  'Equipment',              'assets, meters, maintenance rules', 7),
   ('purchasing', 'Purchasing & stock',     'items, suppliers, purchase requests and orders, stock', 8),
   ('sales',      'Sales & customers',      'orders, deliveries, customers (no contacts), market and reference prices', 9),
-  ('costs',      'Costs',                  'costs, the platform''s AI cost, labour minutes and cost per day without names', 10),
+  ('costs',      'Costs',                  'costs, expected revenue and cost of each batch, the platform''s AI cost, labour minutes and cost per day without names', 10),
   ('team',       'Team (personal data)',   'names, roles, hourly cost, clock-ins, minutes per person, plans, absences, skills', 11)
 on conflict (code) do update set label = excluded.label, about = excluded.about, sort = excluded.sort;
 
