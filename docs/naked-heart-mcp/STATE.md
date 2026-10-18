@@ -86,14 +86,16 @@ camera photo as an image, so the AI can look at it).
 
 ## Go live (in order)
 
-Work in a session that has the Platform repo, then the owner does the dashboard steps.
+Work in a session that has the Platform repo — paste `PLATFORM-SESSION-PROMPT.md` — then the owner does the
+dashboard steps.
 
 1. **Platform repo**: copy `migrations/*` to `Platform/supabase/migrations/` (give them timestamps after
    the newest there), `functions/mcp/` to `Platform/supabase/functions/mcp/`, and add to
    `supabase/config.toml`: `[functions.mcp]` `verify_jwt = false`. Run `tests/run_local.sh` there.
 2. **Keep AI-only people out of work lists** (Platform functions and console) — see the next section.
    Do this in the same release as the migration: before it, nobody can be `ai_only`.
-3. **Database**: apply the two migrations (`supabase db push`).
+3. **Database**: apply the two migrations the way Platform does — never `supabase db push`:
+   `supabase db query --linked -f …` per file, then `supabase migration repair --status applied …`.
 4. **Reader password** — SQL editor, with a long random password that is kept only in step 5:
    `alter role mcp_reader with password '…';`
 5. **Secret** — Edge Functions › Secrets: `MCP_READER_DB_URL` = the *Session pooler* string from
