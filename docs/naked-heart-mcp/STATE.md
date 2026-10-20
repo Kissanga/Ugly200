@@ -30,6 +30,9 @@ Set up (owner, Cloudflare dashboard):
 4. Check: https://mcp.nkd.farm/.well-known/oauth-protected-resource shows `"resource":"https://mcp.nkd.farm"`.
 5. In Claude: remove the Naked Heart connector, add it again with `https://mcp.nkd.farm`, sign in, Allow.
 
+Done 20 Oct 2026: the Worker `naked-heart-mcp` is on `mcp.nkd.farm`, and step 4 shows `"resource":"https://mcp.nkd.farm"`
+with Supabase Auth as the sign-in server.
+
 ## Managed on the team page
 
 The same pattern as task responsibilities (`task_subfamily` list, `job_bundle` per job,
