@@ -11,8 +11,24 @@ and FarmLab, all 11 families). Built and tested here on 18 Oct.
 
 **Team guide:** [Connect your AI to Naked Heart](https://claude.ai/code/artifact/1ddabdbb-cdbb-49f8-8de9-de2a22ecf89e)
 (a Claude doc, private until shared from its Share menu): Claude and ChatGPT steps with links, phone,
-first questions, limits, problems and fixes. It gives the address
-`https://azfiajzhzewjcblbltmp.supabase.co/functions/v1/mcp`; change it there if `mcp.nkd.farm` is put in front.
+first questions, limits, problems and fixes. It gives the address **`https://mcp.nkd.farm`**.
+
+## The address: mcp.nkd.farm
+
+`cloudflare/mcp-worker.js` is a Cloudflare Worker on `mcp.nkd.farm` that passes every call to the
+Supabase function and answers the sign-in discovery itself (`/.well-known/oauth-protected-resource`
+names `https://mcp.nkd.farm`; the 401's `WWW-Authenticate` is rewritten to point there; Supabase Auth's
+metadata is also served at the root for older clients). It holds no secret. Nothing on Supabase changes,
+so `https://azfiajzhzewjcblbltmp.supabase.co/functions/v1/mcp` keeps working for connectors already
+added with it. Tested with fetch faked (`tests/worker.test.mjs`, 6 tests).
+
+Set up (owner, Cloudflare dashboard):
+1. [Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages) › **Create** › **Create Worker** (Start
+   with Hello World), name `naked-heart-mcp` › **Deploy**.
+2. **Edit code**, replace everything with `cloudflare/mcp-worker.js` (raw link by commit id), **Deploy**.
+3. The Worker › **Settings** › **Domains & Routes** › **Add** › **Custom domain** › `mcp.nkd.farm` › **Add domain**.
+4. Check: https://mcp.nkd.farm/.well-known/oauth-protected-resource shows `"resource":"https://mcp.nkd.farm"`.
+5. In Claude: remove the Naked Heart connector, add it again with `https://mcp.nkd.farm`, sign in, Allow.
 
 ## Managed on the team page
 

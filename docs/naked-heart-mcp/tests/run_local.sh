@@ -31,3 +31,4 @@ if [ -d tests/node_modules ] || (cd tests && npm install --silent --no-audit --n
 else
   echo "skipped the MCP function test: could not install the postgres package"
 fi
+node --no-warnings tests/worker.test.mjs | grep -E '^# (pass|fail)'
