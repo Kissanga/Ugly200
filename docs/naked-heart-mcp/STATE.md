@@ -5,9 +5,14 @@ Claude or ChatGPT** to Naked Heart and have it **read** the farm data their job 
 Read-only, per farm (with its sister units), per data family, until an end date or until the MCP tick
 is taken off, and every question logged.
 
-**Status (18 Oct 2026): built and tested here, not deployed.** Nothing was changed on the live
-database: the session only read its schema. Goes into the private Platform repo (`supabase/` and
-`console/`) to go live — see *Go live* below.
+**Status (20 Oct 2026): live.** The Platform session brought it in (its own notes are in Platform);
+on 20 Oct the Naked Heart connector answered `describe` for the owner's team row (farm admin, FarmBox1
+and FarmLab, all 11 families). Built and tested here on 18 Oct.
+
+**Team guide:** [Connect your AI to Naked Heart](https://claude.ai/code/artifact/1ddabdbb-cdbb-49f8-8de9-de2a22ecf89e)
+(a Claude doc, private until shared from its Share menu): Claude and ChatGPT steps with links, phone,
+first questions, limits, problems and fixes. It gives the address
+`https://azfiajzhzewjcblbltmp.supabase.co/functions/v1/mcp`; change it there if `mcp.nkd.farm` is put in front.
 
 ## Managed on the team page
 
